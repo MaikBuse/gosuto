@@ -59,11 +59,14 @@ pub fn composite(frame_buf: &mut Buffer, effect_buf: &Buffer, area: Rect) {
     }
 }
 
-/// A UI cell is "transparent" if it has the default background color (or Reset)
+/// A UI cell is "transparent" if it has default background, default foreground,
 /// and contains only whitespace — meaning there's nothing meaningful drawn there.
+/// Cells styled by widgets (titles, text spans) have explicit fg colors, so they
+/// won't be treated as transparent even when their symbol is a space.
 fn is_transparent_cell(cell: &ratatui::buffer::Cell) -> bool {
     let bg = cell.bg;
     let bg_is_default = bg == theme::BG || bg == Color::Reset;
     let symbol_is_empty = cell.symbol().trim().is_empty();
-    bg_is_default && symbol_is_empty
+    let fg_is_default = cell.fg == Color::Reset;
+    bg_is_default && symbol_is_empty && fg_is_default
 }
