@@ -17,6 +17,7 @@ pub struct MessageState {
     pub scroll_offset: usize,
     pub has_more: bool,
     pub loading: bool,
+    pub fetch_error: Option<String>,
     pub current_room_id: Option<String>,
 }
 
@@ -27,6 +28,7 @@ impl MessageState {
             scroll_offset: 0,
             has_more: true,
             loading: false,
+            fetch_error: None,
             current_room_id: None,
         }
     }
@@ -37,7 +39,8 @@ impl MessageState {
             self.messages.clear();
             self.scroll_offset = 0;
             self.has_more = true;
-            self.loading = false;
+            self.loading = true;
+            self.fetch_error = None;
         }
     }
 
@@ -56,6 +59,12 @@ impl MessageState {
         new_msgs.extend(self.messages.drain(..));
         self.messages = new_msgs;
         self.has_more = has_more;
+        self.loading = false;
+        self.fetch_error = None;
+    }
+
+    pub fn set_fetch_error(&mut self, error: String) {
+        self.fetch_error = Some(error);
         self.loading = false;
     }
 

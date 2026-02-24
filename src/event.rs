@@ -18,6 +18,11 @@ pub enum AppEvent {
     },
     LoginFailure(String),
     LoggedOut,
+    AutoLogin {
+        homeserver: String,
+        username: String,
+        password: String,
+    },
     // Room events
     RoomListUpdated(Vec<RoomSummary>),
     // Message events
@@ -36,6 +41,10 @@ pub enum AppEvent {
         body: String,
     },
     SendError {
+        room_id: String,
+        error: String,
+    },
+    FetchError {
         room_id: String,
         error: String,
     },

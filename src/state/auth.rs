@@ -3,6 +3,7 @@
 pub enum AuthState {
     LoggedOut,
     LoggingIn,
+    AutoLoggingIn,
     LoggedIn {
         user_id: String,
         device_id: String,

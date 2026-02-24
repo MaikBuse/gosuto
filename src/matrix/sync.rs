@@ -1,12 +1,18 @@
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::Arc;
+use std::time::Duration;
+
 use anyhow::Result;
 use matrix_sdk::Client;
 use matrix_sdk::ruma::events::room::message::{
     MessageType, OriginalSyncRoomMessageEvent,
 };
-use tracing::info;
+use tokio::time::sleep;
+use tracing::{info, warn};
 
+use crate::config;
 use crate::event::{AppEvent, EventSender};
-use crate::matrix::rooms;
+use crate::matrix::{rooms, session};
 
 pub async fn start_sync(client: Client, tx: EventSender) -> Result<()> {
     // Register event handler for messages
@@ -62,28 +68,85 @@ pub async fn start_sync(client: Client, tx: EventSender) -> Result<()> {
 
     info!("Starting sync loop");
 
-    // Sync loop
-    let sync_tx = tx.clone();
-    client
-        .sync_with_callback(crate::matrix::client::default_sync_settings(), {
-            let client = client.clone();
-            move |_response| {
-                let tx = sync_tx.clone();
+    // Retry loop wrapping sync_with_callback
+    let retry_count = Arc::new(AtomicU32::new(0));
+
+    loop {
+        let sync_tx = tx.clone();
+        let retry_reset = Arc::clone(&retry_count);
+        let result = client
+            .sync_with_callback(crate::matrix::client::default_sync_settings(), {
                 let client = client.clone();
-                async move {
-                    let _ = tx.send(AppEvent::SyncStatus("synced".to_string()));
+                move |_response| {
+                    let tx = sync_tx.clone();
+                    let client = client.clone();
+                    let retry_reset = retry_reset.clone();
+                    async move {
+                        retry_reset.store(0, Ordering::Relaxed);
+                        let _ = tx.send(AppEvent::SyncStatus("synced".to_string()));
 
-                    // Update room list after each sync
-                    let room_list = rooms::get_room_list(&client).await;
-                    let _ = tx.send(AppEvent::RoomListUpdated(room_list));
+                        // Update room list after each sync
+                        let room_list = rooms::get_room_list(&client).await;
+                        let _ = tx.send(AppEvent::RoomListUpdated(room_list));
 
-                    matrix_sdk::LoopCtrl::Continue
+                        matrix_sdk::LoopCtrl::Continue
+                    }
                 }
+            })
+            .await;
+
+        match result {
+            Ok(()) => break,
+            Err(e) => {
+                let msg = sanitize_error(&e.to_string());
+
+                if is_auth_error(&e.to_string()) {
+                    warn!("Auth error during sync: {msg}");
+                    // Delete stale session file
+                    if let Ok(path) = config::session_path() {
+                        let _ = session::delete_session(&path);
+                    }
+                    let _ = tx.send(AppEvent::LoggedOut);
+                    break;
+                }
+
+                // Transient error — retry with backoff
+                let attempt = retry_count.fetch_add(1, Ordering::Relaxed);
+                let backoff_secs = match attempt {
+                    0 => 2u64,
+                    1 => 4,
+                    2 => 8,
+                    3 => 16,
+                    _ => 30,
+                };
+                warn!("Sync error (attempt {}): {msg} — retrying in {backoff_secs}s", attempt + 1);
+                let _ = tx.send(AppEvent::SyncError(msg));
+
+                // Countdown
+                for remaining in (1..=backoff_secs).rev() {
+                    let _ = tx.send(AppEvent::SyncStatus(
+                        format!("reconnecting in {remaining}s..."),
+                    ));
+                    sleep(Duration::from_secs(1)).await;
+                }
+                let _ = tx.send(AppEvent::SyncStatus("reconnecting...".to_string()));
             }
-        })
-        .await?;
+        }
+    }
 
     Ok(())
+}
+
+/// Check if an error indicates an auth failure (expired/invalid token).
+fn is_auth_error(error: &str) -> bool {
+    error.contains("[403]") || error.contains("[401]")
+}
+
+/// Clean up error messages for display.
+fn sanitize_error(error: &str) -> String {
+    let mut msg = error.replace("<non-json bytes>", "(non-JSON response)");
+    msg.truncate(120);
+    msg
 }
 
 fn register_call_event_handlers(client: &Client, tx: &EventSender) {

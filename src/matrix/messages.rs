@@ -2,7 +2,7 @@ use anyhow::Result;
 use matrix_sdk::room::MessagesOptions;
 use matrix_sdk::ruma::events::room::message::{MessageType, RoomMessageEventContent};
 use matrix_sdk::Client;
-use tracing::error;
+use tracing::{debug, error};
 
 use crate::event::{AppEvent, EventSender};
 use crate::state::DisplayMessage;
@@ -21,6 +21,8 @@ pub async fn fetch_messages(
     let response = room.messages(options).await?;
 
     let mut messages: Vec<DisplayMessage> = Vec::new();
+    let chunk_size = response.chunk.len();
+    let mut skipped = 0usize;
 
     for event in &response.chunk {
         let timeline_event = event.raw().deserialize();
@@ -58,8 +60,15 @@ pub async fn fetch_messages(
                 is_notice,
                 pending: false,
             });
+        } else {
+            skipped += 1;
         }
     }
+
+    debug!(
+        "Fetched {} events for room {}: {} messages, {} skipped non-message events",
+        chunk_size, room_id, messages.len(), skipped
+    );
 
     // Reverse so oldest is first
     messages.reverse();

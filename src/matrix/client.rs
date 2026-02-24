@@ -6,7 +6,7 @@ use crate::config;
 use crate::event::{AppEvent, EventSender};
 use crate::matrix::session::{self, StoredSession};
 
-pub async fn try_restore_session(tx: &EventSender) -> Result<Option<Client>> {
+pub async fn try_restore_session(tx: &EventSender, accept_invalid_certs: bool) -> Result<Option<Client>> {
     let session_path = config::session_path()?;
     if !session_path.exists() {
         return Ok(None);
@@ -16,11 +16,15 @@ pub async fn try_restore_session(tx: &EventSender) -> Result<Option<Client>> {
     info!("Restoring session for {}", stored.user_id);
 
     let store_path = config::store_path()?;
-    let client = Client::builder()
+    let mut builder = Client::builder()
         .homeserver_url(&stored.homeserver)
-        .sqlite_store(&store_path, None)
-        .build()
-        .await?;
+        .sqlite_store(&store_path, None);
+
+    if accept_invalid_certs {
+        builder = builder.disable_ssl_verification();
+    }
+
+    let client = builder.build().await?;
 
     let session = matrix_sdk::authentication::matrix::MatrixSession {
         meta: matrix_sdk::SessionMeta {
@@ -49,14 +53,35 @@ pub async fn login(
     username: &str,
     password: &str,
     tx: &EventSender,
+    accept_invalid_certs: bool,
 ) -> Result<Client> {
     let store_path = config::store_path()?;
 
-    let client = Client::builder()
-        .homeserver_url(homeserver)
-        .sqlite_store(&store_path, None)
-        .build()
-        .await?;
+    let client = {
+        // Try with server discovery first
+        let mut builder = Client::builder()
+            .server_name_or_homeserver_url(homeserver)
+            .sqlite_store(&store_path, None);
+        if accept_invalid_certs {
+            builder = builder.disable_ssl_verification();
+        }
+        match builder.build().await {
+            Ok(client) => client,
+            Err(discovery_err) => {
+                tracing::info!(
+                    "Server discovery failed ({}), trying direct URL",
+                    discovery_err
+                );
+                let mut builder = Client::builder()
+                    .homeserver_url(homeserver)
+                    .sqlite_store(&store_path, None);
+                if accept_invalid_certs {
+                    builder = builder.disable_ssl_verification();
+                }
+                builder.build().await?
+            }
+        }
+    };
 
     client
         .matrix_auth()
@@ -76,7 +101,7 @@ pub async fn login(
     // Save session
     let session_path = config::session_path()?;
     let stored = StoredSession {
-        homeserver: homeserver.to_string(),
+        homeserver: client.homeserver().to_string(),
         user_id: user_id.clone(),
         device_id: device_id.clone(),
         access_token: client
@@ -91,7 +116,7 @@ pub async fn login(
     let _ = tx.send(AppEvent::LoginSuccess {
         user_id,
         device_id,
-        homeserver: homeserver.to_string(),
+        homeserver: client.homeserver().to_string(),
     });
 
     Ok(client)

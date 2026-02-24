@@ -20,6 +20,7 @@ matrix-sdk = { version = "0.10", features = ["sqlite"] }
 # Serialization
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+toml = "0.8"
 
 # VoIP
 webrtc = "0.11"
@@ -36,3 +37,4 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-appender = "0.2"
 unicode-width = "0.2"
+keyring = { version = "3", features = ["sync-secret-service", "crypto-rust"] }

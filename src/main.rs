@@ -34,7 +34,10 @@ async fn main() -> Result<()> {
                 .with_writer(non_blocking)
                 .with_ansi(false),
         )
-        .with(EnvFilter::from_env("WALRUST_LOG"))
+        .with(
+            EnvFilter::try_from_env("WALRUST_LOG")
+                .unwrap_or_else(|_| EnvFilter::new("error")),
+        )
         .init();
 
     info!("Starting walrust");
@@ -45,14 +48,19 @@ async fn main() -> Result<()> {
     // Initialize terminal
     let mut tui = terminal::init()?;
 
+    // Load config
+    let walrust_config = config::load_config();
+    info!("Config: {:?}", walrust_config);
+
     // Create app
-    let mut app = App::new(event_tx.clone());
+    let accept_invalid_certs = walrust_config.network.accept_invalid_certs;
+    let mut app = App::new(event_tx.clone(), walrust_config);
 
     // Shared Matrix client
     let matrix_client: Arc<Mutex<Option<matrix_sdk::Client>>> = Arc::new(Mutex::new(None));
 
     // Try to restore session
-    match matrix::client::try_restore_session(&event_tx).await {
+    match matrix::client::try_restore_session(&event_tx, accept_invalid_certs).await {
         Ok(Some(client)) => {
             *matrix_client.lock().await = Some(client.clone());
             let tx = event_tx.clone();
@@ -65,9 +73,23 @@ async fn main() -> Result<()> {
         }
         Ok(None) => {
             info!("No stored session found");
+            if let Some(creds) = matrix::credentials::load_credentials() {
+                let _ = event_tx.send(AppEvent::AutoLogin {
+                    homeserver: creds.homeserver,
+                    username: creds.username,
+                    password: creds.password,
+                });
+            }
         }
         Err(e) => {
             info!("Failed to restore session: {}", e);
+            if let Some(creds) = matrix::credentials::load_credentials() {
+                let _ = event_tx.send(AppEvent::AutoLogin {
+                    homeserver: creds.homeserver,
+                    username: creds.username,
+                    password: creds.password,
+                });
+            }
         }
     }
 
@@ -127,7 +149,7 @@ async fn main() -> Result<()> {
             let tx = event_tx.clone();
             let client_holder = matrix_client.clone();
             tokio::spawn(async move {
-                match matrix::client::login(&homeserver, &username, &password, &tx).await {
+                match matrix::client::login(&homeserver, &username, &password, &tx, accept_invalid_certs).await {
                     Ok(client) => {
                         *client_holder.lock().await = Some(client.clone());
                         let sync_tx = tx.clone();
@@ -170,11 +192,15 @@ async fn main() -> Result<()> {
                                 let tx = event_tx.clone();
                                 let rid = room_id.clone();
                                 tokio::spawn(async move {
-                                    let guard = client_holder.lock().await;
-                                    if let Some(ref client) = *guard {
-                                        if let Err(e) = matrix::messages::fetch_messages(client, &rid, &tx).await {
-                                            error!("Failed to fetch messages: {}", e);
-                                        }
+                                    let client = { client_holder.lock().await.clone() };
+                                    if let Some(client) = client
+                                        && let Err(e) = matrix::messages::fetch_messages(&client, &rid, &tx).await
+                                    {
+                                        error!("Failed to fetch messages for {}: {:?}", rid, e);
+                                        let _ = tx.send(AppEvent::FetchError {
+                                            room_id: rid,
+                                            error: e.to_string(),
+                                        });
                                     }
                                 });
 
@@ -183,9 +209,9 @@ async fn main() -> Result<()> {
                                 let tx2 = event_tx.clone();
                                 let rid2 = room_id.clone();
                                 tokio::spawn(async move {
-                                    let guard = client_holder2.lock().await;
-                                    if let Some(ref client) = *guard {
-                                        matrix::rooms::fetch_room_members(client, &rid2, &tx2).await;
+                                    let client = { client_holder2.lock().await.clone() };
+                                    if let Some(client) = client {
+                                        matrix::rooms::fetch_room_members(&client, &rid2, &tx2).await;
                                     }
                                 });
                             } else {
@@ -198,11 +224,11 @@ async fn main() -> Result<()> {
                             let client_holder = matrix_client.clone();
                             let tx = event_tx.clone();
                             tokio::spawn(async move {
-                                let guard = client_holder.lock().await;
-                                if let Some(ref client) = *guard {
-                                    if let Err(e) = matrix::messages::send_message(client, &room_id, &body, &tx).await {
-                                        error!("Failed to send message: {}", e);
-                                    }
+                                let client = { client_holder.lock().await.clone() };
+                                if let Some(client) = client
+                                    && let Err(e) = matrix::messages::send_message(&client, &room_id, &body, &tx).await
+                                {
+                                    error!("Failed to send message: {}", e);
                                 }
                             });
                         }
@@ -213,13 +239,12 @@ async fn main() -> Result<()> {
                             let client_holder = matrix_client.clone();
                             let tx = event_tx.clone();
                             tokio::spawn(async move {
-                                let mut guard = client_holder.lock().await;
-                                if let Some(ref client) = *guard {
-                                    if let Err(e) = matrix::client::logout(client).await {
-                                        error!("Logout error: {}", e);
-                                    }
+                                let client = { client_holder.lock().await.take() };
+                                if let Some(client) = client
+                                    && let Err(e) = matrix::client::logout(&client).await
+                                {
+                                    error!("Logout error: {}", e);
                                 }
-                                *guard = None;
                                 let _ = tx.send(AppEvent::LoggedOut);
                             });
                         }
@@ -229,8 +254,8 @@ async fn main() -> Result<()> {
                             let client_holder = matrix_client.clone();
                             let tx = event_tx.clone();
                             tokio::spawn(async move {
-                                let guard = client_holder.lock().await;
-                                if let Some(ref client) = *guard {
+                                let client = { client_holder.lock().await.clone() };
+                                if let Some(client) = client {
                                     let room_id_parsed: Result<matrix_sdk::ruma::OwnedRoomOrAliasId, _> = room_id.as_str().try_into();
                                     match room_id_parsed {
                                         Ok(id) => {
@@ -251,8 +276,8 @@ async fn main() -> Result<()> {
                             let client_holder = matrix_client.clone();
                             let tx = event_tx.clone();
                             tokio::spawn(async move {
-                                let guard = client_holder.lock().await;
-                                if let Some(ref client) = *guard {
+                                let client = { client_holder.lock().await.clone() };
+                                if let Some(client) = client {
                                     let room_id_parsed: Result<matrix_sdk::ruma::OwnedRoomId, _> = room_id.as_str().try_into();
                                     if let Ok(id) = room_id_parsed {
                                         if let Some(room) = client.get_room(&id) {

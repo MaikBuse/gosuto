@@ -197,6 +197,7 @@ pub fn render(login: &LoginState, auth_state: &AuthState, frame: &mut Frame) {
     // Status/error
     let status = match auth_state {
         AuthState::LoggingIn => Span::styled("Logging in...", theme::dim_style()),
+        AuthState::AutoLoggingIn => Span::styled("Auto-logging in...", theme::dim_style()),
         AuthState::Error(e) => Span::styled(e.as_str(), theme::error_style()),
         _ => Span::styled(
             "Tab: next field | Enter: login | Ctrl+C: quit",
@@ -209,7 +210,7 @@ pub fn render(login: &LoginState, auth_state: &AuthState, frame: &mut Frame) {
     );
 
     // Cursor
-    if !matches!(auth_state, AuthState::LoggingIn) {
+    if !matches!(auth_state, AuthState::LoggingIn | AuthState::AutoLoggingIn) {
         let (cursor_chunk, offset) = match login.focused_field {
             LoginField::Homeserver => (chunks[2], login.cursor_pos),
             LoginField::Username => (chunks[5], login.cursor_pos),

@@ -37,12 +37,28 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
 
     let messages = &app.messages.messages;
     if messages.is_empty() {
-        let empty = Paragraph::new(Line::from(Span::styled(
-            "No messages yet",
-            theme::dim_style(),
-        )))
-        .block(block);
-        frame.render_widget(empty, area);
+        let placeholder = if app.messages.current_room_id.is_none() {
+            Paragraph::new(Line::from(Span::styled(
+                "Select a room to start chatting",
+                theme::dim_style(),
+            )))
+        } else if app.messages.loading {
+            Paragraph::new(Line::from(Span::styled(
+                "Loading messages...",
+                theme::dim_style(),
+            )))
+        } else if let Some(ref err) = app.messages.fetch_error {
+            Paragraph::new(Line::from(Span::styled(
+                format!("Error: {}", err),
+                theme::error_style(),
+            )))
+        } else {
+            Paragraph::new(Line::from(Span::styled(
+                "No messages yet",
+                theme::dim_style(),
+            )))
+        };
+        frame.render_widget(placeholder.block(block), area);
         return;
     }
 

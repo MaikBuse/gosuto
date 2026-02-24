@@ -3,6 +3,7 @@ use std::time::Instant;
 use crossterm::event::{KeyCode, KeyModifiers};
 use tracing::info;
 
+use crate::config::WalrustConfig;
 use crate::event::{AppEvent, EventSender};
 use crate::input::{self, CommandAction, FocusPanel, InputResult, VimState};
 use crate::state::{AuthState, MemberListState, MessageState, RoomListState};
@@ -21,6 +22,7 @@ pub struct App {
     pub sync_status: String,
     pub last_error: Option<String>,
     pub event_tx: EventSender,
+    pub config: WalrustConfig,
     // Pending actions for main loop to process
     pub pending_logout: bool,
     pending_send: Option<(String, String)>,  // (room_id, body)
@@ -29,10 +31,13 @@ pub struct App {
     // VoIP
     pub call_info: Option<CallInfo>,
     pub call_cmd_tx: Option<CallCommandSender>,
+    // Auto-login
+    pub auto_login_attempted: bool,
+    pub pending_credential_clear: bool,
 }
 
 impl App {
-    pub fn new(event_tx: EventSender) -> Self {
+    pub fn new(event_tx: EventSender, config: WalrustConfig) -> Self {
         Self {
             running: true,
             vim: VimState::new(),
@@ -44,12 +49,15 @@ impl App {
             sync_status: "disconnected".to_string(),
             last_error: None,
             event_tx,
+            config,
             pending_logout: false,
             pending_send: None,
             pending_join: None,
             pending_leave: None,
             call_info: None,
             call_cmd_tx: None,
+            auto_login_attempted: false,
+            pending_credential_clear: false,
         }
     }
 
@@ -75,6 +83,16 @@ impl App {
                 device_id,
                 homeserver,
             } => {
+                // Save credentials to keyring if we have a password (skip on session restore)
+                if !self.login.password.is_empty() {
+                    crate::matrix::credentials::save_credentials(
+                        &self.login.homeserver,
+                        &self.login.username,
+                        &self.login.password,
+                    );
+                }
+                self.login.password.clear();
+                self.auto_login_attempted = false;
                 self.auth = AuthState::LoggedIn {
                     user_id,
                     device_id,
@@ -83,7 +101,12 @@ impl App {
                 self.sync_status = "syncing...".to_string();
             }
             AppEvent::LoginFailure(err) => {
-                self.auth = AuthState::Error(err);
+                if matches!(self.auth, AuthState::AutoLoggingIn) {
+                    self.login.password.clear();
+                    self.auth = AuthState::Error(format!("Auto-login failed: {err}"));
+                } else {
+                    self.auth = AuthState::Error(err);
+                }
             }
             AppEvent::LoggedOut => {
                 self.auth = AuthState::LoggedOut;
@@ -92,6 +115,32 @@ impl App {
                 self.members_list = MemberListState::new();
                 self.login = LoginState::new();
                 self.sync_status = "disconnected".to_string();
+
+                if self.pending_credential_clear {
+                    self.pending_credential_clear = false;
+                    crate::matrix::credentials::delete_credentials();
+                } else if !self.auto_login_attempted
+                    && let Some(creds) = crate::matrix::credentials::load_credentials()
+                {
+                    let _ = self.event_tx.send(AppEvent::AutoLogin {
+                        homeserver: creds.homeserver,
+                        username: creds.username,
+                        password: creds.password,
+                    });
+                }
+            }
+            AppEvent::AutoLogin {
+                homeserver,
+                username,
+                password,
+            } => {
+                if !self.auto_login_attempted {
+                    self.auto_login_attempted = true;
+                    self.login.homeserver = homeserver;
+                    self.login.username = username;
+                    self.login.password = password;
+                    self.auth = AuthState::AutoLoggingIn;
+                }
             }
             AppEvent::RoomListUpdated(rooms) => {
                 self.room_list.set_rooms(rooms);
@@ -121,6 +170,11 @@ impl App {
             }
             AppEvent::SendError { error, .. } => {
                 self.last_error = Some(error);
+            }
+            AppEvent::FetchError { room_id, error } => {
+                if self.messages.current_room_id.as_deref() == Some(&room_id) {
+                    self.messages.set_fetch_error(error);
+                }
             }
             AppEvent::MembersLoaded { room_id, members } => {
                 if self.messages.current_room_id.as_deref() == Some(&room_id) {
@@ -219,7 +273,7 @@ impl App {
             return;
         }
 
-        if matches!(self.auth, AuthState::LoggingIn) {
+        if matches!(self.auth, AuthState::LoggingIn | AuthState::AutoLoggingIn) {
             return;
         }
 
@@ -345,6 +399,7 @@ impl App {
             CommandAction::Quit => self.running = false,
             CommandAction::Logout => {
                 self.pending_logout = true;
+                self.pending_credential_clear = true;
             }
             CommandAction::Join(room) => {
                 self.pending_join = Some(room);
@@ -428,7 +483,7 @@ impl App {
     }
 
     pub fn is_logging_in(&self) -> bool {
-        matches!(self.auth, AuthState::LoggingIn)
+        matches!(self.auth, AuthState::LoggingIn | AuthState::AutoLoggingIn)
     }
 
     pub fn login_credentials(&self) -> (String, String, String) {
