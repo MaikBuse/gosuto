@@ -37,4 +37,5 @@ pub enum CommandAction {
     Answer,
     Reject,
     Hangup,
+    Rain,
 }

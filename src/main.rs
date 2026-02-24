@@ -141,6 +141,11 @@ async fn main() -> Result<()> {
     let render_interval = Duration::from_millis(config::RENDER_RATE_MS);
 
     loop {
+        // Tick effects before render
+        let term_size = tui.size()?;
+        let term_area = ratatui::layout::Rect::new(0, 0, term_size.width, term_size.height);
+        app.effects.tick(render_interval.as_millis() as u64, term_area);
+
         // Render
         tui.draw(|frame| ui::render(&app, frame))?;
 

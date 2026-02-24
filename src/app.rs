@@ -7,6 +7,7 @@ use crate::config::WalrustConfig;
 use crate::event::{AppEvent, EventSender};
 use crate::input::{self, CommandAction, FocusPanel, InputResult, VimState};
 use crate::state::{AuthState, MemberListState, MessageState, RoomListState};
+use crate::ui::effects::EffectsState;
 use crate::ui::login::LoginState;
 use crate::voip::{CallCommand, CallCommandSender, CallInfo, CallState};
 
@@ -35,6 +36,8 @@ pub struct App {
     // Auto-login
     pub auto_login_attempted: bool,
     pub pending_credential_clear: bool,
+    // Visual effects
+    pub effects: EffectsState,
 }
 
 impl App {
@@ -60,6 +63,7 @@ impl App {
             call_cmd_tx: None,
             auto_login_attempted: false,
             pending_credential_clear: false,
+            effects: EffectsState::new(),
         }
     }
 
@@ -513,6 +517,9 @@ impl App {
                 } else {
                     self.last_error = Some("No active call".to_string());
                 }
+            }
+            CommandAction::Rain => {
+                self.effects.toggle();
             }
         }
     }

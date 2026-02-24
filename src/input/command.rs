@@ -67,6 +67,7 @@ fn parse_command(input: &str) -> InputResult {
         "answer" | "accept" => InputResult::Command(CommandAction::Answer),
         "reject" | "decline" => InputResult::Command(CommandAction::Reject),
         "hangup" | "end" => InputResult::Command(CommandAction::Hangup),
+        "rain" | "matrix" | "effects" => InputResult::Command(CommandAction::Rain),
         _ => InputResult::None,
     }
 }

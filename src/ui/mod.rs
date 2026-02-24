@@ -1,5 +1,6 @@
 pub mod call_overlay;
 pub mod chat;
+pub mod effects;
 pub mod input_bar;
 pub mod layout;
 pub mod login;
@@ -27,10 +28,19 @@ pub fn render(app: &App, frame: &mut Frame) {
     members::render(app, frame, layout.members_list);
     status_bar::render(app, frame, layout.status_bar);
 
+    // Composite effects behind UI in content panels only (before overlays)
+    if app.effects.enabled
+        && let Some(effect_buf) = app.effects.render_to_buffer(frame.area())
+    {
+        effects::composite(frame.buffer_mut(), &effect_buf, layout.room_list);
+        effects::composite(frame.buffer_mut(), &effect_buf, layout.chat_area);
+        effects::composite(frame.buffer_mut(), &effect_buf, layout.members_list);
+    }
+
     // Render call overlay on top if there's an incoming call ringing
-    if let Some(ref info) = app.call_info {
-        if info.state == CallState::Ringing {
-            call_overlay::render(info, frame);
-        }
+    if let Some(ref info) = app.call_info
+        && info.state == CallState::Ringing
+    {
+        call_overlay::render(info, frame);
     }
 }
