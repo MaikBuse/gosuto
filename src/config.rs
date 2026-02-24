@@ -86,6 +86,19 @@ pub fn store_path() -> Result<PathBuf> {
     Ok(path)
 }
 
+pub fn store_path_for_homeserver(homeserver: &str) -> Result<PathBuf> {
+    let hostname = url::Url::parse(homeserver)
+        .ok()
+        .and_then(|u| u.host_str().map(|h| h.to_string()))
+        .unwrap_or_else(|| {
+            // Fallback: sanitize the raw string for use as a directory name
+            homeserver.replace(['/', ':', '\\'], "_")
+        });
+    let path = data_dir()?.join("store").join(hostname);
+    std::fs::create_dir_all(&path)?;
+    Ok(path)
+}
+
 pub fn log_path() -> Result<PathBuf> {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("log");
     std::fs::create_dir_all(&path)?;

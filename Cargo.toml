@@ -38,3 +38,4 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-appender = "0.2"
 unicode-width = "0.2"
 keyring = { version = "3", features = ["sync-secret-service", "crypto-rust"] }
+url = "2.5.8"

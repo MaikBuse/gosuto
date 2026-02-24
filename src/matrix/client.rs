@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use matrix_sdk::{Client, config::SyncSettings};
 use tracing::info;
 
@@ -15,7 +15,8 @@ pub async fn try_restore_session(tx: &EventSender, accept_invalid_certs: bool) -
     let stored = session::load_session(&session_path)?;
     info!("Restoring session for {}", stored.user_id);
 
-    let store_path = config::store_path()?;
+    let store_path = config::store_path_for_homeserver(&stored.homeserver)?;
+    info!("Using per-server store at {}", store_path.display());
     let mut builder = Client::builder()
         .homeserver_url(&stored.homeserver)
         .sqlite_store(&store_path, None);
@@ -48,6 +49,15 @@ pub async fn try_restore_session(tx: &EventSender, accept_invalid_certs: bool) -
     Ok(Some(client))
 }
 
+fn normalize_homeserver_url(input: &str) -> String {
+    let url = input.trim().trim_end_matches('/');
+    if url.contains("://") {
+        url.to_string()
+    } else {
+        format!("https://{}", url)
+    }
+}
+
 pub async fn login(
     homeserver: &str,
     username: &str,
@@ -55,12 +65,16 @@ pub async fn login(
     tx: &EventSender,
     accept_invalid_certs: bool,
 ) -> Result<Client> {
-    let store_path = config::store_path()?;
+    let homeserver = normalize_homeserver_url(homeserver);
+    info!("Login requested for homeserver input: {}", homeserver);
+
+    let store_path = config::store_path_for_homeserver(&homeserver)?;
+    info!("Using per-server store at {}", store_path.display());
 
     let client = {
         // Try with server discovery first
         let mut builder = Client::builder()
-            .server_name_or_homeserver_url(homeserver)
+            .server_name_or_homeserver_url(&homeserver)
             .sqlite_store(&store_path, None);
         if accept_invalid_certs {
             builder = builder.disable_ssl_verification();
@@ -68,12 +82,12 @@ pub async fn login(
         match builder.build().await {
             Ok(client) => client,
             Err(discovery_err) => {
-                tracing::info!(
+                info!(
                     "Server discovery failed ({}), trying direct URL",
                     discovery_err
                 );
                 let mut builder = Client::builder()
-                    .homeserver_url(homeserver)
+                    .homeserver_url(&homeserver)
                     .sqlite_store(&store_path, None);
                 if accept_invalid_certs {
                     builder = builder.disable_ssl_verification();
@@ -83,11 +97,24 @@ pub async fn login(
         }
     };
 
+    info!(
+        "Resolved homeserver URL: {} (input was: {})",
+        client.homeserver(),
+        homeserver
+    );
+
     client
         .matrix_auth()
         .login_username(username, password)
         .initial_device_display_name("walrust")
-        .await?;
+        .await
+        .with_context(|| {
+            format!(
+                "Login failed against homeserver {} (resolved from input: {})",
+                client.homeserver(),
+                homeserver
+            )
+        })?;
 
     let user_id = client
         .user_id()
@@ -129,8 +156,9 @@ pub async fn logout(client: &Client) -> Result<()> {
     // Try to log out from the server, but don't fail if it doesn't work
     let _ = client.matrix_auth().logout().await;
 
-    // Clean up store
-    let store_path = config::store_path()?;
+    // Clean up only this server's store
+    let store_path = config::store_path_for_homeserver(client.homeserver().as_str())?;
+    info!("Removing per-server store at {}", store_path.display());
     let _ = std::fs::remove_dir_all(&store_path);
 
     Ok(())
