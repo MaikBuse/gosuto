@@ -32,7 +32,7 @@ pub async fn try_restore_session(tx: &EventSender, accept_invalid_certs: bool) -
             user_id: stored.user_id.as_str().try_into()?,
             device_id: stored.device_id.as_str().into(),
         },
-        tokens: matrix_sdk::authentication::matrix::MatrixSessionTokens {
+        tokens: matrix_sdk::authentication::SessionTokens {
             access_token: stored.access_token,
             refresh_token: None,
         },

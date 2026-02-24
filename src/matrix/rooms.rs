@@ -79,7 +79,10 @@ pub async fn fetch_room_members(client: &Client, room_id: &str, tx: &EventSender
                     RoomMember {
                         user_id: m.user_id().to_string(),
                         display_name,
-                        power_level: m.power_level(),
+                        power_level: match m.power_level() {
+                            matrix_sdk::ruma::events::room::power_levels::UserPowerLevel::Int(i) => i64::from(i),
+                            _ => i64::MAX,
+                        },
                     }
                 })
                 .collect();

@@ -80,12 +80,6 @@ pub fn session_path() -> Result<PathBuf> {
     Ok(data_dir()?.join("session.json"))
 }
 
-pub fn store_path() -> Result<PathBuf> {
-    let path = data_dir()?.join("store");
-    std::fs::create_dir_all(&path)?;
-    Ok(path)
-}
-
 pub fn store_path_for_homeserver(homeserver: &str) -> Result<PathBuf> {
     let hostname = url::Url::parse(homeserver)
         .ok()

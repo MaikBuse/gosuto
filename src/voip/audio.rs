@@ -88,11 +88,11 @@ impl AudioPipeline {
             .default_input_device()
             .ok_or_else(|| anyhow::anyhow!("No microphone found"))?;
 
-        info!("Using input device: {:?}", device.name());
+        info!("Using input device: {:?}", device.description());
 
         let config = cpal::StreamConfig {
             channels: 1,
-            sample_rate: cpal::SampleRate(SAMPLE_RATE),
+            sample_rate: SAMPLE_RATE,
             buffer_size: cpal::BufferSize::Default,
         };
 
@@ -176,11 +176,11 @@ impl AudioPipeline {
             .default_output_device()
             .ok_or_else(|| anyhow::anyhow!("No audio output device found"))?;
 
-        info!("Using output device: {:?}", device.name());
+        info!("Using output device: {:?}", device.description());
 
         let config = cpal::StreamConfig {
             channels: 1,
-            sample_rate: cpal::SampleRate(SAMPLE_RATE),
+            sample_rate: SAMPLE_RATE,
             buffer_size: cpal::BufferSize::Default,
         };
 

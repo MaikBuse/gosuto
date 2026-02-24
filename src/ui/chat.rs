@@ -19,8 +19,10 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
     };
 
     let room_name = app
-        .room_list
-        .selected_room()
+        .messages
+        .current_room_id
+        .as_ref()
+        .and_then(|id| app.room_list.rooms.iter().find(|r| r.id == *id))
         .map(|r| r.name.clone())
         .unwrap_or_else(|| "No room selected".to_string());
 
