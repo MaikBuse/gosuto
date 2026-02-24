@@ -1,0 +1,38 @@
+[package]
+name = "walrust"
+version = "0.1.0"
+edition = "2024"
+description = "A cyberpunk terminal Matrix client with vim motions"
+
+[dependencies]
+# TUI
+ratatui = "0.30"
+crossterm = { version = "0.28", features = ["event-stream"] }
+
+# Async
+tokio = { version = "1", features = ["full"] }
+tokio-stream = "0.1"
+futures = "0.3"
+
+# Matrix
+matrix-sdk = { version = "0.10", features = ["sqlite"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# VoIP
+webrtc = "0.11"
+cpal = "0.15"
+audiopus = "0.3.0-rc.0"
+uuid = { version = "1", features = ["v4"] }
+
+# Utils
+dirs = "6"
+anyhow = "1"
+thiserror = "2"
+chrono = { version = "0.4", features = ["serde"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = "0.2"
+unicode-width = "0.2"
