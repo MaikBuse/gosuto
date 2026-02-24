@@ -2,7 +2,7 @@ use ratatui::{
     Frame,
     layout::Rect,
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem},
+    widgets::{Block, Borders, List, ListItem, ListState},
 };
 
 use crate::app::App;
@@ -42,7 +42,6 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
         .members_list
         .members
         .iter()
-        .skip(app.members_list.scroll_offset)
         .map(|member| {
             let prefix = power_prefix(member.power_level);
             let prefix_style = if member.power_level >= 50 {
@@ -63,6 +62,18 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
         })
         .collect();
 
-    let list = List::new(items).block(block);
-    frame.render_widget(list, area);
+    let highlight_style = ratatui::style::Style::default()
+        .fg(theme::CYAN)
+        .bg(ratatui::style::Color::Rgb(20, 20, 40));
+
+    let list = List::new(items)
+        .block(block)
+        .highlight_style(highlight_style);
+
+    let mut list_state = ListState::default();
+    if focused && !app.members_list.members.is_empty() {
+        list_state.select(Some(app.members_list.selected));
+    }
+
+    frame.render_stateful_widget(list, area, &mut list_state);
 }

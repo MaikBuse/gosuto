@@ -23,6 +23,7 @@ pub enum InputResult {
     Command(CommandAction),
     Search(String),
     ClearSearch,
+    CallMember,
 }
 
 #[derive(Debug, Clone)]

@@ -31,6 +31,7 @@ pub fn handle_normal(key: KeyEvent, vim: &mut VimState) -> InputResult {
             InputResult::None
         }
         KeyCode::Char('G') => InputResult::MoveBottom,
+        KeyCode::Char('c') => InputResult::CallMember,
         KeyCode::Tab => InputResult::SwitchPanel,
         KeyCode::Char('l') => InputResult::FocusRight,
         KeyCode::Char('h') => InputResult::FocusLeft,

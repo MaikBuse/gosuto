@@ -271,6 +271,48 @@ async fn main() -> Result<()> {
                             });
                         }
 
+                        // Handle pending DM
+                        if let Some(user_id_str) = app.take_pending_dm() {
+                            let client_holder = matrix_client.clone();
+                            let tx = event_tx.clone();
+                            tokio::spawn(async move {
+                                let client = { client_holder.lock().await.clone() };
+                                if let Some(client) = client {
+                                    let user_id: Result<matrix_sdk::ruma::OwnedUserId, _> = user_id_str.as_str().try_into();
+                                    match user_id {
+                                        Ok(uid) => {
+                                            // Check for existing DM room
+                                            if let Some(room) = client.get_dm_room(&uid) {
+                                                let _ = tx.send(AppEvent::DmRoomReady {
+                                                    room_id: room.room_id().to_string(),
+                                                });
+                                            } else {
+                                                // Create new DM room
+                                                use matrix_sdk::ruma::api::client::room::create_room::v3::Request as CreateRoomRequest;
+                                                let mut request = CreateRoomRequest::new();
+                                                request.invite = vec![uid.clone()];
+                                                request.is_direct = true;
+
+                                                match client.create_room(request).await {
+                                                    Ok(response) => {
+                                                        let _ = tx.send(AppEvent::DmRoomReady {
+                                                            room_id: response.room_id().to_string(),
+                                                        });
+                                                    }
+                                                    Err(e) => {
+                                                        let _ = tx.send(AppEvent::SyncError(format!("Failed to create DM: {}", e)));
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        Err(e) => {
+                                            let _ = tx.send(AppEvent::SyncError(format!("Invalid user ID: {}", e)));
+                                        }
+                                    }
+                                }
+                            });
+                        }
+
                         // Handle room leave
                         if let Some(room_id) = app.take_pending_leave() {
                             let client_holder = matrix_client.clone();

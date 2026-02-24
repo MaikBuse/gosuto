@@ -8,7 +8,7 @@ pub struct RoomMember {
 #[derive(Debug)]
 pub struct MemberListState {
     pub members: Vec<RoomMember>,
-    pub scroll_offset: usize,
+    pub selected: usize,
     pub current_room_id: Option<String>,
 }
 
@@ -16,7 +16,7 @@ impl MemberListState {
     pub fn new() -> Self {
         Self {
             members: Vec::new(),
-            scroll_offset: 0,
+            selected: 0,
             current_room_id: None,
         }
     }
@@ -30,32 +30,36 @@ impl MemberListState {
         });
         self.current_room_id = Some(room_id.to_string());
         self.members = members;
-        self.scroll_offset = 0;
+        self.selected = 0;
     }
 
-    pub fn scroll_up(&mut self) {
-        self.scroll_offset = self.scroll_offset.saturating_sub(1);
+    pub fn move_up(&mut self) {
+        self.selected = self.selected.saturating_sub(1);
     }
 
-    pub fn scroll_down(&mut self) {
+    pub fn move_down(&mut self) {
         if !self.members.is_empty() {
-            self.scroll_offset = (self.scroll_offset + 1).min(self.members.len().saturating_sub(1));
+            self.selected = (self.selected + 1).min(self.members.len().saturating_sub(1));
         }
     }
 
-    pub fn scroll_top(&mut self) {
-        self.scroll_offset = 0;
+    pub fn move_top(&mut self) {
+        self.selected = 0;
     }
 
-    pub fn scroll_bottom(&mut self) {
+    pub fn move_bottom(&mut self) {
         if !self.members.is_empty() {
-            self.scroll_offset = self.members.len().saturating_sub(1);
+            self.selected = self.members.len().saturating_sub(1);
         }
+    }
+
+    pub fn selected_member(&self) -> Option<&RoomMember> {
+        self.members.get(self.selected)
     }
 
     pub fn clear(&mut self) {
         self.members.clear();
-        self.scroll_offset = 0;
+        self.selected = 0;
         self.current_room_id = None;
     }
 }

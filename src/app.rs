@@ -28,6 +28,7 @@ pub struct App {
     pending_send: Option<(String, String)>,  // (room_id, body)
     pending_join: Option<String>,            // room_id_or_alias
     pending_leave: Option<String>,           // room_id
+    pending_dm: Option<String>,              // user_id
     // VoIP
     pub call_info: Option<CallInfo>,
     pub call_cmd_tx: Option<CallCommandSender>,
@@ -54,6 +55,7 @@ impl App {
             pending_send: None,
             pending_join: None,
             pending_leave: None,
+            pending_dm: None,
             call_info: None,
             call_cmd_tx: None,
             auto_login_attempted: false,
@@ -181,6 +183,10 @@ impl App {
                     self.members_list.set_members(&room_id, members);
                 }
             }
+            AppEvent::DmRoomReady { room_id } => {
+                self.messages.set_room(Some(room_id));
+                self.vim.focus = FocusPanel::Messages;
+            }
             AppEvent::SyncError(err) => {
                 self.last_error = Some(err);
             }
@@ -304,12 +310,12 @@ impl App {
             InputResult::MoveUp => match self.vim.focus {
                 FocusPanel::RoomList => self.room_list.move_up(),
                 FocusPanel::Messages => self.messages.scroll_up(),
-                FocusPanel::Members => self.members_list.scroll_up(),
+                FocusPanel::Members => self.members_list.move_up(),
             },
             InputResult::MoveDown => match self.vim.focus {
                 FocusPanel::RoomList => self.room_list.move_down(),
                 FocusPanel::Messages => self.messages.scroll_down(),
-                FocusPanel::Members => self.members_list.scroll_down(),
+                FocusPanel::Members => self.members_list.move_down(),
             },
             InputResult::MoveTop => match self.vim.focus {
                 FocusPanel::RoomList => self.room_list.move_top(),
@@ -317,12 +323,12 @@ impl App {
                     // Scroll to top - could trigger pagination
                     self.messages.scroll_offset = self.messages.messages.len().saturating_sub(1);
                 }
-                FocusPanel::Members => self.members_list.scroll_top(),
+                FocusPanel::Members => self.members_list.move_top(),
             },
             InputResult::MoveBottom => match self.vim.focus {
                 FocusPanel::RoomList => self.room_list.move_bottom(),
                 FocusPanel::Messages => self.messages.scroll_to_bottom(),
-                FocusPanel::Members => self.members_list.scroll_bottom(),
+                FocusPanel::Members => self.members_list.move_bottom(),
             },
             InputResult::Select => {
                 if self.vim.focus == FocusPanel::RoomList {
@@ -330,6 +336,35 @@ impl App {
                         let room_id = room.id.clone();
                         self.messages.set_room(Some(room_id));
                         self.vim.focus = FocusPanel::Messages;
+                    }
+                } else if self.vim.focus == FocusPanel::Members
+                    && let Some(member) = self.members_list.selected_member()
+                {
+                    self.pending_dm = Some(member.user_id.clone());
+                }
+            }
+            InputResult::CallMember => {
+                if self.vim.focus == FocusPanel::Members
+                    && let Some(member) = self.members_list.selected_member()
+                {
+                    if self.call_info.is_some() {
+                        self.last_error = Some("Already in a call".to_string());
+                    } else if let Some(room_id) = self.messages.current_room_id.clone() {
+                        let call_id = uuid::Uuid::new_v4().to_string();
+                        let user_id = member.user_id.clone();
+                        self.call_info = Some(CallInfo::new_outgoing(
+                            call_id.clone(),
+                            room_id.clone(),
+                            user_id,
+                        ));
+                        if let Some(ref tx) = self.call_cmd_tx {
+                            let _ = tx.send(CallCommand::Initiate {
+                                call_id,
+                                room_id,
+                            });
+                        }
+                    } else {
+                        self.last_error = Some("No room selected".to_string());
                     }
                 }
             }
@@ -504,5 +539,9 @@ impl App {
 
     pub fn take_pending_leave(&mut self) -> Option<String> {
         self.pending_leave.take()
+    }
+
+    pub fn take_pending_dm(&mut self) -> Option<String> {
+        self.pending_dm.take()
     }
 }

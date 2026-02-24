@@ -53,6 +53,9 @@ pub enum AppEvent {
         room_id: String,
         members: Vec<RoomMember>,
     },
+    DmRoomReady {
+        room_id: String,
+    },
     // Sync events
     SyncError(String),
     SyncStatus(String),
