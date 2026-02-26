@@ -98,7 +98,6 @@ impl App {
                     );
                 }
                 self.login.password.clear();
-                self.auto_login_attempted = false;
                 self.auth = AuthState::LoggedIn {
                     user_id,
                     device_id,
@@ -115,7 +114,7 @@ impl App {
                 }
             }
             AppEvent::LoggedOut => {
-                self.auth = AuthState::LoggedOut;
+                let was_logged_in = self.auth.is_logged_in();
                 self.room_list = RoomListState::new();
                 self.messages = MessageState::new();
                 self.members_list = MemberListState::new();
@@ -125,6 +124,11 @@ impl App {
                 if self.pending_credential_clear {
                     self.pending_credential_clear = false;
                     crate::matrix::credentials::delete_credentials();
+                    self.auth = AuthState::LoggedOut;
+                } else if was_logged_in {
+                    self.auth = AuthState::Error(
+                        "Session expired — please log in again".to_string(),
+                    );
                 } else if !self.auto_login_attempted
                     && let Some(creds) = crate::matrix::credentials::load_credentials()
                 {
@@ -133,6 +137,8 @@ impl App {
                         username: creds.username,
                         password: creds.password,
                     });
+                } else {
+                    self.auth = AuthState::LoggedOut;
                 }
             }
             AppEvent::AutoLogin {
@@ -145,6 +151,7 @@ impl App {
                     self.login.homeserver = homeserver;
                     self.login.username = username;
                     self.login.password = password;
+                    self.login.cursor_pos = self.login.active_buffer().len();
                     self.auth = AuthState::AutoLoggingIn;
                 }
             }
