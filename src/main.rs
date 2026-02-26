@@ -11,10 +11,10 @@ mod ui;
 mod voip;
 
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::Result;
-use crossterm::event::{Event, EventStream};
+use crossterm::event::{Event, EventStream, KeyEventKind};
 use tokio::sync::Mutex;
 use tokio_stream::StreamExt;
 use tracing::{error, info};
@@ -113,9 +113,14 @@ async fn main() -> Result<()> {
         let mut reader = EventStream::new();
         while let Some(Ok(event)) = reader.next().await {
             match event {
-                Event::Key(key) => {
-                    let _ = input_tx.send(AppEvent::Key(key));
-                }
+                Event::Key(key) => match key.kind {
+                    KeyEventKind::Press | KeyEventKind::Repeat => {
+                        let _ = input_tx.send(AppEvent::Key(key));
+                    }
+                    KeyEventKind::Release => {
+                        let _ = input_tx.send(AppEvent::KeyRelease(key));
+                    }
+                },
                 Event::Resize(w, h) => {
                     let _ = input_tx.send(AppEvent::Resize(w, h));
                 }
@@ -136,6 +141,10 @@ async fn main() -> Result<()> {
         }
     });
 
+    // Shared audio config for CallManager
+    let shared_audio_config = Arc::new(std::sync::Mutex::new(app.config.audio.clone()));
+    let ptt_transmitting = app.ptt_transmitting.clone();
+
     // Spawn CallManager
     let (call_cmd_tx, call_cmd_rx) = voip::manager::command_channel();
     app.call_cmd_tx = Some(call_cmd_tx.clone());
@@ -143,6 +152,8 @@ async fn main() -> Result<()> {
         call_cmd_rx,
         event_tx.clone(),
         matrix_client.clone(),
+        shared_audio_config.clone(),
+        ptt_transmitting,
     );
     tokio::spawn(call_manager.run());
 
@@ -151,63 +162,28 @@ async fn main() -> Result<()> {
 
     // Main loop
     let render_interval = Duration::from_millis(config::RENDER_RATE_MS);
+    let mut last_render = Instant::now();
 
     loop {
-        // Tick effects before render
-        let term_size = tui.size()?;
-        let term_area = ratatui::layout::Rect::new(0, 0, term_size.width, term_size.height);
-        let dt = render_interval.as_millis() as u64;
-        app.effects.tick(dt, term_area);
-        app.chat_title_reveal.tick(dt);
-        app.members_title_reveal.tick(dt);
-        if let Some(ref info) = app.call_info {
-            app.call_popup.tick(dt, &info.state);
-        }
+        // Calculate time until next render is due
+        let until_render = render_interval.saturating_sub(last_render.elapsed());
 
-        // Render
-        tui.draw(|frame| ui::render(&app, frame))?;
-
-        // Check for login trigger
-        if app.is_logging_in() && !login_in_progress {
-            login_in_progress = true;
-            let (homeserver, username, password) = app.login_credentials();
-            let tx = event_tx.clone();
-            let client_holder = matrix_client.clone();
-            tokio::spawn(async move {
-                match matrix::client::login(&homeserver, &username, &password, &tx, accept_invalid_certs).await {
-                    Ok(client) => {
-                        *client_holder.lock().await = Some(client.clone());
-                        let sync_tx = tx.clone();
-                        tokio::spawn(async move {
-                            if let Err(e) =
-                                matrix::sync::start_sync(client, sync_tx.clone()).await
-                            {
-                                error!("Sync error: {}", e);
-                                let _ = sync_tx.send(AppEvent::SyncError(e.to_string()));
-                            }
-                        });
-                    }
-                    Err(e) => {
-                        error!("Login failed: {:#}", e);
-                        let _ = tx.send(AppEvent::LoginFailure(e.to_string()));
-                    }
-                }
-            });
-        }
-
-        // Reset login tracking when auth state changes away from LoggingIn
-        if !app.is_logging_in() {
-            login_in_progress = false;
-        }
-
-        // Wait for events with timeout for rendering
+        // Wait for at least one event, or wake when it's time to render
         tokio::select! {
             event = event_rx.recv() => {
                 match event {
                     Some(ev) => {
                         // Track room change for message fetching
                         let prev_room = app.messages.current_room_id.clone();
+
                         app.handle_event(ev);
+
+                        // Drain ALL remaining pending events so key events
+                        // are never buried behind MicLevel floods
+                        while let Ok(ev) = event_rx.try_recv() {
+                            app.handle_event(ev);
+                        }
+
                         let new_room = app.messages.current_room_id.clone();
 
                         // Fetch messages and members when room changes
@@ -361,7 +337,59 @@ async fn main() -> Result<()> {
                     None => break,
                 }
             }
-            _ = tokio::time::sleep(render_interval) => {}
+            _ = tokio::time::sleep(until_render) => {}
+        }
+
+        // Check for login trigger
+        if app.is_logging_in() && !login_in_progress {
+            login_in_progress = true;
+            let (homeserver, username, password) = app.login_credentials();
+            let tx = event_tx.clone();
+            let client_holder = matrix_client.clone();
+            tokio::spawn(async move {
+                match matrix::client::login(&homeserver, &username, &password, &tx, accept_invalid_certs).await {
+                    Ok(client) => {
+                        *client_holder.lock().await = Some(client.clone());
+                        let sync_tx = tx.clone();
+                        tokio::spawn(async move {
+                            if let Err(e) =
+                                matrix::sync::start_sync(client, sync_tx.clone()).await
+                            {
+                                error!("Sync error: {}", e);
+                                let _ = sync_tx.send(AppEvent::SyncError(e.to_string()));
+                            }
+                        });
+                    }
+                    Err(e) => {
+                        error!("Login failed: {:#}", e);
+                        let _ = tx.send(AppEvent::LoginFailure(e.to_string()));
+                    }
+                }
+            });
+        }
+
+        // Reset login tracking when auth state changes away from LoggingIn
+        if !app.is_logging_in() {
+            login_in_progress = false;
+        }
+
+        // Tick + render only when render_interval has elapsed
+        let now = Instant::now();
+        let elapsed = now.duration_since(last_render);
+        if elapsed >= render_interval {
+            let dt = elapsed.as_millis() as u64;
+            last_render = now;
+
+            let term_size = tui.size()?;
+            let term_area = ratatui::layout::Rect::new(0, 0, term_size.width, term_size.height);
+            app.effects.tick(dt, term_area);
+            app.chat_title_reveal.tick(dt);
+            app.members_title_reveal.tick(dt);
+            if let Some(ref info) = app.call_info {
+                app.call_popup.tick(dt, &info.state);
+            }
+
+            tui.draw(|frame| ui::render(&app, frame))?;
         }
 
         if !app.running {
