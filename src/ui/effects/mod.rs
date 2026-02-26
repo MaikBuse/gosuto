@@ -1,5 +1,8 @@
 pub mod glitch;
 pub mod matrix_rain;
+pub mod text_reveal;
+
+pub use text_reveal::TextReveal;
 
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;

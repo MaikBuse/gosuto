@@ -3,7 +3,7 @@ use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::Frame;
 
-use crate::ui::effects::Xorshift64;
+use crate::ui::effects::{TextReveal, Xorshift64};
 use crate::ui::theme;
 use crate::voip::{CallInfo, CallState};
 
@@ -11,19 +11,12 @@ const POPUP_WIDTH: u16 = 52;
 const POPUP_HEIGHT: u16 = 13;
 const WAVEFORM_LEN: usize = 38;
 
-const SCRAMBLE_CHARS: &[char] = &[
-    '░', '▒', '▓', '╳', '◊', 'ア', 'イ', 'ウ', 'エ', '0', '1', 'F', 'X', '█', '▌', '╌',
-];
 const WAVEFORM_CHARS: &[char] = &['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
-
-const REVEAL_MS_PER_CHAR: u64 = 40;
-const SCRAMBLE_PHASE_MS: u64 = 300;
 
 pub struct TransmissionPopup {
     rng: Xorshift64,
-    reveal_elapsed_ms: u64,
+    title_reveal: TextReveal,
     last_state: Option<CallState>,
-    scramble_seed: u64,
     pulse_phase: f32,
     waveform: [f32; WAVEFORM_LEN],
     waveform_targets: [f32; WAVEFORM_LEN],
@@ -38,9 +31,8 @@ impl TransmissionPopup {
     pub fn new() -> Self {
         Self {
             rng: Xorshift64::new(0xCAFE_BABE_DEAD_BEEF),
-            reveal_elapsed_ms: 0,
+            title_reveal: TextReveal::new(0xC0DE_CAFE_0003),
             last_state: None,
-            scramble_seed: 0,
             pulse_phase: 0.0,
             waveform: [0.0; WAVEFORM_LEN],
             waveform_targets: [0.0; WAVEFORM_LEN],
@@ -55,14 +47,11 @@ impl TransmissionPopup {
     pub fn tick(&mut self, dt_ms: u64, call_state: &CallState) {
         // Reset reveal on state change
         if self.last_state.as_ref() != Some(call_state) {
-            self.reveal_elapsed_ms = 0;
+            self.title_reveal.trigger();
             self.last_state = Some(call_state.clone());
-        } else {
-            self.reveal_elapsed_ms += dt_ms;
         }
 
-        // Pre-compute scramble seed for render purity
-        self.scramble_seed = self.rng.next();
+        self.title_reveal.tick(dt_ms);
 
         // Pulse phase — speed varies by state
         let pulse_period_ms = match call_state {
@@ -221,8 +210,6 @@ impl TransmissionPopup {
             CallState::Connecting => "ESTABLISHING LINK",
             CallState::Active => "TRANSMISSION ACTIVE",
         };
-        let title_chars: Vec<char> = title.chars().collect();
-
         let border_s = Style::default().fg(color).bg(theme::BG);
         let title_s = border_s.add_modifier(Modifier::BOLD);
 
@@ -234,23 +221,16 @@ impl TransmissionPopup {
         set_cell(buf, bounds, bracket_l + 1, area.y, ' ', border_s);
 
         // Text reveal effect
-        let mut scramble_rng = Xorshift64::new(self.scramble_seed);
-        for (i, &ch) in title_chars.iter().enumerate() {
+        let revealed_chars = self.title_reveal.render_chars(title);
+        for (i, ch) in revealed_chars.into_iter().enumerate() {
             let x = title_start + i as u16;
             if x >= area.x + area.width - 1 {
                 break;
             }
-            let revealed = self.reveal_elapsed_ms >= SCRAMBLE_PHASE_MS
-                && (i as u64) < (self.reveal_elapsed_ms - SCRAMBLE_PHASE_MS) / REVEAL_MS_PER_CHAR;
-            let display = if revealed {
-                ch
-            } else {
-                SCRAMBLE_CHARS[(scramble_rng.next() % SCRAMBLE_CHARS.len() as u64) as usize]
-            };
-            set_cell(buf, bounds, x, area.y, display, title_s);
+            set_cell(buf, bounds, x, area.y, ch, title_s);
         }
 
-        let bracket_r_space = title_start + title_chars.len() as u16;
+        let bracket_r_space = title_start + title.len() as u16;
         let bracket_r = bracket_r_space + 1;
         set_cell(buf, bounds, bracket_r_space, area.y, ' ', border_s);
         if bracket_r < area.x + area.width - 1 {

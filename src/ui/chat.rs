@@ -26,11 +26,11 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
         .map(|r| r.name.clone())
         .unwrap_or_else(|| "No room selected".to_string());
 
+    let title_text = format!(" > {} ", room_name);
+    let title_line = app.chat_title_reveal.render_line(&title_text, theme::title_style());
+
     let block = Block::default()
-        .title(Line::from(vec![Span::styled(
-            format!(" > {} ", room_name),
-            theme::title_style(),
-        )]))
+        .title(title_line)
         .borders(Borders::ALL)
         .border_style(border_style)
         .style(ratatui::style::Style::default().bg(theme::BG));

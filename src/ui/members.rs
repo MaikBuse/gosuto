@@ -32,8 +32,10 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
     let member_count = app.members_list.members.len();
     let title = format!(" MEMBERS ({}) ", member_count);
 
+    let title_line = app.members_title_reveal.render_line(&title, theme::title_style());
+
     let block = Block::default()
-        .title(Line::from(vec![Span::styled(title, theme::title_style())]))
+        .title(title_line)
         .borders(Borders::ALL)
         .border_style(border_style)
         .style(ratatui::style::Style::default().bg(theme::BG));

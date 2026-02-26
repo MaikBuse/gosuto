@@ -8,7 +8,7 @@ use crate::event::{AppEvent, EventSender};
 use crate::input::{self, CommandAction, FocusPanel, InputResult, VimState};
 use crate::state::{AuthState, MemberListState, MessageState, RoomListState};
 use crate::ui::call_overlay::TransmissionPopup;
-use crate::ui::effects::EffectsState;
+use crate::ui::effects::{EffectsState, TextReveal};
 use crate::ui::login::LoginState;
 use crate::voip::{CallCommand, CallCommandSender, CallInfo, CallState};
 
@@ -40,6 +40,8 @@ pub struct App {
     // Visual effects
     pub effects: EffectsState,
     pub call_popup: TransmissionPopup,
+    pub chat_title_reveal: TextReveal,
+    pub members_title_reveal: TextReveal,
 }
 
 impl App {
@@ -69,6 +71,8 @@ impl App {
             pending_credential_clear: false,
             effects: EffectsState::new(rain_enabled, glitch_enabled),
             call_popup: TransmissionPopup::new(),
+            chat_title_reveal: TextReveal::new(0xC0DE_CAFE_0001),
+            members_title_reveal: TextReveal::new(0xC0DE_CAFE_0002),
         }
     }
 
@@ -197,11 +201,13 @@ impl App {
             AppEvent::MembersLoaded { room_id, members } => {
                 if self.messages.current_room_id.as_deref() == Some(&room_id) {
                     self.members_list.set_members(&room_id, members);
+                    self.members_title_reveal.trigger();
                 }
             }
             AppEvent::DmRoomReady { room_id } => {
                 self.messages.set_room(Some(room_id));
                 self.vim.focus = FocusPanel::Messages;
+                self.chat_title_reveal.trigger();
             }
             AppEvent::SyncError(err) => {
                 self.last_error = Some(err);
@@ -352,6 +358,7 @@ impl App {
                         let room_id = room.id.clone();
                         self.messages.set_room(Some(room_id));
                         self.vim.focus = FocusPanel::Messages;
+                        self.chat_title_reveal.trigger();
                     }
                 } else if self.vim.focus == FocusPanel::Members
                     && let Some(member) = self.members_list.selected_member()

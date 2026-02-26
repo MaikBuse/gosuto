@@ -156,9 +156,12 @@ async fn main() -> Result<()> {
         // Tick effects before render
         let term_size = tui.size()?;
         let term_area = ratatui::layout::Rect::new(0, 0, term_size.width, term_size.height);
-        app.effects.tick(render_interval.as_millis() as u64, term_area);
+        let dt = render_interval.as_millis() as u64;
+        app.effects.tick(dt, term_area);
+        app.chat_title_reveal.tick(dt);
+        app.members_title_reveal.tick(dt);
         if let Some(ref info) = app.call_info {
-            app.call_popup.tick(render_interval.as_millis() as u64, &info.state);
+            app.call_popup.tick(dt, &info.state);
         }
 
         // Render
