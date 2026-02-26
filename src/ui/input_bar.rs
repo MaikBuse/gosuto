@@ -71,8 +71,8 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
             + prefix.len() as u16
             + match app.vim.mode {
                 VimMode::Insert => app.vim.input_cursor as u16,
-                VimMode::Command => app.vim.command_buffer.len() as u16,
-                VimMode::Normal => app.vim.search_query.len() as u16,
+                VimMode::Command => app.vim.command_buffer.len() as u16 + 1,
+                VimMode::Normal => app.vim.search_query.len() as u16 + 1,
             };
         let cursor_y = area.y + 1; // border
         frame.set_cursor_position((cursor_x, cursor_y));

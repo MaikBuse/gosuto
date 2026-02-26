@@ -216,7 +216,7 @@ pub fn render(login: &LoginState, auth_state: &AuthState, frame: &mut Frame) {
             LoginField::Username => (chunks[5], login.cursor_pos),
             LoginField::Password => (chunks[8], login.password.len()),
         };
-        let cursor_x = cursor_chunk.x + 1 + offset as u16;
+        let cursor_x = cursor_chunk.x + 2 + offset as u16;
         let cursor_y = cursor_chunk.y;
         frame.set_cursor_position((cursor_x.min(cursor_chunk.right() - 1), cursor_y));
     }
