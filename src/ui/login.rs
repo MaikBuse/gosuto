@@ -111,12 +111,8 @@ pub fn render(login: &LoginState, auth_state: &AuthState, frame: &mut Frame) {
     let form_height = 14u16;
     let form_area = centered_rect(form_width, form_height, area);
 
-    // Clear background
-    frame.render_widget(Clear, area);
-    frame.render_widget(
-        Paragraph::new("").style(ratatui::style::Style::default().bg(theme::BG)),
-        area,
-    );
+    // Clear the form area so rain doesn't bleed through the panel
+    frame.render_widget(Clear, form_area);
 
     let block = Block::default()
         .title(Line::from(vec![Span::styled(
@@ -128,7 +124,7 @@ pub fn render(login: &LoginState, auth_state: &AuthState, frame: &mut Frame) {
         .title_alignment(Alignment::Center)
         .borders(Borders::ALL)
         .border_style(theme::border_focused_style())
-        .style(ratatui::style::Style::default().bg(theme::BG));
+        .style(ratatui::style::Style::default().bg(theme::BLACK));
 
     let inner = block.inner(form_area);
     frame.render_widget(block, form_area);
