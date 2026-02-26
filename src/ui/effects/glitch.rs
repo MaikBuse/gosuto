@@ -31,7 +31,7 @@ pub struct GlitchEffect {
 impl GlitchEffect {
     pub fn new() -> Self {
         let mut rng = Xorshift64::new(0x6117_C43D_C0FF_EE42);
-        let cooldown = rng.next_u32_range(2000, 6000);
+        let cooldown = rng.next_u32_range(2666, 8000);
         Self {
             rng,
             cooldown_ms: cooldown,
@@ -54,7 +54,7 @@ impl GlitchEffect {
             for _ in 0..band_count {
                 self.spawn_band(max_height);
             }
-            self.cooldown_ms = self.rng.next_u32_range(2000, 6000);
+            self.cooldown_ms = self.rng.next_u32_range(2666, 8000);
         }
     }
 

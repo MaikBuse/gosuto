@@ -10,34 +10,27 @@ use crate::state::AuthState;
 use crate::ui::theme;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FormMode {
+    Login,
+    Register,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LoginField {
     Homeserver,
     Username,
     Password,
-}
-
-impl LoginField {
-    pub fn next(self) -> Self {
-        match self {
-            LoginField::Homeserver => LoginField::Username,
-            LoginField::Username => LoginField::Password,
-            LoginField::Password => LoginField::Homeserver,
-        }
-    }
-
-    pub fn prev(self) -> Self {
-        match self {
-            LoginField::Homeserver => LoginField::Password,
-            LoginField::Username => LoginField::Homeserver,
-            LoginField::Password => LoginField::Username,
-        }
-    }
+    ConfirmPassword,
+    RegistrationToken,
 }
 
 pub struct LoginState {
+    pub mode: FormMode,
     pub homeserver: String,
     pub username: String,
     pub password: String,
+    pub confirm_password: String,
+    pub registration_token: String,
     pub focused_field: LoginField,
     pub cursor_pos: usize,
 }
@@ -45,12 +38,49 @@ pub struct LoginState {
 impl LoginState {
     pub fn new() -> Self {
         Self {
+            mode: FormMode::Login,
             homeserver: "https://matrix.org".to_string(),
             username: String::new(),
             password: String::new(),
+            confirm_password: String::new(),
+            registration_token: String::new(),
             focused_field: LoginField::Username,
             cursor_pos: 0,
         }
+    }
+
+    fn field_order(&self) -> &[LoginField] {
+        match self.mode {
+            FormMode::Login => &[
+                LoginField::Homeserver,
+                LoginField::Username,
+                LoginField::Password,
+            ],
+            FormMode::Register => &[
+                LoginField::Homeserver,
+                LoginField::Username,
+                LoginField::Password,
+                LoginField::ConfirmPassword,
+                LoginField::RegistrationToken,
+            ],
+        }
+    }
+
+    pub fn toggle_mode(&mut self) {
+        self.mode = match self.mode {
+            FormMode::Login => FormMode::Register,
+            FormMode::Register => {
+                // Snap to Password if on a register-only field
+                if matches!(
+                    self.focused_field,
+                    LoginField::ConfirmPassword | LoginField::RegistrationToken
+                ) {
+                    self.focused_field = LoginField::Password;
+                    self.cursor_pos = self.password.len();
+                }
+                FormMode::Login
+            }
+        };
     }
 
     pub fn active_buffer(&self) -> &str {
@@ -58,6 +88,8 @@ impl LoginState {
             LoginField::Homeserver => &self.homeserver,
             LoginField::Username => &self.username,
             LoginField::Password => &self.password,
+            LoginField::ConfirmPassword => &self.confirm_password,
+            LoginField::RegistrationToken => &self.registration_token,
         }
     }
 
@@ -66,6 +98,8 @@ impl LoginState {
             LoginField::Homeserver => &mut self.homeserver,
             LoginField::Username => &mut self.username,
             LoginField::Password => &mut self.password,
+            LoginField::ConfirmPassword => &mut self.confirm_password,
+            LoginField::RegistrationToken => &mut self.registration_token,
         }
     }
 
@@ -93,12 +127,22 @@ impl LoginState {
     }
 
     pub fn next_field(&mut self) {
-        self.focused_field = self.focused_field.next();
+        let order = self.field_order();
+        let pos = order
+            .iter()
+            .position(|f| *f == self.focused_field)
+            .unwrap_or(0);
+        self.focused_field = order[(pos + 1) % order.len()];
         self.cursor_pos = self.active_buffer().len();
     }
 
     pub fn prev_field(&mut self) {
-        self.focused_field = self.focused_field.prev();
+        let order = self.field_order();
+        let pos = order
+            .iter()
+            .position(|f| *f == self.focused_field)
+            .unwrap_or(0);
+        self.focused_field = order[(pos + order.len() - 1) % order.len()];
         self.cursor_pos = self.active_buffer().len();
     }
 }
@@ -106,9 +150,11 @@ impl LoginState {
 pub fn render(login: &LoginState, auth_state: &AuthState, frame: &mut Frame) {
     let area = frame.area();
 
+    let is_register = login.mode == FormMode::Register;
+
     // Center the login form
     let form_width = 50u16.min(area.width.saturating_sub(4));
-    let form_height = 14u16;
+    let form_height = if is_register { 20u16 } else { 14u16 };
     let form_area = centered_rect(form_width, form_height, area);
 
     // Clear the form area so rain doesn't bleed through the panel
@@ -129,31 +175,47 @@ pub fn render(login: &LoginState, auth_state: &AuthState, frame: &mut Frame) {
     let inner = block.inner(form_area);
     frame.render_widget(block, form_area);
 
+    let mut constraints = vec![
+        Constraint::Length(1), // [0] title spacer
+        Constraint::Length(1), // [1] homeserver label
+        Constraint::Length(1), // [2] homeserver input
+        Constraint::Length(1), // [3] spacer
+        Constraint::Length(1), // [4] username label
+        Constraint::Length(1), // [5] username input
+        Constraint::Length(1), // [6] spacer
+        Constraint::Length(1), // [7] password label
+        Constraint::Length(1), // [8] password input
+    ];
+
+    // Register mode: extra fields
+    if is_register {
+        constraints.push(Constraint::Length(1)); // [9] spacer
+        constraints.push(Constraint::Length(1)); // [10] confirm password label
+        constraints.push(Constraint::Length(1)); // [11] confirm password input
+        constraints.push(Constraint::Length(1)); // [12] spacer
+        constraints.push(Constraint::Length(1)); // [13] token label
+        constraints.push(Constraint::Length(1)); // [14] token input
+    }
+
+    let status_idx = constraints.len();
+    constraints.push(Constraint::Length(1)); // spacer before status
+    constraints.push(Constraint::Length(1)); // status/error
+    constraints.push(Constraint::Min(0)); // remaining
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1), // title spacer
-            Constraint::Length(1), // homeserver label
-            Constraint::Length(1), // homeserver input
-            Constraint::Length(1), // spacer
-            Constraint::Length(1), // username label
-            Constraint::Length(1), // username input
-            Constraint::Length(1), // spacer
-            Constraint::Length(1), // password label
-            Constraint::Length(1), // password input
-            Constraint::Length(1), // spacer
-            Constraint::Length(1), // status/error
-            Constraint::Min(0),   // remaining
-        ])
+        .constraints(constraints)
         .split(inner);
 
     // Title
+    let title_text = if is_register {
+        "Matrix Register"
+    } else {
+        "Matrix Login"
+    };
     frame.render_widget(
-        Paragraph::new(Line::from(Span::styled(
-            "Matrix Login",
-            theme::title_style(),
-        )))
-        .alignment(Alignment::Center),
+        Paragraph::new(Line::from(Span::styled(title_text, theme::title_style())))
+            .alignment(Alignment::Center),
         chunks[0],
     );
 
@@ -190,27 +252,58 @@ pub fn render(login: &LoginState, auth_state: &AuthState, frame: &mut Frame) {
         chunks[8],
     );
 
+    // Register-only fields
+    if is_register {
+        render_field(
+            frame,
+            "Confirm Password:",
+            &login.confirm_password,
+            true,
+            login.focused_field == LoginField::ConfirmPassword,
+            chunks[10],
+            chunks[11],
+        );
+
+        render_field(
+            frame,
+            "Token (optional):",
+            &login.registration_token,
+            true,
+            login.focused_field == LoginField::RegistrationToken,
+            chunks[13],
+            chunks[14],
+        );
+    }
+
     // Status/error
+    let mode_hint = if is_register {
+        "Tab: next field | Enter: register | F2: login | Ctrl+C: quit"
+    } else {
+        "Tab: next field | Enter: login | F2: register | Ctrl+C: quit"
+    };
     let status = match auth_state {
         AuthState::LoggingIn => Span::styled("Logging in...", theme::dim_style()),
         AuthState::AutoLoggingIn => Span::styled("Auto-logging in...", theme::dim_style()),
+        AuthState::Registering => Span::styled("Registering...", theme::dim_style()),
         AuthState::Error(e) => Span::styled(e.as_str(), theme::error_style()),
-        _ => Span::styled(
-            "Tab: next field | Enter: login | Ctrl+C: quit",
-            theme::dim_style(),
-        ),
+        _ => Span::styled(mode_hint, theme::dim_style()),
     };
     frame.render_widget(
         Paragraph::new(Line::from(status)).alignment(Alignment::Center),
-        chunks[10],
+        chunks[status_idx + 1],
     );
 
     // Cursor
-    if !matches!(auth_state, AuthState::LoggingIn | AuthState::AutoLoggingIn) {
+    if !matches!(
+        auth_state,
+        AuthState::LoggingIn | AuthState::AutoLoggingIn | AuthState::Registering
+    ) {
         let (cursor_chunk, offset) = match login.focused_field {
             LoginField::Homeserver => (chunks[2], login.cursor_pos),
             LoginField::Username => (chunks[5], login.cursor_pos),
             LoginField::Password => (chunks[8], login.password.len()),
+            LoginField::ConfirmPassword => (chunks[11], login.confirm_password.len()),
+            LoginField::RegistrationToken => (chunks[14], login.registration_token.len()),
         };
         let cursor_x = cursor_chunk.x + 2 + offset as u16;
         let cursor_y = cursor_chunk.y;
@@ -315,8 +408,9 @@ mod tests {
     }
 
     #[test]
-    fn next_field_cycles_correctly() {
+    fn next_field_cycles_correctly_login() {
         let mut state = LoginState::new();
+        assert_eq!(state.mode, FormMode::Login);
         // Starts at Username
         assert_eq!(state.focused_field, LoginField::Username);
         state.next_field();
@@ -328,7 +422,7 @@ mod tests {
     }
 
     #[test]
-    fn prev_field_cycles_correctly() {
+    fn prev_field_cycles_correctly_login() {
         let mut state = LoginState::new();
         assert_eq!(state.focused_field, LoginField::Username);
         state.prev_field();
@@ -337,6 +431,29 @@ mod tests {
         assert_eq!(state.focused_field, LoginField::Password);
         state.prev_field();
         assert_eq!(state.focused_field, LoginField::Username);
+    }
+
+    #[test]
+    fn next_field_cycles_correctly_register() {
+        let mut state = LoginState::new();
+        state.toggle_mode();
+        assert_eq!(state.mode, FormMode::Register);
+        state.focused_field = LoginField::Password;
+        state.next_field();
+        assert_eq!(state.focused_field, LoginField::ConfirmPassword);
+        state.next_field();
+        assert_eq!(state.focused_field, LoginField::RegistrationToken);
+        state.next_field();
+        assert_eq!(state.focused_field, LoginField::Homeserver);
+    }
+
+    #[test]
+    fn toggle_mode_snaps_field() {
+        let mut state = LoginState::new();
+        state.toggle_mode(); // -> Register
+        state.focused_field = LoginField::ConfirmPassword;
+        state.toggle_mode(); // -> Login, should snap to Password
+        assert_eq!(state.focused_field, LoginField::Password);
     }
 
     #[test]

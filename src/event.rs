@@ -17,6 +17,7 @@ pub enum AppEvent {
         homeserver: String,
     },
     LoginFailure(String),
+    RegisterFailure(String),
     LoggedOut,
     AutoLogin {
         homeserver: String,

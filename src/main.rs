@@ -50,6 +50,14 @@ async fn main() -> Result<()> {
     // Initialize terminal
     let mut tui = terminal::init()?;
 
+    // Restore terminal on panic so spawned-task panics produce readable output
+    // instead of corrupting the raw-mode terminal.
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let _ = terminal::restore();
+        default_hook(info);
+    }));
+
     // Load config
     let walrust_config = config::load_config();
     info!("Config: {:?}", walrust_config);
@@ -157,8 +165,9 @@ async fn main() -> Result<()> {
     );
     tokio::spawn(call_manager.run());
 
-    // Track login state to avoid re-triggering
+    // Track login/registration state to avoid re-triggering
     let mut login_in_progress = false;
+    let mut registration_in_progress = false;
 
     // Main loop
     let render_interval = Duration::from_millis(config::RENDER_RATE_MS);
@@ -371,6 +380,48 @@ async fn main() -> Result<()> {
         // Reset login tracking when auth state changes away from LoggingIn
         if !app.is_logging_in() {
             login_in_progress = false;
+        }
+
+        // Check for registration trigger
+        if app.is_registering() && !registration_in_progress {
+            registration_in_progress = true;
+            let (homeserver, username, password, token) = app.registration_credentials();
+            let tx = event_tx.clone();
+            let client_holder = matrix_client.clone();
+            tokio::spawn(async move {
+                match matrix::client::register(
+                    &homeserver,
+                    &username,
+                    &password,
+                    &token,
+                    &tx,
+                    accept_invalid_certs,
+                )
+                .await
+                {
+                    Ok(client) => {
+                        *client_holder.lock().await = Some(client.clone());
+                        let sync_tx = tx.clone();
+                        tokio::spawn(async move {
+                            if let Err(e) =
+                                matrix::sync::start_sync(client, sync_tx.clone()).await
+                            {
+                                error!("Sync error: {}", e);
+                                let _ = sync_tx.send(AppEvent::SyncError(e.to_string()));
+                            }
+                        });
+                    }
+                    Err(e) => {
+                        error!("Registration failed: {:#}", e);
+                        let _ = tx.send(AppEvent::RegisterFailure(e.to_string()));
+                    }
+                }
+            });
+        }
+
+        // Reset registration tracking
+        if !app.is_registering() {
+            registration_in_progress = false;
         }
 
         // Tick + render only when render_interval has elapsed

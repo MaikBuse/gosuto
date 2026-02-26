@@ -193,6 +193,7 @@ impl App {
                     );
                 }
                 self.login.password.clear();
+                self.login.confirm_password.clear();
                 self.auth = AuthState::LoggedIn {
                     user_id,
                     device_id,
@@ -207,6 +208,9 @@ impl App {
                 } else {
                     self.auth = AuthState::Error(err);
                 }
+            }
+            AppEvent::RegisterFailure(err) => {
+                self.auth = AuthState::Error(err);
             }
             AppEvent::LoggedOut => {
                 let was_logged_in = self.auth.is_logged_in();
@@ -387,14 +391,24 @@ impl App {
             return;
         }
 
-        if matches!(self.auth, AuthState::LoggingIn | AuthState::AutoLoggingIn) {
+        if matches!(
+            self.auth,
+            AuthState::LoggingIn | AuthState::AutoLoggingIn | AuthState::Registering
+        ) {
             return;
         }
 
         match key.code {
             KeyCode::Tab => self.login.next_field(),
             KeyCode::BackTab => self.login.prev_field(),
-            KeyCode::Enter => self.initiate_login(),
+            KeyCode::F(2) => self.login.toggle_mode(),
+            KeyCode::Enter => {
+                if self.login.mode == crate::ui::login::FormMode::Register {
+                    self.initiate_registration();
+                } else {
+                    self.initiate_login();
+                }
+            }
             KeyCode::Backspace => self.login.backspace(),
             KeyCode::Char(c) => self.login.insert_char(c),
             _ => {}
@@ -655,6 +669,31 @@ impl App {
             self.login.homeserver.clone(),
             self.login.username.clone(),
             self.login.password.clone(),
+        )
+    }
+
+    fn initiate_registration(&mut self) {
+        if self.login.username.is_empty() || self.login.password.is_empty() {
+            self.auth = AuthState::Error("Username and password required".to_string());
+            return;
+        }
+        if self.login.password != self.login.confirm_password {
+            self.auth = AuthState::Error("Passwords do not match".to_string());
+            return;
+        }
+        self.auth = AuthState::Registering;
+    }
+
+    pub fn is_registering(&self) -> bool {
+        matches!(self.auth, AuthState::Registering)
+    }
+
+    pub fn registration_credentials(&self) -> (String, String, String, String) {
+        (
+            self.login.homeserver.clone(),
+            self.login.username.clone(),
+            self.login.password.clone(),
+            self.login.registration_token.clone(),
         )
     }
 

@@ -139,7 +139,10 @@ pub async fn start_sync(client: Client, tx: EventSender) -> Result<()> {
 
 /// Check if an error indicates an auth failure (expired/invalid token).
 fn is_auth_error(error: &str) -> bool {
-    error.contains("[403]") || error.contains("[401]")
+    error.contains("[403]")
+        || error.contains("[401]")
+        || error.contains("M_UNKNOWN_TOKEN")
+        || error.contains("M_MISSING_TOKEN")
 }
 
 /// Clean up error messages for display.

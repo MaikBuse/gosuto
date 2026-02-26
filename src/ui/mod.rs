@@ -17,6 +17,14 @@ use crate::app::App;
 pub fn render(app: &App, frame: &mut Frame) {
     if !app.auth.is_logged_in() {
         login::render(&app.login, &app.auth, frame);
+        let area = frame.area();
+        if app.effects.enabled {
+            if let Some(effect_buf) = app.effects.render_to_buffer(area) {
+                effects::composite(frame.buffer_mut(), &effect_buf, area);
+            }
+        }
+        app.effects
+            .post_process_glitch(frame.buffer_mut(), &[area]);
         return;
     }
 
