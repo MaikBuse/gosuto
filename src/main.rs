@@ -182,6 +182,7 @@ async fn main() -> Result<()> {
                         });
                     }
                     Err(e) => {
+                        error!("Login failed: {:#}", e);
                         let _ = tx.send(AppEvent::LoginFailure(e.to_string()));
                     }
                 }

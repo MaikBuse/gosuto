@@ -79,6 +79,14 @@ pub async fn login(
     info!("Login requested for homeserver input: {}", homeserver);
 
     let store_path = config::store_path_for_homeserver(&homeserver)?;
+
+    // Fresh login — clear any stale store data (crypto keys from old devices)
+    if store_path.exists() {
+        info!("Clearing stale store at {}", store_path.display());
+        std::fs::remove_dir_all(&store_path)?;
+        std::fs::create_dir_all(&store_path)?;
+    }
+
     info!("Using per-server store at {}", store_path.display());
 
     let client = {
