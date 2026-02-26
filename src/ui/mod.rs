@@ -1,5 +1,6 @@
 pub mod call_overlay;
 pub mod chat;
+pub mod completion_popup;
 pub mod effects;
 pub mod input_bar;
 pub mod layout;
@@ -41,6 +42,9 @@ pub fn render(app: &App, frame: &mut Frame) {
     let content_panels = [layout.room_list, layout.chat_area, layout.members_list];
     app.effects
         .post_process_glitch(frame.buffer_mut(), &content_panels);
+
+    // Command auto-completion popup (rendered after effects so it isn't overwritten)
+    completion_popup::render(app, frame, layout.input_bar);
 
     // Render call overlay on top if there's an incoming call ringing
     if let Some(ref info) = app.call_info
