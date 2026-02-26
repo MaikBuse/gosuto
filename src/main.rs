@@ -157,6 +157,9 @@ async fn main() -> Result<()> {
         let term_size = tui.size()?;
         let term_area = ratatui::layout::Rect::new(0, 0, term_size.width, term_size.height);
         app.effects.tick(render_interval.as_millis() as u64, term_area);
+        if let Some(ref info) = app.call_info {
+            app.call_popup.tick(render_interval.as_millis() as u64, &info.state);
+        }
 
         // Render
         tui.draw(|frame| ui::render(&app, frame))?;

@@ -11,6 +11,29 @@ pub const RENDER_RATE_MS: u64 = 50;
 pub struct WalrustConfig {
     #[serde(default)]
     pub network: NetworkConfig,
+    #[serde(default)]
+    pub effects: EffectsConfig,
+}
+
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
+pub struct EffectsConfig {
+    #[serde(default = "default_true")]
+    pub rain: bool,
+    #[serde(default = "default_true")]
+    pub glitch: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+impl Default for EffectsConfig {
+    fn default() -> Self {
+        Self {
+            rain: true,
+            glitch: true,
+        }
+    }
 }
 
 #[derive(Debug, Default, serde::Deserialize, serde::Serialize)]
@@ -65,6 +88,24 @@ pub fn load_config() -> WalrustConfig {
             }
             config
         }
+    }
+}
+
+pub fn save_config(config: &WalrustConfig) {
+    let path = match config_dir() {
+        Ok(dir) => dir.join("config.toml"),
+        Err(_) => return,
+    };
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    match toml::to_string_pretty(config) {
+        Ok(contents) => {
+            if let Err(e) = std::fs::write(&path, &contents) {
+                info!("Could not write config to {}: {}", path.display(), e);
+            }
+        }
+        Err(e) => info!("Could not serialize config: {}", e),
     }
 }
 

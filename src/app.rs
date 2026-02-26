@@ -7,6 +7,7 @@ use crate::config::WalrustConfig;
 use crate::event::{AppEvent, EventSender};
 use crate::input::{self, CommandAction, FocusPanel, InputResult, VimState};
 use crate::state::{AuthState, MemberListState, MessageState, RoomListState};
+use crate::ui::call_overlay::TransmissionPopup;
 use crate::ui::effects::EffectsState;
 use crate::ui::login::LoginState;
 use crate::voip::{CallCommand, CallCommandSender, CallInfo, CallState};
@@ -38,10 +39,13 @@ pub struct App {
     pub pending_credential_clear: bool,
     // Visual effects
     pub effects: EffectsState,
+    pub call_popup: TransmissionPopup,
 }
 
 impl App {
     pub fn new(event_tx: EventSender, config: WalrustConfig) -> Self {
+        let rain_enabled = config.effects.rain;
+        let glitch_enabled = config.effects.glitch;
         Self {
             running: true,
             vim: VimState::new(),
@@ -63,7 +67,8 @@ impl App {
             call_cmd_tx: None,
             auto_login_attempted: false,
             pending_credential_clear: false,
-            effects: EffectsState::new(),
+            effects: EffectsState::new(rain_enabled, glitch_enabled),
+            call_popup: TransmissionPopup::new(),
         }
     }
 
@@ -355,12 +360,13 @@ impl App {
                 }
             }
             InputResult::CallMember => {
-                if self.vim.focus == FocusPanel::Members
+                if self.call_info.is_some() {
+                    // Toggle: c during active call = hangup
+                    self.handle_command(CommandAction::Hangup);
+                } else if self.vim.focus == FocusPanel::Members
                     && let Some(member) = self.members_list.selected_member()
                 {
-                    if self.call_info.is_some() {
-                        self.last_error = Some("Already in a call".to_string());
-                    } else if let Some(room_id) = self.messages.current_room_id.clone() {
+                    if let Some(room_id) = self.messages.current_room_id.clone() {
                         let call_id = uuid::Uuid::new_v4().to_string();
                         let user_id = member.user_id.clone();
                         self.call_info = Some(CallInfo::new_outgoing(
@@ -378,6 +384,12 @@ impl App {
                         self.last_error = Some("No room selected".to_string());
                     }
                 }
+            }
+            InputResult::AnswerCall => {
+                self.handle_command(CommandAction::Answer);
+            }
+            InputResult::RejectCall => {
+                self.handle_command(CommandAction::Reject);
             }
             InputResult::SwitchPanel => {
                 self.vim.focus = match self.vim.focus {
@@ -527,9 +539,13 @@ impl App {
             }
             CommandAction::Rain => {
                 self.effects.toggle();
+                self.config.effects.rain = self.effects.enabled;
+                crate::config::save_config(&self.config);
             }
             CommandAction::Glitch => {
                 self.effects.toggle_glitch();
+                self.config.effects.glitch = self.effects.glitch_enabled;
+                crate::config::save_config(&self.config);
             }
         }
     }

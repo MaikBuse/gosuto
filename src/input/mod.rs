@@ -24,6 +24,8 @@ pub enum InputResult {
     Search(String),
     ClearSearch,
     CallMember,
+    AnswerCall,
+    RejectCall,
 }
 
 #[derive(Debug, Clone)]

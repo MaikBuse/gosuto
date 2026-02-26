@@ -13,8 +13,6 @@ pub mod theme;
 use ratatui::Frame;
 
 use crate::app::App;
-use crate::voip::CallState;
-
 pub fn render(app: &App, frame: &mut Frame) {
     if !app.auth.is_logged_in() {
         login::render(&app.login, &app.auth, frame);
@@ -46,10 +44,8 @@ pub fn render(app: &App, frame: &mut Frame) {
     // Command auto-completion popup (rendered after effects so it isn't overwritten)
     completion_popup::render(app, frame, layout.input_bar);
 
-    // Render call overlay on top if there's an incoming call ringing
-    if let Some(ref info) = app.call_info
-        && info.state == CallState::Ringing
-    {
-        call_overlay::render(info, frame);
+    // Render call overlay on top for any active call state
+    if let Some(ref info) = app.call_info {
+        call_overlay::render(&app.call_popup, info, frame);
     }
 }

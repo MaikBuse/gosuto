@@ -58,11 +58,11 @@ pub struct EffectsState {
 }
 
 impl EffectsState {
-    pub fn new() -> Self {
+    pub fn new(rain_enabled: bool, glitch_enabled: bool) -> Self {
         Self {
-            enabled: false,
+            enabled: rain_enabled,
             matrix_rain: MatrixRain::new(),
-            glitch_enabled: false,
+            glitch_enabled,
             glitch: GlitchEffect::new(),
         }
     }

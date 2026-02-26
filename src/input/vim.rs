@@ -1,5 +1,7 @@
 use std::fmt;
 
+use super::command;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VimMode {
     Normal,
@@ -25,6 +27,47 @@ pub enum FocusPanel {
 }
 
 #[derive(Debug)]
+pub struct CompletionState {
+    pub selected: Option<usize>,
+    pub match_count: usize,
+}
+
+impl CompletionState {
+    pub fn new(match_count: usize) -> Self {
+        Self {
+            selected: None,
+            match_count,
+        }
+    }
+
+    pub fn next(&mut self) {
+        if self.match_count == 0 {
+            return;
+        }
+        self.selected = Some(match self.selected {
+            Some(i) => (i + 1) % self.match_count,
+            None => 0,
+        });
+    }
+
+    pub fn prev(&mut self) {
+        if self.match_count == 0 {
+            return;
+        }
+        self.selected = Some(match self.selected {
+            Some(0) => self.match_count - 1,
+            Some(i) => i - 1,
+            None => self.match_count.saturating_sub(1),
+        });
+    }
+
+    pub fn reset(&mut self, match_count: usize) {
+        self.selected = None;
+        self.match_count = match_count;
+    }
+}
+
+#[derive(Debug)]
 pub struct VimState {
     pub mode: VimMode,
     pub focus: FocusPanel,
@@ -34,6 +77,7 @@ pub struct VimState {
     pub input_cursor: usize,
     pub search_query: String,
     pub searching: bool,
+    pub completion: CompletionState,
 }
 
 impl VimState {
@@ -47,6 +91,7 @@ impl VimState {
             input_cursor: 0,
             search_query: String::new(),
             searching: false,
+            completion: CompletionState::new(command::COMMANDS.len()),
         }
     }
 
@@ -59,12 +104,14 @@ impl VimState {
         self.mode = VimMode::Normal;
         self.pending_g = false;
         self.searching = false;
+        self.completion.reset(command::COMMANDS.len());
     }
 
     pub fn enter_command(&mut self) {
         self.mode = VimMode::Command;
         self.command_buffer.clear();
         self.pending_g = false;
+        self.completion.reset(command::COMMANDS.len());
     }
 
     #[allow(dead_code)]
