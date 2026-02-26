@@ -324,8 +324,8 @@ impl App {
             InputResult::MoveTop => match self.vim.focus {
                 FocusPanel::RoomList => self.room_list.move_top(),
                 FocusPanel::Messages => {
-                    // Scroll to top - could trigger pagination
-                    self.messages.scroll_offset = self.messages.messages.len().saturating_sub(1);
+                    // Scroll to top - rendering will clamp to actual max
+                    self.messages.scroll_offset = usize::MAX;
                 }
                 FocusPanel::Members => self.members_list.move_top(),
             },
@@ -520,6 +520,9 @@ impl App {
             }
             CommandAction::Rain => {
                 self.effects.toggle();
+            }
+            CommandAction::Glitch => {
+                self.effects.toggle_glitch();
             }
         }
     }

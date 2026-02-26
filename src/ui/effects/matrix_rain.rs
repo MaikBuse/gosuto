@@ -2,38 +2,18 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Style};
 
-use super::EffectLayer;
+use super::{EffectLayer, Xorshift64};
 
 /// Half-width Katakana range (U+FF66–FF9D): single-cell-wide in terminals
 const KATAKANA_START: u32 = 0xFF66;
 const KATAKANA_END: u32 = 0xFF9D;
 const KATAKANA_COUNT: u32 = KATAKANA_END - KATAKANA_START + 1;
 
-/// Minimal XorShift64 PRNG — no external dependency needed
-struct Xorshift64(u64);
+trait XorshiftCharExt {
+    fn next_char(&mut self) -> char;
+}
 
-impl Xorshift64 {
-    fn new(seed: u64) -> Self {
-        Self(if seed == 0 { 0xDEAD_BEEF_CAFE_BABE } else { seed })
-    }
-
-    fn next(&mut self) -> u64 {
-        let mut x = self.0;
-        x ^= x << 13;
-        x ^= x >> 7;
-        x ^= x << 17;
-        self.0 = x;
-        x
-    }
-
-    fn next_f32(&mut self) -> f32 {
-        (self.next() & 0xFFFF) as f32 / 65535.0
-    }
-
-    fn next_range(&mut self, min: f32, max: f32) -> f32 {
-        min + self.next_f32() * (max - min)
-    }
-
+impl XorshiftCharExt for Xorshift64 {
     fn next_char(&mut self) -> char {
         let idx = (self.next() % KATAKANA_COUNT as u64) as u32;
         char::from_u32(KATAKANA_START + idx).unwrap_or('ア')

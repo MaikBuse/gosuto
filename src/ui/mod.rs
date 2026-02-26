@@ -37,6 +37,11 @@ pub fn render(app: &App, frame: &mut Frame) {
         effects::composite(frame.buffer_mut(), &effect_buf, layout.members_list);
     }
 
+    // Glitch post-processing: displace content bands with chromatic aberration
+    let content_panels = [layout.room_list, layout.chat_area, layout.members_list];
+    app.effects
+        .post_process_glitch(frame.buffer_mut(), &content_panels);
+
     // Render call overlay on top if there's an incoming call ringing
     if let Some(ref info) = app.call_info
         && info.state == CallState::Ringing

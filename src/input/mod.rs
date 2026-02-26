@@ -38,4 +38,5 @@ pub enum CommandAction {
     Reject,
     Hangup,
     Rain,
+    Glitch,
 }

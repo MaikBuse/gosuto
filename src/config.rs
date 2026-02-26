@@ -93,8 +93,52 @@ pub fn store_path_for_homeserver(homeserver: &str) -> Result<PathBuf> {
     Ok(path)
 }
 
+/// Returns the store path for a homeserver without creating it.
+/// Use this for cleanup/deletion paths.
+pub fn store_path_for_homeserver_unchecked(homeserver: &str) -> Result<PathBuf> {
+    let hostname = url::Url::parse(homeserver)
+        .ok()
+        .and_then(|u| u.host_str().map(|h| h.to_string()))
+        .unwrap_or_else(|| homeserver.replace(['/', ':', '\\'], "_"));
+    Ok(data_dir()?.join("store").join(hostname))
+}
+
 pub fn log_path() -> Result<PathBuf> {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("log");
     std::fs::create_dir_all(&path)?;
     Ok(path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn store_path_extracts_hostname_from_url() {
+        let path = store_path_for_homeserver("https://matrix.org").unwrap();
+        assert_eq!(path.file_name().unwrap(), "matrix.org");
+    }
+
+    #[test]
+    fn store_path_strips_port_from_url() {
+        let path = store_path_for_homeserver("https://matrix.org:8448").unwrap();
+        assert_eq!(path.file_name().unwrap(), "matrix.org");
+    }
+
+    #[test]
+    fn store_path_sanitizes_non_url_input() {
+        let path = store_path_for_homeserver("not://valid").unwrap();
+        // url::Url::parse succeeds for "not://valid" with host "valid"
+        // but for truly unparseable input, it sanitizes slashes/colons
+        let name = path.file_name().unwrap().to_str().unwrap();
+        assert!(!name.contains('/'));
+        assert!(!name.contains('\\'));
+    }
+
+    #[test]
+    fn store_path_unchecked_matches_checked() {
+        let checked = store_path_for_homeserver("https://example.com").unwrap();
+        let unchecked = store_path_for_homeserver_unchecked("https://example.com").unwrap();
+        assert_eq!(checked, unchecked);
+    }
 }

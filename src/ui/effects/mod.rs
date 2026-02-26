@@ -1,3 +1,4 @@
+pub mod glitch;
 pub mod matrix_rain;
 
 use ratatui::buffer::Buffer;
@@ -5,7 +6,42 @@ use ratatui::layout::Rect;
 use ratatui::style::Color;
 
 use super::theme;
+use glitch::GlitchEffect;
 use matrix_rain::MatrixRain;
+
+/// Minimal XorShift64 PRNG — no external dependency needed
+pub(crate) struct Xorshift64(u64);
+
+impl Xorshift64 {
+    pub fn new(seed: u64) -> Self {
+        Self(if seed == 0 { 0xDEAD_BEEF_CAFE_BABE } else { seed })
+    }
+
+    pub fn next(&mut self) -> u64 {
+        let mut x = self.0;
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        self.0 = x;
+        x
+    }
+
+    pub fn next_f32(&mut self) -> f32 {
+        (self.next() & 0xFFFF) as f32 / 65535.0
+    }
+
+    pub fn next_range(&mut self, min: f32, max: f32) -> f32 {
+        min + self.next_f32() * (max - min)
+    }
+
+    pub fn next_u32_range(&mut self, min: u32, max: u32) -> u32 {
+        if min >= max {
+            return min;
+        }
+        let range = max - min;
+        min + (self.next() % range as u64) as u32
+    }
+}
 
 #[allow(dead_code)]
 pub trait EffectLayer {
@@ -17,6 +53,8 @@ pub trait EffectLayer {
 pub struct EffectsState {
     pub enabled: bool,
     matrix_rain: MatrixRain,
+    pub glitch_enabled: bool,
+    glitch: GlitchEffect,
 }
 
 impl EffectsState {
@@ -24,6 +62,8 @@ impl EffectsState {
         Self {
             enabled: false,
             matrix_rain: MatrixRain::new(),
+            glitch_enabled: false,
+            glitch: GlitchEffect::new(),
         }
     }
 
@@ -31,11 +71,17 @@ impl EffectsState {
         self.enabled = !self.enabled;
     }
 
+    pub fn toggle_glitch(&mut self) {
+        self.glitch_enabled = !self.glitch_enabled;
+    }
+
     pub fn tick(&mut self, dt_ms: u64, area: Rect) {
-        if !self.enabled {
-            return;
+        if self.enabled {
+            self.matrix_rain.tick(dt_ms, area);
         }
-        self.matrix_rain.tick(dt_ms, area);
+        if self.glitch_enabled {
+            self.glitch.tick(dt_ms, area.height);
+        }
     }
 
     pub fn render_to_buffer(&self, area: Rect) -> Option<Buffer> {
@@ -45,6 +91,12 @@ impl EffectsState {
         let mut buf = Buffer::empty(area);
         self.matrix_rain.render(&mut buf);
         Some(buf)
+    }
+
+    pub fn post_process_glitch(&self, buf: &mut Buffer, areas: &[Rect]) {
+        if self.glitch_enabled {
+            self.glitch.post_process(buf, areas);
+        }
     }
 }
 

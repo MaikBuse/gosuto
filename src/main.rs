@@ -85,6 +85,18 @@ async fn main() -> Result<()> {
         }
         Err(e) => {
             info!("Failed to restore session: {}", e);
+            // Clean up stale session and store to avoid repeated failures
+            if let Ok(session_path) = config::session_path() {
+                if let Ok(stored) = matrix::session::load_session(&session_path)
+                    && let Ok(store_path) = config::store_path_for_homeserver_unchecked(&stored.homeserver)
+                {
+                    info!("Removing stale store at {}", store_path.display());
+                    if let Err(e) = std::fs::remove_dir_all(&store_path) {
+                        info!("Could not remove store: {}", e);
+                    }
+                }
+                let _ = matrix::session::delete_session(&session_path);
+            }
             if let Some(creds) = matrix::credentials::load_credentials() {
                 let _ = event_tx.send(AppEvent::AutoLogin {
                     homeserver: creds.homeserver,

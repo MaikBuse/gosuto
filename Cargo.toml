@@ -15,7 +15,12 @@ tokio-stream = "0.1"
 futures = "0.3"
 
 # Matrix
-matrix-sdk = { version = "0.16", features = ["sqlite"] }
+matrix-sdk = { version = "0.16", default-features = false, features = [
+    "e2e-encryption",
+    "automatic-room-key-forwarding",
+    "sqlite",
+    "rustls-tls",
+] }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }

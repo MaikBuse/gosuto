@@ -271,3 +271,112 @@ fn centered_rect(width: u16, height: u16, area: Rect) -> Rect {
     let y = area.y + (area.height.saturating_sub(height)) / 2;
     Rect::new(x, y, width.min(area.width), height.min(area.height))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn insert_char_appends_at_cursor() {
+        let mut state = LoginState::new();
+        state.focused_field = LoginField::Homeserver;
+        state.cursor_pos = state.homeserver.len();
+        state.insert_char('!');
+        assert_eq!(state.homeserver, "https://matrix.org!");
+        assert_eq!(state.cursor_pos, "https://matrix.org!".len());
+    }
+
+    #[test]
+    fn insert_char_at_beginning() {
+        let mut state = LoginState::new();
+        state.focused_field = LoginField::Username;
+        state.cursor_pos = 0;
+        state.insert_char('a');
+        assert_eq!(state.username, "a");
+        assert_eq!(state.cursor_pos, 1);
+    }
+
+    #[test]
+    fn backspace_removes_char_before_cursor() {
+        let mut state = LoginState::new();
+        state.focused_field = LoginField::Username;
+        state.username = "hello".to_string();
+        state.cursor_pos = 5;
+        state.backspace();
+        assert_eq!(state.username, "hell");
+        assert_eq!(state.cursor_pos, 4);
+    }
+
+    #[test]
+    fn backspace_at_start_does_nothing() {
+        let mut state = LoginState::new();
+        state.focused_field = LoginField::Username;
+        state.username = "hello".to_string();
+        state.cursor_pos = 0;
+        state.backspace();
+        assert_eq!(state.username, "hello");
+        assert_eq!(state.cursor_pos, 0);
+    }
+
+    #[test]
+    fn next_field_cycles_correctly() {
+        let mut state = LoginState::new();
+        // Starts at Username
+        assert_eq!(state.focused_field, LoginField::Username);
+        state.next_field();
+        assert_eq!(state.focused_field, LoginField::Password);
+        state.next_field();
+        assert_eq!(state.focused_field, LoginField::Homeserver);
+        state.next_field();
+        assert_eq!(state.focused_field, LoginField::Username);
+    }
+
+    #[test]
+    fn prev_field_cycles_correctly() {
+        let mut state = LoginState::new();
+        assert_eq!(state.focused_field, LoginField::Username);
+        state.prev_field();
+        assert_eq!(state.focused_field, LoginField::Homeserver);
+        state.prev_field();
+        assert_eq!(state.focused_field, LoginField::Password);
+        state.prev_field();
+        assert_eq!(state.focused_field, LoginField::Username);
+    }
+
+    #[test]
+    fn field_switch_sets_cursor_to_end() {
+        let mut state = LoginState::new();
+        state.username = "user".to_string();
+        state.cursor_pos = 0; // cursor at start of username
+        state.next_field(); // move to password
+        assert_eq!(state.cursor_pos, 0); // password is empty
+        state.prev_field(); // back to username
+        assert_eq!(state.cursor_pos, 4); // cursor at end of "user"
+    }
+
+    #[test]
+    fn edit_homeserver_after_auto_login_populates() {
+        let mut state = LoginState::new();
+        // Simulate auto-login populating the homeserver field
+        state.homeserver = "https://auto.server.com".to_string();
+        state.username = "autouser".to_string();
+
+        // User tabs to homeserver field to change it
+        state.focused_field = LoginField::Homeserver;
+        state.cursor_pos = state.homeserver.len();
+
+        // Clear with repeated backspace
+        while state.cursor_pos > 0 {
+            state.backspace();
+        }
+        assert_eq!(state.homeserver, "");
+        assert_eq!(state.cursor_pos, 0);
+
+        // Type new domain
+        for c in "https://my.server.org".chars() {
+            state.insert_char(c);
+        }
+        assert_eq!(state.homeserver, "https://my.server.org");
+        assert_eq!(state.cursor_pos, "https://my.server.org".len());
+    }
+}

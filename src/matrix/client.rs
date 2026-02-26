@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use anyhow::{Context, Result};
 use matrix_sdk::{Client, config::SyncSettings};
 use tracing::info;
@@ -25,7 +27,15 @@ pub async fn try_restore_session(tx: &EventSender, accept_invalid_certs: bool) -
         builder = builder.disable_ssl_verification();
     }
 
-    let client = builder.build().await?;
+    let client = match builder.build().await {
+        Ok(c) => c,
+        Err(e) => {
+            // Server unreachable (DNS, network, etc.) — session is likely still valid.
+            // Return Ok(None) so main.rs does NOT delete session.json.
+            info!("Cannot reach homeserver during session restore, keeping session: {}", e);
+            return Ok(None);
+        }
+    };
 
     let session = matrix_sdk::authentication::matrix::MatrixSession {
         meta: matrix_sdk::SessionMeta {
@@ -103,18 +113,26 @@ pub async fn login(
         homeserver
     );
 
-    client
-        .matrix_auth()
-        .login_username(username, password)
-        .initial_device_display_name("walrust")
-        .await
-        .with_context(|| {
-            format!(
-                "Login failed against homeserver {} (resolved from input: {})",
-                client.homeserver(),
-                homeserver
-            )
-        })?;
+    tokio::time::timeout(
+        Duration::from_secs(30),
+        client
+            .matrix_auth()
+            .login_username(username, password)
+            .initial_device_display_name("walrust"),
+    )
+    .await
+    .map_err(|_| {
+        anyhow::anyhow!(
+            "Login timed out — server may be rate limiting. Wait a moment and try again."
+        )
+    })?
+    .with_context(|| {
+        format!(
+            "Login failed against homeserver {} (resolved from input: {})",
+            client.homeserver(),
+            homeserver
+        )
+    })?;
 
     let user_id = client
         .user_id()
@@ -157,13 +175,80 @@ pub async fn logout(client: &Client) -> Result<()> {
     let _ = client.matrix_auth().logout().await;
 
     // Clean up only this server's store
-    let store_path = config::store_path_for_homeserver(client.homeserver().as_str())?;
+    let store_path = config::store_path_for_homeserver_unchecked(client.homeserver().as_str())?;
     info!("Removing per-server store at {}", store_path.display());
-    let _ = std::fs::remove_dir_all(&store_path);
+    if let Err(e) = std::fs::remove_dir_all(&store_path) {
+        info!("Could not remove store: {}", e);
+    }
 
     Ok(())
 }
 
 pub fn default_sync_settings() -> SyncSettings {
     SyncSettings::default().timeout(std::time::Duration::from_secs(30))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normalize_plain_domain_prepends_https() {
+        assert_eq!(normalize_homeserver_url("matrix.org"), "https://matrix.org");
+    }
+
+    #[test]
+    fn normalize_preserves_https() {
+        assert_eq!(
+            normalize_homeserver_url("https://matrix.org"),
+            "https://matrix.org"
+        );
+    }
+
+    #[test]
+    fn normalize_preserves_http() {
+        assert_eq!(
+            normalize_homeserver_url("http://matrix.org"),
+            "http://matrix.org"
+        );
+    }
+
+    #[test]
+    fn normalize_strips_trailing_slashes() {
+        assert_eq!(normalize_homeserver_url("matrix.org/"), "https://matrix.org");
+        assert_eq!(
+            normalize_homeserver_url("matrix.org///"),
+            "https://matrix.org"
+        );
+    }
+
+    #[test]
+    fn normalize_trims_whitespace() {
+        assert_eq!(
+            normalize_homeserver_url("  matrix.org  "),
+            "https://matrix.org"
+        );
+    }
+
+    #[test]
+    fn normalize_preserves_port() {
+        assert_eq!(
+            normalize_homeserver_url("matrix.org:8448"),
+            "https://matrix.org:8448"
+        );
+    }
+
+    #[test]
+    fn normalize_preserves_path() {
+        assert_eq!(
+            normalize_homeserver_url("https://matrix.org/_matrix"),
+            "https://matrix.org/_matrix"
+        );
+    }
+
+    #[test]
+    fn normalize_empty_string() {
+        // Documents current behavior: empty input produces bare scheme
+        assert_eq!(normalize_homeserver_url(""), "https://");
+    }
 }

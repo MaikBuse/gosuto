@@ -36,6 +36,7 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
         .style(ratatui::style::Style::default().bg(theme::BG));
 
     let inner_height = area.height.saturating_sub(2) as usize; // borders
+    let inner_width = area.width.saturating_sub(2) as usize; // borders
 
     let messages = &app.messages.messages;
     if messages.is_empty() {
@@ -64,12 +65,7 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
         return;
     }
 
-    // Calculate visible range with scroll offset
-    let total = messages.len();
-    let end = total.saturating_sub(app.messages.scroll_offset);
-    let start = end.saturating_sub(inner_height);
-
-    let lines: Vec<Line> = messages[start..end]
+    let lines: Vec<Line> = messages
         .iter()
         .map(|msg| {
             let time = msg.timestamp.format("%H:%M").to_string();
@@ -103,7 +99,27 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
         })
         .collect();
 
-    let paragraph = Paragraph::new(lines).block(block).wrap(Wrap { trim: false });
+    // Compute total visual lines accounting for wrapping
+    let total_visual_lines: usize = if inner_width > 0 {
+        lines
+            .iter()
+            .map(|line| {
+                let w = line.width();
+                if w == 0 { 1 } else { (w + inner_width - 1) / inner_width }
+            })
+            .sum()
+    } else {
+        lines.len()
+    };
+
+    let max_scroll = total_visual_lines.saturating_sub(inner_height);
+    let clamped_offset = app.messages.scroll_offset.min(max_scroll);
+    let scroll_y = max_scroll.saturating_sub(clamped_offset);
+
+    let paragraph = Paragraph::new(lines)
+        .block(block)
+        .wrap(Wrap { trim: false })
+        .scroll((scroll_y as u16, 0));
 
     frame.render_widget(paragraph, area);
 }
