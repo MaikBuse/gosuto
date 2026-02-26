@@ -1,6 +1,8 @@
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Instant;
 
-use crossterm::event::{KeyCode, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use tracing::info;
 
 use crate::config::WalrustConfig;
@@ -11,6 +13,64 @@ use crate::ui::call_overlay::TransmissionPopup;
 use crate::ui::effects::{EffectsState, TextReveal};
 use crate::ui::login::LoginState;
 use crate::voip::{CallCommand, CallCommandSender, CallInfo, CallState};
+use crate::voip::audio::AudioPipeline;
+
+pub struct AudioSettingsState {
+    pub open: bool,
+    pub selected_field: usize,
+    pub input_devices: Vec<String>,
+    pub output_devices: Vec<String>,
+    pub input_device_idx: usize,
+    pub output_device_idx: usize,
+    pub input_volume: f32,
+    pub output_volume: f32,
+    pub voice_activity: bool,
+    pub sensitivity: f32,
+    pub push_to_talk: bool,
+    pub push_to_talk_key: Option<String>,
+    pub capturing_ptt_key: bool,
+    pub mic_level: f32,
+    pub mic_test_running: Arc<AtomicBool>,
+}
+
+impl AudioSettingsState {
+    pub fn new() -> Self {
+        Self {
+            open: false,
+            selected_field: 0,
+            input_devices: vec!["Default".to_string()],
+            output_devices: vec!["Default".to_string()],
+            input_device_idx: 0,
+            output_device_idx: 0,
+            input_volume: 1.0,
+            output_volume: 1.0,
+            voice_activity: false,
+            sensitivity: 0.15,
+            push_to_talk: false,
+            push_to_talk_key: None,
+            capturing_ptt_key: false,
+            mic_level: 0.0,
+            mic_test_running: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    pub fn visible_fields(&self) -> Vec<usize> {
+        let mut fields = vec![0, 1, 2, 3, 4];
+        if self.voice_activity {
+            fields.push(5);
+        }
+        fields.push(6);
+        if self.push_to_talk {
+            fields.push(7);
+        }
+        fields
+    }
+
+    pub fn current_field(&self) -> usize {
+        let visible = self.visible_fields();
+        visible.get(self.selected_field).copied().unwrap_or(0)
+    }
+}
 
 #[allow(dead_code)]
 pub struct App {
@@ -42,6 +102,9 @@ pub struct App {
     pub call_popup: TransmissionPopup,
     pub chat_title_reveal: TextReveal,
     pub members_title_reveal: TextReveal,
+    // Audio settings
+    pub audio_settings: AudioSettingsState,
+    pub ptt_transmitting: Arc<AtomicBool>,
 }
 
 impl App {
@@ -73,6 +136,8 @@ impl App {
             call_popup: TransmissionPopup::new(),
             chat_title_reveal: TextReveal::new(0xC0DE_CAFE_0001),
             members_title_reveal: TextReveal::new(0xC0DE_CAFE_0002),
+            audio_settings: AudioSettingsState::new(),
+            ptt_transmitting: Arc::new(AtomicBool::new(true)), // default: always transmit (no PTT)
         }
     }
 
@@ -86,10 +151,31 @@ impl App {
             AppEvent::Key(key) => {
                 if !self.auth.is_logged_in() {
                     self.handle_login_key(key);
+                } else if self.audio_settings.open {
+                    self.handle_audio_settings_key(key);
                 } else {
+                    // PTT: key press sets transmitting
+                    if self.config.audio.push_to_talk
+                        && self.call_info.is_some()
+                        && self.key_matches_ptt(&key)
+                    {
+                        self.ptt_transmitting.store(true, Ordering::Relaxed);
+                    }
                     let result = input::handle_key(key, &mut self.vim);
                     self.process_input(result);
                 }
+            }
+            AppEvent::KeyRelease(key) => {
+                // PTT: key release stops transmitting
+                if self.config.audio.push_to_talk
+                    && self.call_info.is_some()
+                    && self.key_matches_ptt(&key)
+                {
+                    self.ptt_transmitting.store(false, Ordering::Relaxed);
+                }
+            }
+            AppEvent::MicLevel(level) => {
+                self.audio_settings.mic_level = level;
             }
             AppEvent::Resize(_, _) => {}
             AppEvent::Tick => {}
@@ -554,6 +640,9 @@ impl App {
                 self.config.effects.glitch = self.effects.glitch_enabled;
                 crate::config::save_config(&self.config);
             }
+            CommandAction::AudioSettings => {
+                self.open_audio_settings();
+            }
         }
     }
 
@@ -583,5 +672,258 @@ impl App {
 
     pub fn take_pending_dm(&mut self) -> Option<String> {
         self.pending_dm.take()
+    }
+
+    // ── Audio Settings ──────────────────────────────────
+
+    fn open_audio_settings(&mut self) {
+        // Enumerate devices
+        let mut input_devices = vec!["Default".to_string()];
+        input_devices.extend(AudioPipeline::enumerate_input_devices());
+        let mut output_devices = vec!["Default".to_string()];
+        output_devices.extend(AudioPipeline::enumerate_output_devices());
+
+        // Find current device indices
+        let input_idx = self
+            .config
+            .audio
+            .input_device
+            .as_ref()
+            .and_then(|name| input_devices.iter().position(|d| d == name))
+            .unwrap_or(0);
+        let output_idx = self
+            .config
+            .audio
+            .output_device
+            .as_ref()
+            .and_then(|name| output_devices.iter().position(|d| d == name))
+            .unwrap_or(0);
+
+        self.audio_settings = AudioSettingsState {
+            open: true,
+            selected_field: 0,
+            input_devices,
+            output_devices,
+            input_device_idx: input_idx,
+            output_device_idx: output_idx,
+            input_volume: self.config.audio.input_volume,
+            output_volume: self.config.audio.output_volume,
+            voice_activity: self.config.audio.voice_activity,
+            sensitivity: self.config.audio.sensitivity,
+            push_to_talk: self.config.audio.push_to_talk,
+            push_to_talk_key: self.config.audio.push_to_talk_key.clone(),
+            capturing_ptt_key: false,
+            mic_level: 0.0,
+            mic_test_running: Arc::new(AtomicBool::new(false)),
+        };
+
+        // Start mic test
+        self.start_mic_test();
+    }
+
+    fn close_audio_settings(&mut self) {
+        // Stop mic test
+        self.audio_settings
+            .mic_test_running
+            .store(false, Ordering::Relaxed);
+
+        // Sync state back to config
+        let s = &self.audio_settings;
+        self.config.audio.input_device = if s.input_device_idx == 0 {
+            None
+        } else {
+            s.input_devices.get(s.input_device_idx).cloned()
+        };
+        self.config.audio.output_device = if s.output_device_idx == 0 {
+            None
+        } else {
+            s.output_devices.get(s.output_device_idx).cloned()
+        };
+        self.config.audio.input_volume = s.input_volume;
+        self.config.audio.output_volume = s.output_volume;
+        self.config.audio.voice_activity = s.voice_activity;
+        self.config.audio.sensitivity = s.sensitivity;
+        self.config.audio.push_to_talk = s.push_to_talk;
+        self.config.audio.push_to_talk_key = s.push_to_talk_key.clone();
+
+        // Update PTT transmitting default
+        if !self.config.audio.push_to_talk {
+            self.ptt_transmitting.store(true, Ordering::Relaxed);
+        } else {
+            self.ptt_transmitting.store(false, Ordering::Relaxed);
+        }
+
+        crate::config::save_config(&self.config);
+        self.audio_settings.open = false;
+    }
+
+    pub fn start_mic_test(&mut self) {
+        // Stop any existing mic test (old Arc stays false, old thread exits)
+        self.audio_settings.mic_test_running.store(false, Ordering::Relaxed);
+
+        // Create a fresh running flag for the new test
+        let running = Arc::new(AtomicBool::new(true));
+        self.audio_settings.mic_test_running = running.clone();
+
+        let device_name = if self.audio_settings.input_device_idx == 0 {
+            None
+        } else {
+            self.audio_settings
+                .input_devices
+                .get(self.audio_settings.input_device_idx)
+                .cloned()
+        };
+        let volume = self.audio_settings.input_volume;
+        let tx = self.event_tx.clone();
+
+        std::thread::spawn(move || {
+            if let Err(e) = AudioPipeline::start_mic_test(device_name.as_deref(), volume, tx, running) {
+                info!("Mic test error: {}", e);
+            }
+        });
+    }
+
+    fn handle_audio_settings_key(&mut self, key: KeyEvent) {
+        // Ctrl+C always quits
+        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
+            self.close_audio_settings();
+            self.running = false;
+            return;
+        }
+
+        // PTT key capture mode
+        if self.audio_settings.capturing_ptt_key {
+            let key_name = key_event_name(&key);
+            self.audio_settings.push_to_talk_key = Some(key_name);
+            self.audio_settings.capturing_ptt_key = false;
+            return;
+        }
+
+        let visible = self.audio_settings.visible_fields();
+        let max_sel = visible.len().saturating_sub(1);
+
+        match key.code {
+            KeyCode::Esc => {
+                self.close_audio_settings();
+            }
+            KeyCode::Char('j') | KeyCode::Down => {
+                self.audio_settings.selected_field =
+                    (self.audio_settings.selected_field + 1).min(max_sel);
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                self.audio_settings.selected_field =
+                    self.audio_settings.selected_field.saturating_sub(1);
+            }
+            KeyCode::Char('h') | KeyCode::Left => {
+                self.adjust_audio_field(-1);
+            }
+            KeyCode::Char('l') | KeyCode::Right => {
+                self.adjust_audio_field(1);
+            }
+            KeyCode::Enter | KeyCode::Char(' ') => {
+                let field = self.audio_settings.current_field();
+                match field {
+                    4 => self.audio_settings.voice_activity = !self.audio_settings.voice_activity,
+                    6 => self.audio_settings.push_to_talk = !self.audio_settings.push_to_talk,
+                    7 => self.audio_settings.capturing_ptt_key = true,
+                    _ => {}
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn adjust_audio_field(&mut self, dir: i32) {
+        let field = self.audio_settings.current_field();
+        match field {
+            0 => {
+                // Input device
+                let len = self.audio_settings.input_devices.len();
+                if dir > 0 {
+                    self.audio_settings.input_device_idx =
+                        (self.audio_settings.input_device_idx + 1) % len;
+                } else {
+                    self.audio_settings.input_device_idx =
+                        (self.audio_settings.input_device_idx + len - 1) % len;
+                }
+                // Restart mic test with new device
+                self.start_mic_test();
+            }
+            1 => {
+                // Output device
+                let len = self.audio_settings.output_devices.len();
+                if dir > 0 {
+                    self.audio_settings.output_device_idx =
+                        (self.audio_settings.output_device_idx + 1) % len;
+                } else {
+                    self.audio_settings.output_device_idx =
+                        (self.audio_settings.output_device_idx + len - 1) % len;
+                }
+            }
+            2 => {
+                // Input volume
+                let step = 0.05;
+                self.audio_settings.input_volume =
+                    (self.audio_settings.input_volume + dir as f32 * step).clamp(0.0, 1.0);
+            }
+            3 => {
+                // Output volume
+                let step = 0.05;
+                self.audio_settings.output_volume =
+                    (self.audio_settings.output_volume + dir as f32 * step).clamp(0.0, 1.0);
+            }
+            4 => {
+                // Voice activity toggle
+                self.audio_settings.voice_activity = dir > 0;
+            }
+            5 => {
+                // Sensitivity
+                let step = 0.05;
+                self.audio_settings.sensitivity =
+                    (self.audio_settings.sensitivity + dir as f32 * step).clamp(0.0, 1.0);
+            }
+            6 => {
+                // Push to talk toggle
+                self.audio_settings.push_to_talk = dir > 0;
+            }
+            _ => {}
+        }
+    }
+
+    fn key_matches_ptt(&self, key: &KeyEvent) -> bool {
+        if let Some(ref ptt_key) = self.config.audio.push_to_talk_key {
+            let name = key_event_name(key);
+            &name == ptt_key
+        } else {
+            false
+        }
+    }
+}
+
+fn key_event_name(key: &KeyEvent) -> String {
+    match key.code {
+        KeyCode::Char(c) => {
+            if c == ' ' {
+                "Space".to_string()
+            } else {
+                c.to_uppercase().to_string()
+            }
+        }
+        KeyCode::F(n) => format!("F{n}"),
+        KeyCode::Enter => "Enter".to_string(),
+        KeyCode::Tab => "Tab".to_string(),
+        KeyCode::Backspace => "Backspace".to_string(),
+        KeyCode::Left => "Left".to_string(),
+        KeyCode::Right => "Right".to_string(),
+        KeyCode::Up => "Up".to_string(),
+        KeyCode::Down => "Down".to_string(),
+        KeyCode::Home => "Home".to_string(),
+        KeyCode::End => "End".to_string(),
+        KeyCode::PageUp => "PageUp".to_string(),
+        KeyCode::PageDown => "PageDown".to_string(),
+        KeyCode::Insert => "Insert".to_string(),
+        KeyCode::Delete => "Delete".to_string(),
+        KeyCode::Esc => "Esc".to_string(),
+        _ => format!("{:?}", key.code),
     }
 }

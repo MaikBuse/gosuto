@@ -13,6 +13,49 @@ pub struct WalrustConfig {
     pub network: NetworkConfig,
     #[serde(default)]
     pub effects: EffectsConfig,
+    #[serde(default)]
+    pub audio: AudioConfig,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct AudioConfig {
+    pub input_device: Option<String>,
+    pub output_device: Option<String>,
+    #[serde(default = "default_volume")]
+    pub input_volume: f32,
+    #[serde(default = "default_volume")]
+    pub output_volume: f32,
+    #[serde(default)]
+    pub voice_activity: bool,
+    #[serde(default = "default_sensitivity")]
+    pub sensitivity: f32,
+    #[serde(default)]
+    pub push_to_talk: bool,
+    #[serde(default)]
+    pub push_to_talk_key: Option<String>,
+}
+
+impl Default for AudioConfig {
+    fn default() -> Self {
+        Self {
+            input_device: None,
+            output_device: None,
+            input_volume: 1.0,
+            output_volume: 1.0,
+            voice_activity: false,
+            sensitivity: 0.15,
+            push_to_talk: false,
+            push_to_talk_key: None,
+        }
+    }
+}
+
+fn default_volume() -> f32 {
+    1.0
+}
+
+fn default_sensitivity() -> f32 {
+    0.15
 }
 
 #[derive(Debug, serde::Deserialize, serde::Serialize)]

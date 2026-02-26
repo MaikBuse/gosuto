@@ -88,6 +88,13 @@ pub const COMMANDS: &[CommandDef] = &[
         description: "Toggle glitch effect",
         takes_arg: false,
     },
+    CommandDef {
+        name: "audio",
+        aliases: &["sound"],
+        syntax: ":audio",
+        description: "Audio configuration",
+        takes_arg: false,
+    },
 ];
 
 pub fn filtered_commands(prefix: &str) -> Vec<&'static CommandDef> {
@@ -258,6 +265,7 @@ fn parse_command(input: &str) -> InputResult {
         "hangup" | "end" => InputResult::Command(CommandAction::Hangup),
         "rain" | "matrix" | "effects" => InputResult::Command(CommandAction::Rain),
         "glitch" => InputResult::Command(CommandAction::Glitch),
+        "audio" | "sound" => InputResult::Command(CommandAction::AudioSettings),
         _ => InputResult::None,
     }
 }

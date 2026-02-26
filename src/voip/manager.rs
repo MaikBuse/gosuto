@@ -1,3 +1,4 @@
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -6,6 +7,7 @@ use tokio::sync::{mpsc, Mutex};
 use tracing::{error, info, warn};
 use webrtc::peer_connection::peer_connection_state::RTCPeerConnectionState;
 
+use crate::config::AudioConfig;
 use crate::event::{AppEvent, EventSender};
 use crate::voip::audio::AudioPipeline;
 use crate::voip::signaling;
@@ -87,6 +89,8 @@ pub struct CallManager {
     event_tx: EventSender,
     client: Arc<Mutex<Option<Client>>>,
     active_call: Option<ActiveCall>,
+    audio_config: Arc<std::sync::Mutex<AudioConfig>>,
+    transmitting: Arc<AtomicBool>,
 }
 
 impl CallManager {
@@ -94,12 +98,16 @@ impl CallManager {
         cmd_rx: CallCommandReceiver,
         event_tx: EventSender,
         client: Arc<Mutex<Option<Client>>>,
+        audio_config: Arc<std::sync::Mutex<AudioConfig>>,
+        transmitting: Arc<AtomicBool>,
     ) -> Self {
         Self {
             cmd_rx,
             event_tx,
             client,
             active_call: None,
+            audio_config,
+            transmitting,
         }
     }
 
@@ -208,7 +216,8 @@ impl CallManager {
 
         // Start audio capture
         let mut audio = AudioPipeline::new();
-        if let Err(e) = audio.start(webrtc.local_track.clone()) {
+        let audio_cfg = self.audio_config.lock().unwrap().clone();
+        if let Err(e) = audio.start(webrtc.local_track.clone(), &audio_cfg, self.transmitting.clone()) {
             error!("Failed to start audio capture: {}", e);
             let _ = webrtc.close().await;
             let _ = self.event_tx.send(AppEvent::CallError(format!("Audio error: {}", e)));
@@ -321,7 +330,8 @@ impl CallManager {
         };
 
         // Start audio capture
-        if let Err(e) = call.audio.start(call.webrtc.local_track.clone()) {
+        let audio_cfg = self.audio_config.lock().unwrap().clone();
+        if let Err(e) = call.audio.start(call.webrtc.local_track.clone(), &audio_cfg, self.transmitting.clone()) {
             error!("Failed to start audio for answer: {}", e);
             let _ = self.event_tx.send(AppEvent::CallError(format!("Audio error: {}", e)));
             self.cleanup().await;
@@ -528,7 +538,8 @@ impl CallManager {
             WebRtcEvent::RemoteTrack(track) => {
                 info!("Got remote audio track");
                 if let Some(ref mut call) = self.active_call {
-                    if let Err(e) = call.audio.add_playback(track) {
+                    let audio_cfg = self.audio_config.lock().unwrap().clone();
+                    if let Err(e) = call.audio.add_playback(track, &audio_cfg) {
                         error!("Failed to start playback: {}", e);
                     }
                 }

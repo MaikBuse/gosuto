@@ -1,3 +1,4 @@
+pub mod audio_settings;
 pub mod call_overlay;
 pub mod chat;
 pub mod completion_popup;
@@ -47,5 +48,10 @@ pub fn render(app: &App, frame: &mut Frame) {
     // Render call overlay on top for any active call state
     if let Some(ref info) = app.call_info {
         call_overlay::render(&app.call_popup, info, frame);
+    }
+
+    // Audio settings modal overlay
+    if app.audio_settings.open {
+        audio_settings::render(&app.audio_settings, frame);
     }
 }

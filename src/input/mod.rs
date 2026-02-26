@@ -41,4 +41,5 @@ pub enum CommandAction {
     Hangup,
     Rain,
     Glitch,
+    AudioSettings,
 }

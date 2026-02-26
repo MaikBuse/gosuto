@@ -86,6 +86,9 @@ pub enum AppEvent {
     },
     CallError(String),
     CallEnded,
+    // Audio settings events
+    MicLevel(f32),
+    KeyRelease(KeyEvent),
 }
 
 pub type EventSender = mpsc::UnboundedSender<AppEvent>;

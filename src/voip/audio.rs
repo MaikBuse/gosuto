@@ -12,6 +12,9 @@ use webrtc::media::Sample;
 use webrtc::track::track_local::track_local_static_sample::TrackLocalStaticSample;
 use webrtc::track::track_remote::TrackRemote;
 
+use crate::config::AudioConfig;
+use crate::event::{AppEvent, EventSender};
+
 const SAMPLE_RATE: u32 = 48000;
 const FRAME_SIZE: usize = 960; // 20ms at 48kHz
 
@@ -32,6 +35,46 @@ pub struct AudioPipeline {
     playback_stream: Option<SendStream>,
 }
 
+// ── Device enumeration ──────────────────────────────
+
+fn find_input_device(name: &str) -> Option<cpal::Device> {
+    let host = cpal::default_host();
+    host.input_devices()
+        .ok()?
+        .find(|d| d.description().ok().map(|desc| desc.name().to_string()).as_deref() == Some(name))
+}
+
+fn find_output_device(name: &str) -> Option<cpal::Device> {
+    let host = cpal::default_host();
+    host.output_devices()
+        .ok()?
+        .find(|d| d.description().ok().map(|desc| desc.name().to_string()).as_deref() == Some(name))
+}
+
+fn resolve_input_device(config: &AudioConfig) -> Result<cpal::Device> {
+    if let Some(ref name) = config.input_device {
+        if let Some(dev) = find_input_device(name) {
+            return Ok(dev);
+        }
+        warn!("Configured input device '{}' not found, using default", name);
+    }
+    cpal::default_host()
+        .default_input_device()
+        .ok_or_else(|| anyhow::anyhow!("No microphone found"))
+}
+
+fn resolve_output_device(config: &AudioConfig) -> Result<cpal::Device> {
+    if let Some(ref name) = config.output_device {
+        if let Some(dev) = find_output_device(name) {
+            return Ok(dev);
+        }
+        warn!("Configured output device '{}' not found, using default", name);
+    }
+    cpal::default_host()
+        .default_output_device()
+        .ok_or_else(|| anyhow::anyhow!("No audio output device found"))
+}
+
 impl AudioPipeline {
     /// Create a new AudioPipeline (not yet started)
     pub fn new() -> Self {
@@ -42,14 +85,38 @@ impl AudioPipeline {
         }
     }
 
+    /// Enumerate available input device names
+    pub fn enumerate_input_devices() -> Vec<String> {
+        let host = cpal::default_host();
+        host.input_devices()
+            .map(|devs| {
+                devs.filter_map(|d| d.description().ok().map(|desc| desc.name().to_string()))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Enumerate available output device names
+    pub fn enumerate_output_devices() -> Vec<String> {
+        let host = cpal::default_host();
+        host.output_devices()
+            .map(|devs| {
+                devs.filter_map(|d| d.description().ok().map(|desc| desc.name().to_string()))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
     /// Start capture and return the running flag
     pub fn start(
         &mut self,
         local_track: Arc<TrackLocalStaticSample>,
+        config: &AudioConfig,
+        transmitting: Arc<AtomicBool>,
     ) -> Result<Arc<AtomicBool>> {
         self.running.store(true, Ordering::Relaxed);
 
-        match Self::start_capture(local_track, self.running.clone()) {
+        match Self::start_capture(local_track, self.running.clone(), config, transmitting) {
             Ok(stream) => {
                 self.capture_stream = Some(SendStream(stream));
             }
@@ -63,8 +130,12 @@ impl AudioPipeline {
     }
 
     /// Add playback for a remote track
-    pub fn add_playback(&mut self, remote_track: Arc<TrackRemote>) -> Result<()> {
-        let stream = Self::start_playback(remote_track, self.running.clone())?;
+    pub fn add_playback(
+        &mut self,
+        remote_track: Arc<TrackRemote>,
+        config: &AudioConfig,
+    ) -> Result<()> {
+        let stream = Self::start_playback(remote_track, self.running.clone(), config)?;
         self.playback_stream = Some(SendStream(stream));
         Ok(())
     }
@@ -77,16 +148,75 @@ impl AudioPipeline {
         info!("Audio pipeline stopped");
     }
 
+    /// Start a mic test stream that captures audio and sends RMS levels.
+    /// Runs on the calling thread's audio context. Returns when `running` is set to false.
+    pub fn start_mic_test(
+        device_name: Option<&str>,
+        volume: f32,
+        level_tx: EventSender,
+        running: Arc<AtomicBool>,
+    ) -> Result<()> {
+        let host = cpal::default_host();
+        let device = if let Some(name) = device_name {
+            find_input_device(name)
+                .or_else(|| host.default_input_device())
+                .ok_or_else(|| anyhow::anyhow!("No microphone found"))?
+        } else {
+            host.default_input_device()
+                .ok_or_else(|| anyhow::anyhow!("No microphone found"))?
+        };
+
+        let config = cpal::StreamConfig {
+            channels: 1,
+            sample_rate: SAMPLE_RATE,
+            buffer_size: cpal::BufferSize::Default,
+        };
+
+        let running_flag = running.clone();
+        let vol = volume;
+
+        let stream = device.build_input_stream(
+            &config,
+            move |data: &[f32], _: &cpal::InputCallbackInfo| {
+                if !running_flag.load(Ordering::Relaxed) {
+                    return;
+                }
+                // Compute RMS
+                let sum_sq: f32 = data.iter().map(|&s| {
+                    let v = s * vol;
+                    v * v
+                }).sum();
+                let rms = (sum_sq / data.len().max(1) as f32).sqrt();
+                let _ = level_tx.send(AppEvent::MicLevel(rms.clamp(0.0, 1.0)));
+            },
+            move |err| {
+                error!("Mic test stream error: {}", err);
+            },
+            None,
+        )?;
+
+        stream.play()?;
+        info!("Mic test started");
+
+        // Block until running is set to false
+        while running.load(Ordering::Relaxed) {
+            std::thread::sleep(Duration::from_millis(50));
+        }
+
+        drop(stream);
+        info!("Mic test stopped");
+        Ok(())
+    }
+
     /// Start the audio capture pipeline.
-    /// Captures from default input device, Opus-encodes, and writes to the WebRTC track.
+    /// Captures from configured input device, Opus-encodes, and writes to the WebRTC track.
     fn start_capture(
         local_track: Arc<TrackLocalStaticSample>,
         running: Arc<AtomicBool>,
+        audio_config: &AudioConfig,
+        transmitting: Arc<AtomicBool>,
     ) -> Result<cpal::Stream> {
-        let host = cpal::default_host();
-        let device = host
-            .default_input_device()
-            .ok_or_else(|| anyhow::anyhow!("No microphone found"))?;
+        let device = resolve_input_device(audio_config)?;
 
         info!("Using input device: {:?}", device.description());
 
@@ -106,6 +236,9 @@ impl AudioPipeline {
 
         let running_flag = running.clone();
         let rt_handle = tokio::runtime::Handle::current();
+        let input_volume = audio_config.input_volume;
+        let voice_activity = audio_config.voice_activity;
+        let sensitivity = audio_config.sensitivity;
 
         // Buffer for accumulating samples to form complete frames
         let sample_buffer = Arc::new(std::sync::Mutex::new(Vec::<i16>::with_capacity(FRAME_SIZE * 2)));
@@ -117,11 +250,28 @@ impl AudioPipeline {
                     return;
                 }
 
-                // Convert f32 to i16
+                // PTT gate: if not transmitting, skip
+                if !transmitting.load(Ordering::Relaxed) {
+                    return;
+                }
+
+                // Convert f32 to i16 with volume
                 let samples: Vec<i16> = data
                     .iter()
-                    .map(|&s| (s * i16::MAX as f32) as i16)
+                    .map(|&s| ((s * input_volume).clamp(-1.0, 1.0) * i16::MAX as f32) as i16)
                     .collect();
+
+                // Voice activity gate: compute RMS and skip if below threshold
+                if voice_activity {
+                    let sum_sq: f32 = data.iter().map(|&s| {
+                        let v = s * input_volume;
+                        v * v
+                    }).sum();
+                    let rms = (sum_sq / data.len().max(1) as f32).sqrt();
+                    if rms < sensitivity {
+                        return;
+                    }
+                }
 
                 let mut buf = sample_buffer.lock().unwrap();
                 buf.extend_from_slice(&samples);
@@ -166,15 +316,13 @@ impl AudioPipeline {
     }
 
     /// Start the audio playback pipeline.
-    /// Reads RTP from remote track, Opus-decodes, and plays through default output device.
+    /// Reads RTP from remote track, Opus-decodes, and plays through configured output device.
     fn start_playback(
         remote_track: Arc<TrackRemote>,
         running: Arc<AtomicBool>,
+        audio_config: &AudioConfig,
     ) -> Result<cpal::Stream> {
-        let host = cpal::default_host();
-        let device = host
-            .default_output_device()
-            .ok_or_else(|| anyhow::anyhow!("No audio output device found"))?;
+        let device = resolve_output_device(audio_config)?;
 
         info!("Using output device: {:?}", device.description());
 
@@ -183,6 +331,8 @@ impl AudioPipeline {
             sample_rate: SAMPLE_RATE,
             buffer_size: cpal::BufferSize::Default,
         };
+
+        let output_volume = audio_config.output_volume;
 
         // Ring buffer for decoded audio samples
         let (audio_tx, audio_rx) = mpsc::unbounded_channel::<Vec<f32>>();
@@ -210,8 +360,10 @@ impl AudioPipeline {
                 let mut buf = playback_buf_clone.lock().unwrap();
                 let available = buf.len().min(data.len());
                 if available > 0 {
-                    data[..available].copy_from_slice(&buf[..available]);
-                    buf.drain(..available);
+                    // Apply output volume
+                    for (i, sample) in buf.drain(..available).enumerate() {
+                        data[i] = (sample * output_volume).clamp(-1.0, 1.0);
+                    }
                 }
                 // Fill remaining with silence
                 data[available..].fill(0.0);
