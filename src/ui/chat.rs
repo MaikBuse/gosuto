@@ -65,39 +65,47 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
         return;
     }
 
-    let lines: Vec<Line> = messages
-        .iter()
-        .map(|msg| {
-            let time = msg.timestamp.format("%H:%M").to_string();
-            let sender_color = theme::sender_color(&msg.sender);
+    let mut lines: Vec<Line> = Vec::new();
+    let mut last_date: Option<chrono::NaiveDate> = None;
 
-            let mut spans = vec![
-                Span::styled(format!("{} ", time), theme::dim_style()),
-                Span::styled(
-                    format!("{} ", msg.sender),
-                    ratatui::style::Style::default()
-                        .fg(sender_color)
-                        .add_modifier(ratatui::style::Modifier::BOLD),
-                ),
-            ];
+    for msg in messages {
+        let msg_date = msg.timestamp.date_naive();
+        if last_date != Some(msg_date) {
+            let date_str = msg.timestamp.format("%B %-d, %Y").to_string();
+            let sep = format!("─── {} ───", date_str);
+            lines.push(Line::from(Span::styled(sep, theme::dim_style())));
+            last_date = Some(msg_date);
+        }
 
-            if msg.pending {
-                spans.push(Span::styled(&msg.body, theme::dim_style()));
-                spans.push(Span::styled(" (sending...)", theme::dim_style()));
-            } else if msg.is_emote {
-                spans.push(Span::styled(
-                    &msg.body,
-                    ratatui::style::Style::default().fg(sender_color),
-                ));
-            } else if msg.is_notice {
-                spans.push(Span::styled(&msg.body, theme::dim_style()));
-            } else {
-                spans.push(Span::styled(&msg.body, theme::text_style()));
-            }
+        let time = msg.timestamp.format("%H:%M").to_string();
+        let sender_color = theme::sender_color(&msg.sender);
 
-            Line::from(spans)
-        })
-        .collect();
+        let mut spans = vec![
+            Span::styled(format!("{} ", time), theme::dim_style()),
+            Span::styled(
+                format!("{} ", msg.sender),
+                ratatui::style::Style::default()
+                    .fg(sender_color)
+                    .add_modifier(ratatui::style::Modifier::BOLD),
+            ),
+        ];
+
+        if msg.pending {
+            spans.push(Span::styled(&msg.body, theme::dim_style()));
+            spans.push(Span::styled(" (sending...)", theme::dim_style()));
+        } else if msg.is_emote {
+            spans.push(Span::styled(
+                &msg.body,
+                ratatui::style::Style::default().fg(sender_color),
+            ));
+        } else if msg.is_notice {
+            spans.push(Span::styled(&msg.body, theme::dim_style()));
+        } else {
+            spans.push(Span::styled(&msg.body, theme::text_style()));
+        }
+
+        lines.push(Line::from(spans));
+    }
 
     // Compute total visual lines accounting for wrapping
     let total_visual_lines: usize = if inner_width > 0 {
@@ -105,7 +113,7 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
             .iter()
             .map(|line| {
                 let w = line.width();
-                if w == 0 { 1 } else { (w + inner_width - 1) / inner_width }
+                if w == 0 { 1 } else { w.div_ceil(inner_width) }
             })
             .sum()
     } else {
