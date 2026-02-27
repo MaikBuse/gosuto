@@ -46,7 +46,7 @@ pub fn render(state: &AudioSettingsState, frame: &mut Frame) {
 
     for (vis_idx, &field_id) in visible.iter().enumerate() {
         let selected = vis_idx == state.selected_field;
-        render_field(buf, &bounds, left, right, row, inner_w, field_id, state, selected);
+        render_field(buf, left, right, row, field_id, state, selected);
         row += 1;
 
         // Add a blank row after output device and output volume for visual grouping
@@ -73,18 +73,16 @@ pub fn render(state: &AudioSettingsState, frame: &mut Frame) {
     );
 }
 
-#[allow(clippy::too_many_arguments)]
 fn render_field(
     buf: &mut Buffer,
-    bounds: &Rect,
     left: u16,
     right: u16,
     row: u16,
-    _inner_w: usize,
     field_id: usize,
     state: &AudioSettingsState,
     selected: bool,
 ) {
+    let bounds = *buf.area();
     let marker_color = if selected { theme::CYAN } else { theme::DIM };
     let label_color = if selected { theme::CYAN } else { theme::TEXT };
     let marker = if selected { '◈' } else { '◇' };
@@ -99,59 +97,59 @@ fn render_field(
             Modifier::empty()
         });
 
-    set_cell(buf, bounds, left, row, marker, marker_s);
-    set_cell(buf, bounds, left + 1, row, ' ', Style::default().bg(theme::BG));
+    set_cell(buf, &bounds, left, row, marker, marker_s);
+    set_cell(buf, &bounds, left + 1, row, ' ', Style::default().bg(theme::BG));
 
     let label_x = left + 2;
     let value_x = left + 19;
 
     match field_id {
         0 => {
-            write_str(buf, bounds, label_x, row, "INPUT DEVICE", label_s);
+            write_str(buf, &bounds, label_x, row, "INPUT DEVICE", label_s);
             let name = state
                 .input_devices
                 .get(state.input_device_idx)
                 .map(|s| s.as_str())
                 .unwrap_or("Default");
-            render_device_selector(buf, bounds, value_x, right, row, name, selected);
+            render_device_selector(buf, &bounds, value_x, right, row, name, selected);
         }
         1 => {
-            write_str(buf, bounds, label_x, row, "OUTPUT DEVICE", label_s);
+            write_str(buf, &bounds, label_x, row, "OUTPUT DEVICE", label_s);
             let name = state
                 .output_devices
                 .get(state.output_device_idx)
                 .map(|s| s.as_str())
                 .unwrap_or("Default");
-            render_device_selector(buf, bounds, value_x, right, row, name, selected);
+            render_device_selector(buf, &bounds, value_x, right, row, name, selected);
         }
         2 => {
-            write_str(buf, bounds, label_x, row, "INPUT VOLUME", label_s);
-            render_volume_bar(buf, bounds, value_x, row, state.input_volume, selected);
+            write_str(buf, &bounds, label_x, row, "INPUT VOLUME", label_s);
+            render_volume_bar(buf, &bounds, value_x, row, state.input_volume, selected);
         }
         3 => {
-            write_str(buf, bounds, label_x, row, "OUTPUT VOLUME", label_s);
-            render_volume_bar(buf, bounds, value_x, row, state.output_volume, selected);
+            write_str(buf, &bounds, label_x, row, "OUTPUT VOLUME", label_s);
+            render_volume_bar(buf, &bounds, value_x, row, state.output_volume, selected);
         }
         4 => {
-            write_str(buf, bounds, label_x, row, "VOICE ACTIVITY", label_s);
-            render_toggle(buf, bounds, value_x, row, state.voice_activity, selected);
+            write_str(buf, &bounds, label_x, row, "VOICE ACTIVITY", label_s);
+            render_toggle(buf, &bounds, value_x, row, state.voice_activity, selected);
         }
         5 => {
-            write_str(buf, bounds, label_x, row, "SENSITIVITY", label_s);
-            render_volume_bar(buf, bounds, value_x, row, state.sensitivity, selected);
+            write_str(buf, &bounds, label_x, row, "SENSITIVITY", label_s);
+            render_volume_bar(buf, &bounds, value_x, row, state.sensitivity, selected);
         }
         6 => {
-            write_str(buf, bounds, label_x, row, "PUSH TO TALK", label_s);
-            render_toggle(buf, bounds, value_x, row, state.push_to_talk, selected);
+            write_str(buf, &bounds, label_x, row, "PUSH TO TALK", label_s);
+            render_toggle(buf, &bounds, value_x, row, state.push_to_talk, selected);
         }
         7 => {
-            write_str(buf, bounds, label_x, row, "PTT KEY", label_s);
+            write_str(buf, &bounds, label_x, row, "PTT KEY", label_s);
             if state.capturing_ptt_key {
                 let s = Style::default()
                     .fg(theme::GREEN)
                     .bg(theme::BG)
                     .add_modifier(Modifier::BOLD);
-                write_str(buf, bounds, value_x, row, "press key...", s);
+                write_str(buf, &bounds, value_x, row, "press key...", s);
             } else {
                 let key_name = state
                     .push_to_talk_key
@@ -163,7 +161,7 @@ fn render_field(
                     Style::default().fg(theme::DIM).bg(theme::BG)
                 };
                 let display = format!("[{}]", key_name);
-                write_str(buf, bounds, value_x, row, &display, s);
+                write_str(buf, &bounds, value_x, row, &display, s);
             }
         }
         _ => {}
