@@ -49,10 +49,6 @@ pub fn dim_style() -> Style {
     Style::default().fg(DIM)
 }
 
-pub fn selected_style() -> Style {
-    Style::default().fg(BLACK).bg(CYAN)
-}
-
 pub fn error_style() -> Style {
     Style::default().fg(RED)
 }

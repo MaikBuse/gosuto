@@ -516,6 +516,7 @@ async fn main() -> Result<()> {
             let term_size = tui.size()?;
             let term_area = ratatui::layout::Rect::new(0, 0, term_size.width, term_size.height);
             app.effects.tick(dt, term_area);
+            app.room_list_anim.tick(dt);
             app.chat_title_reveal.tick(dt);
             app.members_title_reveal.tick(dt);
             if let Some(ref info) = app.call_info {

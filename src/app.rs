@@ -12,6 +12,7 @@ use crate::state::{AuthState, MemberListState, MessageState, RoomListState};
 use crate::ui::call_overlay::TransmissionPopup;
 use crate::ui::effects::{EffectsState, TextReveal};
 use crate::ui::login::LoginState;
+use crate::ui::room_list::RoomListAnimState;
 use crate::voip::audio::AudioPipeline;
 use crate::voip::{CallCommand, CallCommandSender, CallInfo, CallState};
 
@@ -138,6 +139,7 @@ pub struct App {
     // Visual effects
     pub effects: EffectsState,
     pub call_popup: TransmissionPopup,
+    pub room_list_anim: RoomListAnimState,
     pub chat_title_reveal: TextReveal,
     pub members_title_reveal: TextReveal,
     // Room info
@@ -181,6 +183,7 @@ impl App {
             pending_credential_clear: false,
             effects: EffectsState::new(rain_enabled, glitch_enabled),
             call_popup: TransmissionPopup::new(),
+            room_list_anim: RoomListAnimState::new(),
             chat_title_reveal: TextReveal::new(0xC0DE_CAFE_0001),
             members_title_reveal: TextReveal::new(0xC0DE_CAFE_0002),
             room_info: RoomInfoState::new(),
@@ -517,11 +520,21 @@ impl App {
             },
             InputResult::Select => {
                 if self.vim.focus == FocusPanel::RoomList {
-                    if let Some(room) = self.room_list.selected_room() {
-                        let room_id = room.id.clone();
-                        self.messages.set_room(Some(room_id));
-                        self.vim.focus = FocusPanel::Messages;
-                        self.chat_title_reveal.trigger();
+                    use crate::state::DisplayRow;
+                    match self.room_list.selected_display_row() {
+                        Some(DisplayRow::SpaceHeader { .. }) => {
+                            self.room_list.toggle_space();
+                        }
+                        Some(DisplayRow::Room { .. }) => {
+                            self.room_list_anim.trigger_flash(self.room_list.selected);
+                            if let Some(room) = self.room_list.selected_room() {
+                                let room_id = room.id.clone();
+                                self.messages.set_room(Some(room_id));
+                                self.vim.focus = FocusPanel::Messages;
+                                self.chat_title_reveal.trigger();
+                            }
+                        }
+                        _ => {} // SectionHeader: no-op
                     }
                 } else if self.vim.focus == FocusPanel::Members
                     && let Some(member) = self.members_list.selected_member()

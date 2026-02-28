@@ -168,9 +168,7 @@ impl CallManager {
         // 2. Ensure user has permission to send m.call.member, auto-fix if admin
         if let Err(e) = matrixrtc::ensure_call_member_permissions(&client, &room_id).await {
             error!("Call permission check failed: {:#}", e);
-            let _ = self
-                .event_tx
-                .send(AppEvent::CallError(format!("{}", e)));
+            let _ = self.event_tx.send(AppEvent::CallError(format!("{}", e)));
             return;
         }
 

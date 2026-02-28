@@ -6,4 +6,4 @@ pub mod rooms;
 pub use auth::AuthState;
 pub use members::{MemberListState, RoomMember};
 pub use messages::{DisplayMessage, MessageState};
-pub use rooms::{RoomCategory, RoomListState, RoomSummary};
+pub use rooms::{DisplayRow, RoomCategory, RoomListState, RoomSummary};

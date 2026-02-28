@@ -1,7 +1,10 @@
+use std::collections::HashMap;
+
 use matrix_sdk::Client;
 use matrix_sdk::RoomMemberships;
 use matrix_sdk::ruma::events::room::history_visibility::HistoryVisibility;
-use tracing::error;
+use matrix_sdk::ruma::events::space::child::SpaceChildEventContent;
+use tracing::{error, warn};
 
 use crate::event::AppEvent;
 use crate::event::EventSender;
@@ -11,7 +14,7 @@ pub async fn get_room_list(client: &Client) -> Vec<RoomSummary> {
     let joined = client.joined_rooms();
     let mut rooms = Vec::new();
 
-    for room in joined {
+    for room in &joined {
         let id = room.room_id().to_string();
         let name = match room.display_name().await {
             Ok(dn) => dn.to_string(),
@@ -39,6 +42,40 @@ pub async fn get_room_list(client: &Client) -> Vec<RoomSummary> {
             is_space_child: false,
             parent_space_id: None,
         });
+    }
+
+    // Fetch space children via m.space.child state events
+    let mut child_to_space: HashMap<String, String> = HashMap::new();
+    for room in &joined {
+        if !room.is_space() {
+            continue;
+        }
+        let space_id = room.room_id().to_string();
+        match room
+            .get_state_events_static::<SpaceChildEventContent>()
+            .await
+        {
+            Ok(events) => {
+                for raw in events {
+                    if let Ok(ev) = raw.deserialize() {
+                        let child_id = ev.state_key().to_string();
+                        // First space wins for multi-space rooms
+                        child_to_space.entry(child_id).or_insert(space_id.clone());
+                    }
+                }
+            }
+            Err(e) => {
+                warn!("Failed to fetch space children for {}: {}", space_id, e);
+            }
+        }
+    }
+
+    // Populate parent_space_id on child rooms
+    for room_summary in &mut rooms {
+        if let Some(space_id) = child_to_space.get(&room_summary.id) {
+            room_summary.parent_space_id = Some(space_id.clone());
+            room_summary.is_space_child = true;
+        }
     }
 
     // Sort: spaces first, then rooms, then DMs

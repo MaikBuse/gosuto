@@ -71,7 +71,9 @@ pub async fn get_livekit_credentials(
     // Get OpenID token from homeserver
     let user_id = client.user_id().context("Not logged in")?.to_owned();
     let openid_request =
-        matrix_sdk::ruma::api::client::account::request_openid_token::v3::Request::new(user_id.clone());
+        matrix_sdk::ruma::api::client::account::request_openid_token::v3::Request::new(
+            user_id.clone(),
+        );
     let openid = client.send(openid_request).await?;
     let access_token = openid.access_token;
 
@@ -190,20 +192,16 @@ pub async fn get_livekit_credentials(
 /// Ensure the user has permission to send `m.call.member` state events.
 /// If the user is an admin (can modify power levels), auto-fix by lowering the
 /// required PL for call member events to 0.
-pub async fn ensure_call_member_permissions(
-    client: &Client,
-    room_id: &OwnedRoomId,
-) -> Result<()> {
+pub async fn ensure_call_member_permissions(client: &Client, room_id: &OwnedRoomId) -> Result<()> {
     let user_id = client.user_id().context("Not logged in")?;
     let room = client.get_room(room_id).context("Room not found")?;
 
     // Fetch raw m.room.power_levels state event via the Client API
-    let request =
-        matrix_sdk::ruma::api::client::state::get_state_event_for_key::v3::Request::new(
-            room_id.clone(),
-            "m.room.power_levels".into(),
-            "".to_owned(),
-        );
+    let request = matrix_sdk::ruma::api::client::state::get_state_event_for_key::v3::Request::new(
+        room_id.clone(),
+        "m.room.power_levels".into(),
+        "".to_owned(),
+    );
 
     let pl_json: serde_json::Value = match client.send(request).await {
         Ok(resp) => serde_json::from_str(resp.event_or_content.get())?,
