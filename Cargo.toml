@@ -1,8 +1,9 @@
 [package]
-name = "walrust"
+name = "gosuto"
 version = "0.1.0"
 edition = "2024"
-description = "A cyberpunk terminal Matrix client with vim motions"
+description = "Gōsuto (ゴースト) — a cyberpunk terminal Matrix client with vim motions"
+license = "Apache-2.0 OR MIT"
 
 [dependencies]
 # TUI
@@ -28,10 +29,10 @@ serde_json = "1"
 toml = "1.0"
 
 # VoIP
-webrtc = "0.17"
+livekit = "0.7"
 cpal = "0.17"
-audiopus = "0.3.0-rc.0"
 uuid = { version = "1", features = ["v4"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 
 # Utils
 dirs = "6"
@@ -44,3 +45,4 @@ tracing-appender = "0.2"
 unicode-width = "0.2"
 keyring = { version = "3", features = ["sync-secret-service", "crypto-rust"] }
 url = "2.5.8"
+base64 = "0.22"
