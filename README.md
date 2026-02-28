@@ -9,12 +9,6 @@
 
 **Gōsuto** (ゴースト) — _ghost_ — a cyberpunk terminal Matrix client with vim motions.
 
-```
-#00ffff cyan │ #ff00ff magenta │ #00ff80 green │ #ff503c red │ #0a0a0f black
-───────────────────────────────────────────────────────────────────────────────
-  focus/normal │   command mode  │  insert mode  │   errors    │  background
-```
-
 ## ════════════════════ the point ════════════════════
 
 ~3,400 lines of Rust. One static binary. No Electron, no browser, no bloat.
