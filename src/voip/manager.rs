@@ -1,67 +1,26 @@
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::sync::atomic::AtomicBool;
 
+use base64::Engine;
 use matrix_sdk::Client;
-use tokio::sync::{mpsc, Mutex};
-use tracing::{error, info, warn};
-use webrtc::peer_connection::peer_connection_state::RTCPeerConnectionState;
+use matrix_sdk::ruma::{OwnedDeviceId, OwnedRoomId};
+use tokio::sync::{Mutex, mpsc};
+use tracing::{debug, error, info, warn};
 
 use crate::config::AudioConfig;
 use crate::event::{AppEvent, EventSender};
 use crate::voip::audio::AudioPipeline;
-use crate::voip::signaling;
+use crate::voip::livekit::{LiveKitEvent, LiveKitSession};
+use crate::voip::matrixrtc;
 use crate::voip::state::CallState;
-use crate::voip::turn;
-use crate::voip::webrtc::{WebRtcEvent, WebRtcSession};
 
 /// Commands sent from the App to the CallManager
 #[derive(Debug)]
 pub enum CallCommand {
-    /// Initiate an outgoing call
-    Initiate {
-        call_id: String,
-        room_id: String,
-    },
-    /// Answer an incoming call
-    Answer {
-        call_id: String,
-    },
-    /// Reject an incoming call
-    Reject {
-        call_id: String,
-        room_id: String,
-    },
-    /// Reject an incoming call automatically (busy)
-    RejectIncoming {
-        call_id: String,
-        room_id: String,
-    },
-    /// Hang up an active call
-    Hangup {
-        call_id: String,
-        room_id: String,
-    },
-    /// Remote peer sent an SDP answer
-    RemoteAnswer {
-        call_id: String,
-        sdp: String,
-    },
-    /// Remote peer sent ICE candidates
-    RemoteCandidates {
-        call_id: String,
-        candidates: Vec<String>,
-    },
-    /// Remote peer sent an invite (forwarded from App)
-    RemoteInvite {
-        call_id: String,
-        room_id: String,
-        sdp: String,
-    },
-    /// Remote peer hung up
-    RemoteHangup {
-        call_id: String,
-    },
+    /// Start/join a call in a room
+    Initiate { room_id: String },
+    /// Leave current call
+    Leave,
     /// Shutdown the CallManager
     Shutdown,
 }
@@ -75,13 +34,10 @@ pub fn command_channel() -> (CallCommandSender, CallCommandReceiver) {
 }
 
 struct ActiveCall {
-    call_id: String,
-    room_id: String,
-    webrtc: WebRtcSession,
+    room_id: OwnedRoomId,
+    livekit_session: LiveKitSession,
     audio: AudioPipeline,
-    invite_time: Instant,
-    remote_sdp: Option<String>,
-    pending_candidates: Vec<String>,
+    participants: Vec<String>,
 }
 
 pub struct CallManager {
@@ -114,8 +70,6 @@ impl CallManager {
     pub async fn run(mut self) {
         info!("CallManager started");
 
-        let mut timeout_interval = tokio::time::interval(Duration::from_secs(1));
-
         loop {
             tokio::select! {
                 cmd = self.cmd_rx.recv() => {
@@ -128,21 +82,17 @@ impl CallManager {
                         Some(cmd) => self.handle_command(cmd).await,
                     }
                 }
-                // Check for WebRTC events from active call
+                // Check for LiveKit events from active call
                 event = async {
                     if let Some(ref mut call) = self.active_call {
-                        call.webrtc.recv_event().await
+                        call.livekit_session.recv_event().await
                     } else {
                         std::future::pending().await
                     }
                 } => {
                     if let Some(event) = event {
-                        self.handle_webrtc_event(event).await;
+                        self.handle_livekit_event(event).await;
                     }
-                }
-                // Timeout check
-                _ = timeout_interval.tick() => {
-                    self.check_timeout().await;
                 }
             }
         }
@@ -152,424 +102,323 @@ impl CallManager {
 
     async fn handle_command(&mut self, cmd: CallCommand) {
         match cmd {
-            CallCommand::Initiate {
-                call_id,
-                room_id,
-            } => {
-                self.initiate_call(call_id, room_id).await;
+            CallCommand::Initiate { room_id } => {
+                self.initiate_call(room_id).await;
             }
-            CallCommand::Answer { call_id } => {
-                self.answer_call(call_id).await;
-            }
-            CallCommand::Reject { call_id, room_id } | CallCommand::RejectIncoming { call_id, room_id } => {
-                self.reject_call(&call_id, &room_id).await;
-            }
-            CallCommand::Hangup { call_id, room_id } => {
-                self.hangup_call(&call_id, &room_id, "user_hangup").await;
-            }
-            CallCommand::RemoteInvite {
-                call_id,
-                room_id,
-                sdp,
-            } => {
-                self.handle_remote_invite(call_id, room_id, sdp).await;
-            }
-            CallCommand::RemoteAnswer { call_id, sdp } => {
-                self.handle_remote_answer(&call_id, &sdp).await;
-            }
-            CallCommand::RemoteCandidates {
-                call_id,
-                candidates,
-            } => {
-                self.handle_remote_candidates(&call_id, candidates).await;
-            }
-            CallCommand::RemoteHangup { call_id } => {
-                self.handle_remote_hangup(&call_id).await;
+            CallCommand::Leave => {
+                self.leave_call().await;
             }
             CallCommand::Shutdown => {} // handled in run()
         }
     }
 
-    async fn initiate_call(&mut self, call_id: String, room_id: String) {
-        info!("Initiating call {} in room {}", call_id, room_id);
+    async fn initiate_call(&mut self, room_id: String) {
+        info!("Initiating call in room {}", room_id);
 
-        // Get ICE servers
-        let ice_servers = {
+        // Clean up any existing call first
+        if self.active_call.is_some() {
+            self.cleanup().await;
+        }
+
+        let client = {
             let guard = self.client.lock().await;
-            if let Some(ref client) = *guard {
-                turn::get_ice_servers(client).await
-            } else {
-                let _ = self.event_tx.send(AppEvent::CallError("Not logged in".to_string()));
-                return;
+            match guard.as_ref() {
+                Some(client) => client.clone(),
+                None => {
+                    let _ = self
+                        .event_tx
+                        .send(AppEvent::CallError("Not logged in".to_string()));
+                    return;
+                }
             }
         };
 
-        // Create WebRTC session
-        let webrtc = match WebRtcSession::new(ice_servers).await {
-            Ok(session) => session,
+        let room_id: OwnedRoomId = match room_id.as_str().try_into() {
+            Ok(id) => id,
             Err(e) => {
-                error!("Failed to create WebRTC session: {}", e);
-                let _ = self.event_tx.send(AppEvent::CallError(format!("WebRTC error: {}", e)));
+                let _ = self
+                    .event_tx
+                    .send(AppEvent::CallError(format!("Invalid room ID: {}", e)));
                 return;
             }
         };
 
-        // Start audio capture
+        let device_id: OwnedDeviceId = match client.device_id() {
+            Some(id) => id.to_owned(),
+            None => {
+                let _ = self
+                    .event_tx
+                    .send(AppEvent::CallError("No device ID".to_string()));
+                return;
+            }
+        };
+
+        // 1. Discover LiveKit focus
+        let focus = match matrixrtc::discover_livekit_focus(&client).await {
+            Ok(f) => f,
+            Err(e) => {
+                error!("Failed to discover LiveKit focus: {:#}", e);
+                let _ = self.event_tx.send(AppEvent::CallError(
+                    "No VoIP service configured on this homeserver".to_string(),
+                ));
+                return;
+            }
+        };
+
+        // 2. Ensure user has permission to send m.call.member, auto-fix if admin
+        if let Err(e) = matrixrtc::ensure_call_member_permissions(&client, &room_id).await {
+            error!("Call permission check failed: {:#}", e);
+            let _ = self
+                .event_tx
+                .send(AppEvent::CallError(format!("{}", e)));
+            return;
+        }
+
+        // 3. Publish m.call.member state event (before requesting JWT —
+        //    some SFU implementations expect the state event to exist)
+        if let Err(e) = matrixrtc::publish_call_member(&client, &room_id, &device_id, &focus).await
+        {
+            error!("Failed to publish m.call.member: {:#}", e);
+            let _ = self
+                .event_tx
+                .send(AppEvent::CallError(format!("Signaling error: {:#}", e)));
+            return;
+        }
+
+        // 4. Get LiveKit credentials (JWT) — SFU can now see the call member event
+        let creds = match matrixrtc::get_livekit_credentials(
+            &client,
+            &focus.livekit_service_url,
+            &room_id,
+            &device_id,
+        )
+        .await
+        {
+            Ok(c) => c,
+            Err(e) => {
+                error!("Failed to get LiveKit credentials: {:#}", e);
+                // Clean up the state event we just published
+                let _ = matrixrtc::remove_call_member(&client, &room_id, &device_id).await;
+                let _ = self.event_tx.send(AppEvent::CallError(
+                    "Failed to get call credentials from the SFU service".to_string(),
+                ));
+                return;
+            }
+        };
+
+        // 5. Connect to LiveKit
+        let session = match LiveKitSession::connect(&creds.server_url, &creds.token).await {
+            Ok(s) => s,
+            Err(e) => {
+                error!("Failed to connect to LiveKit: {:#}", e);
+                log_jwt_claims(&creds.token);
+                // Try to clean up the state event
+                let _ = matrixrtc::remove_call_member(&client, &room_id, &device_id).await;
+                let err_str = format!("{:#}", e);
+                let msg = if err_str.contains("401") || err_str.contains("nauthorized") {
+                    "LiveKit rejected credentials — check SFU server configuration".to_string()
+                } else {
+                    format!("LiveKit connection failed: {}", err_str)
+                };
+                let _ = self.event_tx.send(AppEvent::CallError(msg));
+                return;
+            }
+        };
+
+        // 6. Start audio capture
         let mut audio = AudioPipeline::new();
         let audio_cfg = self.audio_config.lock().unwrap().clone();
-        if let Err(e) = audio.start(webrtc.local_track.clone(), &audio_cfg, self.transmitting.clone()) {
-            error!("Failed to start audio capture: {}", e);
-            let _ = webrtc.close().await;
-            let _ = self.event_tx.send(AppEvent::CallError(format!("Audio error: {}", e)));
-            return;
-        }
-
-        // Create SDP offer
-        let sdp = match webrtc.create_offer().await {
-            Ok(sdp) => sdp,
+        let source = match audio.start_capture(&audio_cfg, self.transmitting.clone()) {
+            Ok(s) => s,
             Err(e) => {
-                error!("Failed to create SDP offer: {}", e);
-                audio.stop();
-                let _ = webrtc.close().await;
-                let _ = self.event_tx.send(AppEvent::CallError(format!("SDP error: {}", e)));
+                error!("Failed to start audio capture: {:#}", e);
+                let _ = session.close().await;
+                let _ = matrixrtc::remove_call_member(&client, &room_id, &device_id).await;
+                let _ = self.event_tx.send(AppEvent::CallError(
+                    "Microphone error: could not start audio capture".to_string(),
+                ));
                 return;
             }
         };
 
-        // Send m.call.invite
-        let send_result = {
-            let guard = self.client.lock().await;
-            if let Some(ref client) = *guard {
-                signaling::send_call_invite(client, &room_id, &call_id, &sdp).await
-            } else {
-                Err(anyhow::anyhow!("Not logged in"))
-            }
-        };
-
-        if let Err(e) = send_result {
-            error!("Failed to send call invite: {}", e);
+        // 7. Publish local audio track
+        if let Err(e) = session.publish_audio(source).await {
+            error!("Failed to publish audio track: {:#}", e);
             audio.stop();
-            let _ = webrtc.close().await;
-            let _ = self.event_tx.send(AppEvent::CallError(format!("Signaling error: {}", e)));
-            return;
-        }
-
-        self.active_call = Some(ActiveCall {
-            call_id: call_id.clone(),
-            room_id,
-            webrtc,
-            audio,
-            invite_time: Instant::now(),
-            remote_sdp: None,
-            pending_candidates: Vec::new(),
-        });
-
-        let _ = self.event_tx.send(AppEvent::CallStateChanged {
-            call_id,
-            state: CallState::Inviting,
-        });
-    }
-
-    async fn handle_remote_invite(&mut self, call_id: String, room_id: String, sdp: String) {
-        info!("Handling remote invite for call {}", call_id);
-
-        // Get ICE servers
-        let ice_servers = {
-            let guard = self.client.lock().await;
-            if let Some(ref client) = *guard {
-                turn::get_ice_servers(client).await
-            } else {
-                let _ = self.event_tx.send(AppEvent::CallError("Not logged in".to_string()));
-                return;
-            }
-        };
-
-        // Create WebRTC session (but don't answer yet — wait for user)
-        let webrtc = match WebRtcSession::new(ice_servers).await {
-            Ok(session) => session,
-            Err(e) => {
-                error!("Failed to create WebRTC session for incoming call: {}", e);
-                let _ = self.event_tx.send(AppEvent::CallError(format!("WebRTC error: {}", e)));
-                return;
-            }
-        };
-
-        let audio = AudioPipeline::new();
-
-        self.active_call = Some(ActiveCall {
-            call_id: call_id.clone(),
-            room_id,
-            webrtc,
-            audio,
-            invite_time: Instant::now(),
-            remote_sdp: Some(sdp),
-            pending_candidates: Vec::new(),
-        });
-
-        let _ = self.event_tx.send(AppEvent::CallStateChanged {
-            call_id,
-            state: CallState::Ringing,
-        });
-    }
-
-    async fn answer_call(&mut self, call_id: String) {
-        let call = match self.active_call.as_mut() {
-            Some(c) if c.call_id == call_id => c,
-            _ => {
-                warn!("No matching call to answer: {}", call_id);
-                return;
-            }
-        };
-
-        let remote_sdp = match call.remote_sdp.take() {
-            Some(sdp) => sdp,
-            None => {
-                error!("No remote SDP to answer");
-                return;
-            }
-        };
-
-        // Start audio capture
-        let audio_cfg = self.audio_config.lock().unwrap().clone();
-        if let Err(e) = call.audio.start(call.webrtc.local_track.clone(), &audio_cfg, self.transmitting.clone()) {
-            error!("Failed to start audio for answer: {}", e);
-            let _ = self.event_tx.send(AppEvent::CallError(format!("Audio error: {}", e)));
-            self.cleanup().await;
-            return;
-        }
-
-        // Accept offer and create answer
-        let answer_sdp = match call.webrtc.accept_offer(&remote_sdp).await {
-            Ok(sdp) => sdp,
-            Err(e) => {
-                error!("Failed to accept SDP offer: {}", e);
-                let _ = self.event_tx.send(AppEvent::CallError(format!("SDP error: {}", e)));
-                self.cleanup().await;
-                return;
-            }
-        };
-
-        // Process any pending ICE candidates
-        let call = self.active_call.as_mut().unwrap();
-        let pending = std::mem::take(&mut call.pending_candidates);
-        for candidate in pending {
-            if let Err(e) = call.webrtc.add_ice_candidate(&candidate).await {
-                warn!("Failed to add pending ICE candidate: {}", e);
-            }
-        }
-
-        let room_id = call.room_id.clone();
-        let cid = call.call_id.clone();
-
-        // Send m.call.answer
-        let send_result = {
-            let guard = self.client.lock().await;
-            if let Some(ref client) = *guard {
-                signaling::send_call_answer(client, &room_id, &cid, &answer_sdp).await
-            } else {
-                Err(anyhow::anyhow!("Not logged in"))
-            }
-        };
-
-        if let Err(e) = send_result {
-            error!("Failed to send call answer: {}", e);
-            let _ = self.event_tx.send(AppEvent::CallError(format!("Signaling error: {}", e)));
-            self.cleanup().await;
+            let _ = session.close().await;
+            let _ = matrixrtc::remove_call_member(&client, &room_id, &device_id).await;
+            let _ = self.event_tx.send(AppEvent::CallError(
+                "Failed to publish audio to the call".to_string(),
+            ));
             return;
         }
 
         let _ = self.event_tx.send(AppEvent::CallStateChanged {
-            call_id,
+            room_id: room_id.to_string(),
             state: CallState::Connecting,
         });
+
+        self.active_call = Some(ActiveCall {
+            room_id,
+            livekit_session: session,
+            audio,
+            participants: Vec::new(),
+        });
     }
 
-    async fn reject_call(&mut self, call_id: &str, room_id: &str) {
-        info!("Rejecting call {}", call_id);
-
-        // Send hangup then cleanup — avoid holding &ActiveCall across await
-        {
-            let guard = self.client.lock().await;
-            if let Some(ref client) = *guard {
-                if let Err(e) = signaling::send_call_hangup(client, room_id, call_id, "user_hangup").await {
-                    error!("Failed to send hangup for rejection: {}", e);
-                }
-            }
-        }
-
-        let should_cleanup = self.active_call.as_ref().is_some_and(|c| c.call_id == call_id);
-        if should_cleanup {
-            self.cleanup().await;
-        }
-    }
-
-    async fn hangup_call(&mut self, call_id: &str, room_id: &str, reason: &str) {
-        info!("Hanging up call {} (reason: {})", call_id, reason);
-        {
-            let guard = self.client.lock().await;
-            if let Some(ref client) = *guard {
-                if let Err(e) = signaling::send_call_hangup(client, room_id, call_id, reason).await {
-                    error!("Failed to send hangup: {}", e);
-                }
-            }
-        }
-        self.cleanup().await;
-    }
-
-    async fn handle_remote_answer(&mut self, call_id: &str, sdp: &str) {
-        let call = match self.active_call.as_mut() {
-            Some(c) if c.call_id == call_id => c,
-            _ => {
-                warn!("No matching call for remote answer: {}", call_id);
-                return;
-            }
-        };
-
-        if let Err(e) = call.webrtc.set_remote_answer(sdp).await {
-            error!("Failed to set remote answer: {}", e);
+    async fn leave_call(&mut self) {
+        if let Some(call) = self.active_call.as_ref() {
             let room_id = call.room_id.clone();
-            let cid = call.call_id.clone();
-            let _ = self.event_tx.send(AppEvent::CallError(format!("SDP error: {}", e)));
-            self.hangup_call(&cid, &room_id, "unknown_error").await;
-            return;
-        }
+            info!("Leaving call in room {}", room_id);
 
-        // Process pending candidates
-        let call = self.active_call.as_mut().unwrap();
-        let pending = std::mem::take(&mut call.pending_candidates);
-        for candidate in pending {
-            if let Err(e) = call.webrtc.add_ice_candidate(&candidate).await {
-                warn!("Failed to add pending ICE candidate: {}", e);
+            // Remove m.call.member state event
+            let client = self.client.lock().await.clone();
+            if let Some(client) = client
+                && let Some(device_id) = client.device_id()
+            {
+                let _ =
+                    matrixrtc::remove_call_member(&client, &room_id, &device_id.to_owned()).await;
             }
         }
 
-        let _ = self.event_tx.send(AppEvent::CallStateChanged {
-            call_id: call_id.to_string(),
-            state: CallState::Connecting,
-        });
+        self.cleanup().await;
+        let _ = self.event_tx.send(AppEvent::CallEnded);
     }
 
-    async fn handle_remote_candidates(&mut self, call_id: &str, candidates: Vec<String>) {
-        let call = match self.active_call.as_mut() {
-            Some(c) if c.call_id == call_id => c,
-            _ => {
-                warn!("No matching call for remote candidates: {}", call_id);
-                return;
-            }
-        };
-
-        // If we haven't set remote description yet, buffer the candidates
-        if call.remote_sdp.is_some() {
-            call.pending_candidates.extend(candidates);
-            return;
-        }
-
-        for candidate in candidates {
-            if let Err(e) = call.webrtc.add_ice_candidate(&candidate).await {
-                warn!("Failed to add ICE candidate: {}", e);
-            }
-        }
-    }
-
-    async fn handle_remote_hangup(&mut self, call_id: &str) {
-        let matches = self.active_call.as_ref().is_some_and(|c| c.call_id == call_id);
-        if matches {
-            info!("Remote peer hung up call {}", call_id);
-            self.cleanup().await;
-            let _ = self.event_tx.send(AppEvent::CallEnded);
-        }
-    }
-
-    async fn handle_webrtc_event(&mut self, event: WebRtcEvent) {
+    async fn handle_livekit_event(&mut self, event: LiveKitEvent) {
         match event {
-            WebRtcEvent::IceCandidate(candidate_json) => {
-                // Extract data before awaiting
-                let (room_id, call_id) = match self.active_call.as_ref() {
-                    Some(call) => (call.room_id.clone(), call.call_id.clone()),
-                    None => return,
-                };
-                let candidate: serde_json::Value =
-                    serde_json::from_str(&candidate_json).unwrap_or_default();
-                let guard = self.client.lock().await;
-                if let Some(ref client) = *guard {
-                    if let Err(e) = signaling::send_call_candidates(
-                        client,
-                        &room_id,
-                        &call_id,
-                        &[candidate],
-                    )
-                    .await
-                    {
-                        warn!("Failed to send ICE candidate: {}", e);
-                    }
+            LiveKitEvent::Connected => {
+                info!("LiveKit connected");
+                if let Some(ref call) = self.active_call {
+                    let _ = self.event_tx.send(AppEvent::CallStateChanged {
+                        room_id: call.room_id.to_string(),
+                        state: CallState::Active,
+                    });
                 }
             }
-            WebRtcEvent::IceGatheringComplete => {
-                info!("ICE gathering complete");
-            }
-            WebRtcEvent::ConnectionStateChanged(state) => {
-                info!("WebRTC connection state: {:?}", state);
-                match state {
-                    RTCPeerConnectionState::Connected => {
-                        if let Some(ref call) = self.active_call {
-                            let _ = self.event_tx.send(AppEvent::CallStateChanged {
-                                call_id: call.call_id.clone(),
-                                state: CallState::Active,
-                            });
-                        }
+            LiveKitEvent::ParticipantJoined { identity } => {
+                info!("Participant joined: {}", identity);
+                if let Some(ref mut call) = self.active_call {
+                    if !call.participants.contains(&identity) {
+                        call.participants.push(identity);
                     }
-                    RTCPeerConnectionState::Failed => {
-                        error!("WebRTC connection failed");
-                        let ids = self.active_call.as_ref().map(|c| (c.call_id.clone(), c.room_id.clone()));
-                        if let Some((call_id, room_id)) = ids {
-                            self.hangup_call(&call_id, &room_id, "ice_failed").await;
-                            let _ = self.event_tx.send(AppEvent::CallError("Connection failed".to_string()));
-                        }
-                    }
-                    RTCPeerConnectionState::Disconnected | RTCPeerConnectionState::Closed => {
-                        if self.active_call.is_some() {
-                            self.cleanup().await;
-                            let _ = self.event_tx.send(AppEvent::CallEnded);
-                        }
-                    }
-                    _ => {}
+                    let _ = self.event_tx.send(AppEvent::CallParticipantUpdate {
+                        participants: call.participants.clone(),
+                    });
                 }
             }
-            WebRtcEvent::RemoteTrack(track) => {
-                info!("Got remote audio track");
+            LiveKitEvent::ParticipantLeft { identity } => {
+                info!("Participant left: {}", identity);
+                if let Some(ref mut call) = self.active_call {
+                    call.participants.retain(|p| p != &identity);
+                    let _ = self.event_tx.send(AppEvent::CallParticipantUpdate {
+                        participants: call.participants.clone(),
+                    });
+                }
+            }
+            LiveKitEvent::TrackSubscribed {
+                track,
+                participant_identity,
+            } => {
+                info!("Track subscribed from: {}", participant_identity);
                 if let Some(ref mut call) = self.active_call {
                     let audio_cfg = self.audio_config.lock().unwrap().clone();
                     if let Err(e) = call.audio.add_playback(track, &audio_cfg) {
-                        error!("Failed to start playback: {}", e);
+                        error!(
+                            "Failed to start playback for {}: {:#}",
+                            participant_identity, e
+                        );
                     }
                 }
             }
-        }
-    }
-
-    async fn check_timeout(&mut self) {
-        let timed_out = self.active_call.as_ref().is_some_and(|call| {
-            call.invite_time.elapsed() > Duration::from_secs(60)
-        });
-
-        if timed_out {
-            let (call_id, room_id) = {
-                let call = self.active_call.as_ref().unwrap();
-                (call.call_id.clone(), call.room_id.clone())
-            };
-            warn!("Call {} timed out", call_id);
-            self.hangup_call(&call_id, &room_id, "invite_timeout").await;
-            let _ = self.event_tx.send(AppEvent::CallError("Call timed out".to_string()));
+            LiveKitEvent::TrackUnsubscribed {
+                participant_identity,
+            } => {
+                info!("Track unsubscribed from: {}", participant_identity);
+            }
+            LiveKitEvent::Disconnected { reason } => {
+                warn!("LiveKit disconnected: {}", reason);
+                self.cleanup().await;
+                let _ = self
+                    .event_tx
+                    .send(AppEvent::CallError(format!("Disconnected: {}", reason)));
+            }
+            LiveKitEvent::Reconnecting => {
+                info!("LiveKit reconnecting...");
+            }
+            LiveKitEvent::Reconnected => {
+                info!("LiveKit reconnected");
+            }
+            LiveKitEvent::Error(err) => {
+                error!("LiveKit error: {}", err);
+                let _ = self.event_tx.send(AppEvent::CallError(err));
+            }
         }
     }
 
     async fn cleanup(&mut self) {
         if let Some(mut call) = self.active_call.take() {
             call.audio.stop();
-            if let Err(e) = call.webrtc.close().await {
-                error!("Error closing WebRTC session: {}", e);
+            if let Err(e) = call.livekit_session.close().await {
+                error!("Error closing LiveKit session: {:#}", e);
             }
-            info!("Call {} cleaned up", call.call_id);
+            info!("Call in room {} cleaned up", call.room_id);
         }
     }
+}
+
+/// Decode and log JWT claims for diagnostics (without verification).
+fn log_jwt_claims(token: &str) {
+    let parts: Vec<&str> = token.split('.').collect();
+    if parts.len() != 3 {
+        debug!("JWT: malformed token ({} parts)", parts.len());
+        return;
+    }
+
+    let payload = match base64::engine::general_purpose::STANDARD_NO_PAD.decode(parts[1]) {
+        Ok(bytes) => bytes,
+        Err(_) => {
+            // Try URL-safe variant
+            match base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(parts[1]) {
+                Ok(bytes) => bytes,
+                Err(e) => {
+                    debug!("JWT: failed to decode payload: {}", e);
+                    return;
+                }
+            }
+        }
+    };
+
+    let claims: serde_json::Value = match serde_json::from_slice(&payload) {
+        Ok(v) => v,
+        Err(e) => {
+            debug!("JWT: failed to parse payload JSON: {}", e);
+            return;
+        }
+    };
+
+    let room = claims
+        .get("video")
+        .and_then(|v| v.get("room"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("<missing>");
+    let sub = claims
+        .get("sub")
+        .and_then(|v| v.as_str())
+        .unwrap_or("<missing>");
+    let exp = claims.get("exp").and_then(|v| v.as_i64());
+
+    let expired = exp.map_or("unknown".to_string(), |exp_ts| {
+        let now = chrono::Utc::now().timestamp();
+        if now > exp_ts {
+            format!("YES (expired {}s ago)", now - exp_ts)
+        } else {
+            format!("no (valid for {}s)", exp_ts - now)
+        }
+    });
+
+    debug!(
+        "JWT claims: video.room={}, sub={}, expired={}",
+        room, sub, expired
+    );
 }

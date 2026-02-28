@@ -57,36 +57,44 @@ pub enum AppEvent {
     DmRoomReady {
         room_id: String,
     },
+    RoomCreated {
+        room_id: String,
+    },
     // Sync events
     SyncError(String),
     SyncStatus(String),
-    // VoIP events
-    CallInvite {
-        call_id: String,
+    SyncTokenUpdated(String),
+    // VoIP events (MatrixRTC)
+    CallMemberJoined {
         room_id: String,
-        sender: String,
-        sdp: String,
+        user_id: String,
     },
-    CallAnswer {
-        call_id: String,
+    CallMemberLeft {
         room_id: String,
-        sdp: String,
+        user_id: String,
     },
-    CallCandidates {
-        call_id: String,
-        room_id: String,
-        candidates: Vec<String>,
-    },
-    CallHangup {
-        call_id: String,
-        room_id: String,
+    CallParticipantUpdate {
+        participants: Vec<String>,
     },
     CallStateChanged {
-        call_id: String,
+        room_id: String,
         state: CallState,
     },
     CallError(String),
     CallEnded,
+    // Room info events
+    RoomInfoLoaded {
+        room_id: String,
+        name: Option<String>,
+        topic: Option<String>,
+        history_visibility: String,
+    },
+    RoomSettingUpdated {
+        room_id: String,
+    },
+    RoomSettingError {
+        error: String,
+    },
     // Audio settings events
     MicLevel(f32),
     KeyRelease(KeyEvent),

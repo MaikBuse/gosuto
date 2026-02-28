@@ -1,7 +1,8 @@
 use anyhow::Result;
+use matrix_sdk::Client;
 use matrix_sdk::room::MessagesOptions;
 use matrix_sdk::ruma::events::room::message::{MessageType, RoomMessageEventContent};
-use matrix_sdk::Client;
+use matrix_sdk::ruma::uint;
 use tracing::{debug, error};
 
 use crate::event::{AppEvent, EventSender};
@@ -11,13 +12,18 @@ pub async fn fetch_messages(
     client: &Client,
     room_id: &str,
     tx: &EventSender,
+    sync_token: Option<String>,
 ) -> Result<()> {
     let room_id_parsed: matrix_sdk::ruma::OwnedRoomId = room_id.try_into()?;
     let room = client
         .get_room(&room_id_parsed)
         .ok_or_else(|| anyhow::anyhow!("Room not found: {}", room_id))?;
 
-    let options = MessagesOptions::backward();
+    let mut options = MessagesOptions::backward();
+    options.limit = uint!(50);
+    if let Some(token) = sync_token {
+        options.from = Some(token);
+    }
     let response = room.messages(options).await?;
 
     let mut messages: Vec<DisplayMessage> = Vec::new();
@@ -39,7 +45,12 @@ pub async fn fetch_messages(
                     )
                     .unwrap_or_default()
                     .with_timezone(&chrono::Local);
-                    (orig.sender.to_string(), orig.event_id.to_string(), ts, orig.content)
+                    (
+                        orig.sender.to_string(),
+                        orig.event_id.to_string(),
+                        ts,
+                        orig.content,
+                    )
                 }
                 _ => continue,
             };
@@ -67,7 +78,10 @@ pub async fn fetch_messages(
 
     debug!(
         "Fetched {} events for room {}: {} messages, {} skipped non-message events",
-        chunk_size, room_id, messages.len(), skipped
+        chunk_size,
+        room_id,
+        messages.len(),
+        skipped
     );
 
     // Reverse so oldest is first

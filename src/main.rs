@@ -27,22 +27,15 @@ use event::AppEvent;
 async fn main() -> Result<()> {
     // Set up file-based logging if WALRUST_LOG is set
     let log_path = config::log_path()?;
-    let file_appender = tracing_appender::rolling::daily(&log_path, "walrust.log");
+    let file_appender = tracing_appender::rolling::daily(&log_path, "gosuto.log");
     let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
 
     tracing_subscriber::registry()
-        .with(
-            fmt::layer()
-                .with_writer(non_blocking)
-                .with_ansi(false),
-        )
-        .with(
-            EnvFilter::try_from_env("WALRUST_LOG")
-                .unwrap_or_else(|_| EnvFilter::new("error")),
-        )
+        .with(fmt::layer().with_writer(non_blocking).with_ansi(false))
+        .with(EnvFilter::try_from_env("GOSUTO_LOG").unwrap_or_else(|_| EnvFilter::new("error")))
         .init();
 
-    info!("Starting walrust");
+    info!("Starting gōsuto");
 
     // Create event channel
     let (event_tx, mut event_rx) = event::event_channel();
@@ -59,12 +52,12 @@ async fn main() -> Result<()> {
     }));
 
     // Load config
-    let walrust_config = config::load_config();
-    info!("Config: {:?}", walrust_config);
+    let gosuto_config = config::load_config();
+    info!("Config: {:?}", gosuto_config);
 
     // Create app
-    let accept_invalid_certs = walrust_config.network.accept_invalid_certs;
-    let mut app = App::new(event_tx.clone(), walrust_config);
+    let accept_invalid_certs = gosuto_config.network.accept_invalid_certs;
+    let mut app = App::new(event_tx.clone(), gosuto_config);
 
     // Shared Matrix client
     let matrix_client: Arc<Mutex<Option<matrix_sdk::Client>>> = Arc::new(Mutex::new(None));
@@ -96,7 +89,8 @@ async fn main() -> Result<()> {
             // Clean up stale session and store to avoid repeated failures
             if let Ok(session_path) = config::session_path() {
                 if let Ok(stored) = matrix::session::load_session(&session_path)
-                    && let Ok(store_path) = config::store_path_for_homeserver_unchecked(&stored.homeserver)
+                    && let Ok(store_path) =
+                        config::store_path_for_homeserver_unchecked(&stored.homeserver)
                 {
                     info!("Removing stale store at {}", store_path.display());
                     if let Err(e) = std::fs::remove_dir_all(&store_path) {
@@ -202,15 +196,21 @@ async fn main() -> Result<()> {
                                 let client_holder = matrix_client.clone();
                                 let tx = event_tx.clone();
                                 let rid = room_id.clone();
+                                let sync_token = app.sync_token.clone();
                                 tokio::spawn(async move {
                                     let client = { client_holder.lock().await.clone() };
-                                    if let Some(client) = client
-                                        && let Err(e) = matrix::messages::fetch_messages(&client, &rid, &tx).await
-                                    {
-                                        error!("Failed to fetch messages for {}: {:?}", rid, e);
+                                    if let Some(client) = client {
+                                        if let Err(e) = matrix::messages::fetch_messages(&client, &rid, &tx, sync_token).await {
+                                            error!("Failed to fetch messages for {}: {:?}", rid, e);
+                                            let _ = tx.send(AppEvent::FetchError {
+                                                room_id: rid,
+                                                error: e.to_string(),
+                                            });
+                                        }
+                                    } else {
                                         let _ = tx.send(AppEvent::FetchError {
                                             room_id: rid,
-                                            error: e.to_string(),
+                                            error: "Not connected".to_string(),
                                         });
                                     }
                                 });
@@ -324,6 +324,46 @@ async fn main() -> Result<()> {
                             });
                         }
 
+                        // Handle room creation
+                        if let Some((room_name, visibility)) = app.take_pending_create_room() {
+                            let client_holder = matrix_client.clone();
+                            let tx = event_tx.clone();
+                            tokio::spawn(async move {
+                                let client = { client_holder.lock().await.clone() };
+                                if let Some(client) = client {
+                                    use matrix_sdk::ruma::api::client::room::create_room::v3::Request as CreateRoomRequest;
+                                    use matrix_sdk::ruma::events::InitialStateEvent;
+                                    use matrix_sdk::ruma::events::room::history_visibility::{
+                                        HistoryVisibility, RoomHistoryVisibilityEventContent,
+                                    };
+                                    let mut request = CreateRoomRequest::new();
+                                    request.name = Some(room_name);
+
+                                    // Set history visibility as initial state
+                                    let vis = match visibility.as_str() {
+                                        "invited" => HistoryVisibility::Invited,
+                                        "joined" => HistoryVisibility::Joined,
+                                        "world_readable" => HistoryVisibility::WorldReadable,
+                                        _ => HistoryVisibility::Shared,
+                                    };
+                                    let vis_content = RoomHistoryVisibilityEventContent::new(vis);
+                                    let initial_event = InitialStateEvent::with_empty_state_key(vis_content);
+                                    request.initial_state.push(initial_event.to_raw_any());
+
+                                    match client.create_room(request).await {
+                                        Ok(response) => {
+                                            let _ = tx.send(AppEvent::RoomCreated {
+                                                room_id: response.room_id().to_string(),
+                                            });
+                                        }
+                                        Err(e) => {
+                                            let _ = tx.send(AppEvent::SyncError(format!("Failed to create room: {}", e)));
+                                        }
+                                    }
+                                }
+                            });
+                        }
+
                         // Handle room leave
                         if let Some(room_id) = app.take_pending_leave() {
                             let client_holder = matrix_client.clone();
@@ -332,13 +372,49 @@ async fn main() -> Result<()> {
                                 let client = { client_holder.lock().await.clone() };
                                 if let Some(client) = client {
                                     let room_id_parsed: Result<matrix_sdk::ruma::OwnedRoomId, _> = room_id.as_str().try_into();
-                                    if let Ok(id) = room_id_parsed {
-                                        if let Some(room) = client.get_room(&id) {
-                                            if let Err(e) = room.leave().await {
-                                                let _ = tx.send(AppEvent::SyncError(format!("Leave failed: {}", e)));
-                                            }
-                                        }
+                                    if let Ok(id) = room_id_parsed
+                                        && let Some(room) = client.get_room(&id)
+                                        && let Err(e) = room.leave().await
+                                    {
+                                        let _ = tx.send(AppEvent::SyncError(format!("Leave failed: {}", e)));
                                     }
+                                }
+                            });
+                        }
+                        // Handle room info fetch
+                        if app.pending_room_info {
+                            app.pending_room_info = false;
+                            let client_holder = matrix_client.clone();
+                            let tx = event_tx.clone();
+                            let rid = app.room_info.room_id.clone();
+                            tokio::spawn(async move {
+                                let client = { client_holder.lock().await.clone() };
+                                if let Some(client) = client {
+                                    matrix::rooms::fetch_room_info(&client, &rid, &tx).await;
+                                }
+                            });
+                        }
+
+                        // Handle visibility update
+                        if let Some((room_id, visibility)) = app.pending_set_visibility.take() {
+                            let client_holder = matrix_client.clone();
+                            let tx = event_tx.clone();
+                            tokio::spawn(async move {
+                                let client = { client_holder.lock().await.clone() };
+                                if let Some(client) = client {
+                                    matrix::rooms::set_history_visibility(&client, &room_id, &visibility, &tx).await;
+                                }
+                            });
+                        }
+
+                        // Handle room name update
+                        if let Some((room_id, name)) = app.pending_set_room_name.take() {
+                            let client_holder = matrix_client.clone();
+                            let tx = event_tx.clone();
+                            tokio::spawn(async move {
+                                let client = { client_holder.lock().await.clone() };
+                                if let Some(client) = client {
+                                    matrix::rooms::set_room_name(&client, &room_id, &name, &tx).await;
                                 }
                             });
                         }
@@ -356,13 +432,20 @@ async fn main() -> Result<()> {
             let tx = event_tx.clone();
             let client_holder = matrix_client.clone();
             tokio::spawn(async move {
-                match matrix::client::login(&homeserver, &username, &password, &tx, accept_invalid_certs).await {
+                match matrix::client::login(
+                    &homeserver,
+                    &username,
+                    &password,
+                    &tx,
+                    accept_invalid_certs,
+                )
+                .await
+                {
                     Ok(client) => {
                         *client_holder.lock().await = Some(client.clone());
                         let sync_tx = tx.clone();
                         tokio::spawn(async move {
-                            if let Err(e) =
-                                matrix::sync::start_sync(client, sync_tx.clone()).await
+                            if let Err(e) = matrix::sync::start_sync(client, sync_tx.clone()).await
                             {
                                 error!("Sync error: {}", e);
                                 let _ = sync_tx.send(AppEvent::SyncError(e.to_string()));
@@ -403,8 +486,7 @@ async fn main() -> Result<()> {
                         *client_holder.lock().await = Some(client.clone());
                         let sync_tx = tx.clone();
                         tokio::spawn(async move {
-                            if let Err(e) =
-                                matrix::sync::start_sync(client, sync_tx.clone()).await
+                            if let Err(e) = matrix::sync::start_sync(client, sync_tx.clone()).await
                             {
                                 error!("Sync error: {}", e);
                                 let _ = sync_tx.send(AppEvent::SyncError(e.to_string()));
@@ -437,7 +519,14 @@ async fn main() -> Result<()> {
             app.chat_title_reveal.tick(dt);
             app.members_title_reveal.tick(dt);
             if let Some(ref info) = app.call_info {
-                app.call_popup.tick(dt, &info.state);
+                let ds = match info.state {
+                    voip::CallState::Connecting => ui::call_overlay::CallDisplayState::Connecting,
+                    voip::CallState::Active => ui::call_overlay::CallDisplayState::Active,
+                };
+                app.call_popup.tick(dt, &ds);
+            } else if app.incoming_call_room.is_some() {
+                app.call_popup
+                    .tick(dt, &ui::call_overlay::CallDisplayState::Ringing);
             }
 
             tui.draw(|frame| ui::render(&app, frame))?;
@@ -451,7 +540,7 @@ async fn main() -> Result<()> {
     // Cleanup
     let _ = call_cmd_tx.send(voip::manager::CallCommand::Shutdown);
     terminal::restore()?;
-    info!("walrust shut down cleanly");
+    info!("gōsuto shut down cleanly");
 
     Ok(())
 }

@@ -2,42 +2,38 @@ use std::time::Instant;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CallState {
-    /// We are sending an invite, waiting for answer
-    Inviting,
-    /// Incoming call ringing, waiting for user to accept/reject
-    Ringing,
-    /// SDP/ICE exchange in progress
+    /// Acquiring JWT + connecting to LiveKit
     Connecting,
-    /// Call is active with audio flowing
+    /// Connected, audio flowing
     Active,
 }
 
 #[derive(Debug, Clone)]
 pub struct CallInfo {
-    pub call_id: String,
     pub room_id: String,
-    pub remote_user: String,
     pub state: CallState,
+    pub is_incoming: bool,
+    pub participants: Vec<String>,
     pub started_at: Option<Instant>,
 }
 
 impl CallInfo {
-    pub fn new_outgoing(call_id: String, room_id: String, remote_user: String) -> Self {
+    pub fn new_outgoing(room_id: String) -> Self {
         Self {
-            call_id,
             room_id,
-            remote_user,
-            state: CallState::Inviting,
+            state: CallState::Connecting,
+            is_incoming: false,
+            participants: Vec::new(),
             started_at: None,
         }
     }
 
-    pub fn new_incoming(call_id: String, room_id: String, remote_user: String) -> Self {
+    pub fn new_incoming(room_id: String, caller: String) -> Self {
         Self {
-            call_id,
             room_id,
-            remote_user,
-            state: CallState::Ringing,
+            state: CallState::Connecting,
+            is_incoming: true,
+            participants: vec![caller],
             started_at: None,
         }
     }

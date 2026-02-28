@@ -16,8 +16,8 @@ pub const SENDER_COLORS: &[Color] = &[
     CYAN,
     MAGENTA,
     GREEN,
-    Color::Rgb(255, 165, 0),  // orange
-    Color::Rgb(255, 255, 0),  // yellow
+    Color::Rgb(255, 165, 0),   // orange
+    Color::Rgb(255, 255, 0),   // yellow
     Color::Rgb(128, 128, 255), // periwinkle
     Color::Rgb(255, 100, 200), // pink
     Color::Rgb(0, 200, 255),   // sky blue
@@ -58,11 +58,17 @@ pub fn error_style() -> Style {
 }
 
 pub fn normal_mode_style() -> Style {
-    Style::default().fg(BLACK).bg(CYAN).add_modifier(Modifier::BOLD)
+    Style::default()
+        .fg(BLACK)
+        .bg(CYAN)
+        .add_modifier(Modifier::BOLD)
 }
 
 pub fn insert_mode_style() -> Style {
-    Style::default().fg(BLACK).bg(GREEN).add_modifier(Modifier::BOLD)
+    Style::default()
+        .fg(BLACK)
+        .bg(GREEN)
+        .add_modifier(Modifier::BOLD)
 }
 
 pub fn command_mode_style() -> Style {

@@ -31,7 +31,7 @@ pub fn compute_layout(frame: &Frame) -> AppLayout {
         .direction(Direction::Horizontal)
         .constraints([
             Constraint::Length(24), // room list
-            Constraint::Min(30),   // chat area
+            Constraint::Min(30),    // chat area
             Constraint::Length(20), // members list
         ])
         .split(content);

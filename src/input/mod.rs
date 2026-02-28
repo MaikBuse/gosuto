@@ -35,11 +35,16 @@ pub enum CommandAction {
     Leave,
     DirectMessage(String),
     Logout,
-    Call(String),
+    Call,
     Answer,
     Reject,
     Hangup,
     Rain,
     Glitch,
     AudioSettings,
+    CreateRoom {
+        name: String,
+        history_visibility: Option<String>,
+    },
+    RoomInfo,
 }

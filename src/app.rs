@@ -1,19 +1,51 @@
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use tracing::info;
 
-use crate::config::WalrustConfig;
+use crate::config::GosutoConfig;
 use crate::event::{AppEvent, EventSender};
 use crate::input::{self, CommandAction, FocusPanel, InputResult, VimState};
 use crate::state::{AuthState, MemberListState, MessageState, RoomListState};
 use crate::ui::call_overlay::TransmissionPopup;
 use crate::ui::effects::{EffectsState, TextReveal};
 use crate::ui::login::LoginState;
-use crate::voip::{CallCommand, CallCommandSender, CallInfo, CallState};
 use crate::voip::audio::AudioPipeline;
+use crate::voip::{CallCommand, CallCommandSender, CallInfo, CallState};
+
+pub const HISTORY_VISIBILITY_OPTIONS: &[&str] = &["shared", "invited", "joined", "world_readable"];
+
+pub struct RoomInfoState {
+    pub open: bool,
+    pub room_id: String,
+    pub name: Option<String>,
+    pub topic: Option<String>,
+    pub history_visibility: String,
+    pub selected_field: usize,
+    pub loading: bool,
+    pub saving: bool,
+    pub editing_name: bool,
+    pub name_buffer: String,
+}
+
+impl RoomInfoState {
+    pub fn new() -> Self {
+        Self {
+            open: false,
+            room_id: String::new(),
+            name: None,
+            topic: None,
+            history_visibility: "shared".to_string(),
+            selected_field: 0,
+            loading: false,
+            saving: false,
+            editing_name: false,
+            name_buffer: String::new(),
+        }
+    }
+}
 
 pub struct AudioSettingsState {
     pub open: bool,
@@ -84,16 +116,22 @@ pub struct App {
     pub sync_status: String,
     pub last_error: Option<String>,
     pub event_tx: EventSender,
-    pub config: WalrustConfig,
+    pub config: GosutoConfig,
     // Pending actions for main loop to process
     pub pending_logout: bool,
-    pending_send: Option<(String, String)>,  // (room_id, body)
-    pending_join: Option<String>,            // room_id_or_alias
-    pending_leave: Option<String>,           // room_id
-    pending_dm: Option<String>,              // user_id
+    pending_send: Option<(String, String)>, // (room_id, body)
+    pending_join: Option<String>,           // room_id_or_alias
+    pending_leave: Option<String>,          // room_id
+    pending_dm: Option<String>,             // user_id
+    pending_create_room: Option<(String, String)>, // (room name, history_visibility)
+    pub pending_room_info: bool,
+    pub pending_set_visibility: Option<(String, String)>, // (room_id, visibility)
+    pub pending_set_room_name: Option<(String, String)>,  // (room_id, new_name)
     // VoIP
     pub call_info: Option<CallInfo>,
     pub call_cmd_tx: Option<CallCommandSender>,
+    pub incoming_call_room: Option<String>,
+    pub incoming_call_user: Option<String>,
     // Auto-login
     pub auto_login_attempted: bool,
     pub pending_credential_clear: bool,
@@ -102,13 +140,16 @@ pub struct App {
     pub call_popup: TransmissionPopup,
     pub chat_title_reveal: TextReveal,
     pub members_title_reveal: TextReveal,
+    // Room info
+    pub room_info: RoomInfoState,
     // Audio settings
     pub audio_settings: AudioSettingsState,
     pub ptt_transmitting: Arc<AtomicBool>,
+    pub sync_token: Option<String>,
 }
 
 impl App {
-    pub fn new(event_tx: EventSender, config: WalrustConfig) -> Self {
+    pub fn new(event_tx: EventSender, config: GosutoConfig) -> Self {
         let rain_enabled = config.effects.rain;
         let glitch_enabled = config.effects.glitch;
         Self {
@@ -128,16 +169,24 @@ impl App {
             pending_join: None,
             pending_leave: None,
             pending_dm: None,
+            pending_create_room: None,
+            pending_room_info: false,
+            pending_set_visibility: None,
+            pending_set_room_name: None,
             call_info: None,
             call_cmd_tx: None,
+            incoming_call_room: None,
+            incoming_call_user: None,
             auto_login_attempted: false,
             pending_credential_clear: false,
             effects: EffectsState::new(rain_enabled, glitch_enabled),
             call_popup: TransmissionPopup::new(),
             chat_title_reveal: TextReveal::new(0xC0DE_CAFE_0001),
             members_title_reveal: TextReveal::new(0xC0DE_CAFE_0002),
+            room_info: RoomInfoState::new(),
             audio_settings: AudioSettingsState::new(),
             ptt_transmitting: Arc::new(AtomicBool::new(true)), // default: always transmit (no PTT)
+            sync_token: None,
         }
     }
 
@@ -151,6 +200,8 @@ impl App {
             AppEvent::Key(key) => {
                 if !self.auth.is_logged_in() {
                     self.handle_login_key(key);
+                } else if self.room_info.open {
+                    self.handle_room_info_key(key);
                 } else if self.audio_settings.open {
                     self.handle_audio_settings_key(key);
                 } else {
@@ -225,9 +276,8 @@ impl App {
                     crate::matrix::credentials::delete_credentials();
                     self.auth = AuthState::LoggedOut;
                 } else if was_logged_in {
-                    self.auth = AuthState::Error(
-                        "Session expired — please log in again".to_string(),
-                    );
+                    self.auth =
+                        AuthState::Error("Session expired — please log in again".to_string());
                 } else if !self.auto_login_attempted
                     && let Some(creds) = crate::matrix::credentials::load_credentials()
                 {
@@ -299,81 +349,94 @@ impl App {
                 self.vim.focus = FocusPanel::Messages;
                 self.chat_title_reveal.trigger();
             }
+            AppEvent::RoomCreated { room_id } => {
+                self.messages.set_room(Some(room_id));
+                self.vim.focus = FocusPanel::Messages;
+                self.chat_title_reveal.trigger();
+            }
             AppEvent::SyncError(err) => {
                 self.last_error = Some(err);
             }
             AppEvent::SyncStatus(status) => {
                 self.sync_status = status;
             }
-            // VoIP events
-            AppEvent::CallInvite {
-                call_id,
-                room_id,
-                sender,
-                sdp,
-            } => {
+            AppEvent::SyncTokenUpdated(token) => {
+                self.sync_token = Some(token);
+            }
+            // VoIP events (MatrixRTC)
+            AppEvent::CallMemberJoined { room_id, user_id } => {
+                // If we're already in a call, ignore
                 if self.call_info.is_some() {
-                    // Busy - auto-reject via CallManager
-                    info!("Auto-rejecting call from {} (busy)", sender);
-                    if let Some(ref tx) = self.call_cmd_tx {
-                        let _ = tx.send(CallCommand::RejectIncoming {
-                            call_id,
-                            room_id,
-                        });
-                    }
-                } else {
-                    self.call_info = Some(CallInfo::new_incoming(
-                        call_id.clone(),
-                        room_id.clone(),
-                        sender,
-                    ));
-                    if let Some(ref tx) = self.call_cmd_tx {
-                        let _ = tx.send(CallCommand::RemoteInvite {
-                            call_id,
-                            room_id,
-                            sdp,
-                        });
-                    }
+                    return;
                 }
-            }
-            AppEvent::CallAnswer {
-                call_id,
-                room_id: _,
-                sdp,
-            } => {
-                if let Some(ref tx) = self.call_cmd_tx {
-                    let _ = tx.send(CallCommand::RemoteAnswer { call_id, sdp });
+                // If it's us, ignore
+                if let AuthState::LoggedIn {
+                    user_id: ref our_id,
+                    ..
+                } = self.auth
+                    && user_id == *our_id
+                {
+                    return;
                 }
+                // Someone started a call — show ringing UI
+                self.incoming_call_room = Some(room_id);
+                self.incoming_call_user = Some(user_id);
             }
-            AppEvent::CallCandidates {
-                call_id,
-                room_id: _,
-                candidates,
-            } => {
-                if let Some(ref tx) = self.call_cmd_tx {
-                    let _ = tx.send(CallCommand::RemoteCandidates {
-                        call_id,
-                        candidates,
-                    });
+            AppEvent::CallMemberLeft { room_id, user_id } => {
+                // If it was the incoming caller, clear ringing state
+                if self.incoming_call_room.as_deref() == Some(&room_id)
+                    && self.incoming_call_user.as_deref() == Some(&user_id)
+                {
+                    self.incoming_call_room = None;
+                    self.incoming_call_user = None;
                 }
-            }
-            AppEvent::CallHangup {
-                call_id,
-                room_id: _,
-            } => {
-                if let Some(ref tx) = self.call_cmd_tx {
-                    let _ = tx.send(CallCommand::RemoteHangup { call_id });
-                }
-            }
-            AppEvent::CallStateChanged { call_id, state } => {
+                // Update participants if in active call
                 if let Some(ref mut info) = self.call_info {
-                    if info.call_id == call_id {
-                        if state == CallState::Active && info.started_at.is_none() {
-                            info.started_at = Some(Instant::now());
-                        }
-                        info.state = state;
-                    }
+                    info.participants.retain(|p| p != &user_id);
                 }
+            }
+            AppEvent::CallParticipantUpdate { participants } => {
+                if let Some(ref mut info) = self.call_info {
+                    info.participants = participants;
+                }
+            }
+            AppEvent::CallStateChanged { room_id, state } => {
+                if let Some(ref mut info) = self.call_info
+                    && info.room_id == room_id
+                {
+                    if state == CallState::Active && info.started_at.is_none() {
+                        info.started_at = Some(Instant::now());
+                    }
+                    info.state = state;
+                }
+            }
+            // Room info events
+            AppEvent::RoomInfoLoaded {
+                room_id,
+                name,
+                topic,
+                history_visibility,
+            } => {
+                if self.room_info.open && self.room_info.room_id == room_id {
+                    self.room_info.name = name;
+                    self.room_info.topic = topic;
+                    self.room_info.history_visibility = history_visibility;
+                    self.room_info.loading = false;
+                }
+            }
+            AppEvent::RoomSettingUpdated { room_id } => {
+                if self.room_info.open && self.room_info.room_id == room_id {
+                    // If we just saved a name, update it in state
+                    if !self.room_info.name_buffer.is_empty() {
+                        self.room_info.name = Some(self.room_info.name_buffer.clone());
+                        self.room_info.name_buffer.clear();
+                    }
+                    self.room_info.saving = false;
+                }
+            }
+            AppEvent::RoomSettingError { error } => {
+                self.room_info.saving = false;
+                self.last_error = Some(error);
             }
             AppEvent::CallError(err) => {
                 self.last_error = Some(err);
@@ -470,26 +533,9 @@ impl App {
                 if self.call_info.is_some() {
                     // Toggle: c during active call = hangup
                     self.handle_command(CommandAction::Hangup);
-                } else if self.vim.focus == FocusPanel::Members
-                    && let Some(member) = self.members_list.selected_member()
-                {
-                    if let Some(room_id) = self.messages.current_room_id.clone() {
-                        let call_id = uuid::Uuid::new_v4().to_string();
-                        let user_id = member.user_id.clone();
-                        self.call_info = Some(CallInfo::new_outgoing(
-                            call_id.clone(),
-                            room_id.clone(),
-                            user_id,
-                        ));
-                        if let Some(ref tx) = self.call_cmd_tx {
-                            let _ = tx.send(CallCommand::Initiate {
-                                call_id,
-                                room_id,
-                            });
-                        }
-                    } else {
-                        self.last_error = Some("No room selected".to_string());
-                    }
+                } else {
+                    // Initiate call in current room
+                    self.handle_command(CommandAction::Call);
                 }
             }
             InputResult::AnswerCall => {
@@ -575,69 +621,45 @@ impl App {
                 }
             }
             CommandAction::DirectMessage(user) => {
-                // DMs are just :join with the user as room target
-                self.pending_join = Some(user);
+                self.pending_dm = Some(user);
             }
-            CommandAction::Call(user) => {
+            CommandAction::Call => {
                 if self.call_info.is_some() {
                     self.last_error = Some("Already in a call".to_string());
                     return;
                 }
-                // Find or create DM room for this user, then initiate call
-                let call_id = uuid::Uuid::new_v4().to_string();
-                if let Some(room) = self.room_list.selected_room() {
-                    let room_id = room.id.clone();
-                    self.call_info = Some(CallInfo::new_outgoing(
-                        call_id.clone(),
-                        room_id.clone(),
-                        user.clone(),
-                    ));
+                if let Some(room_id) = self.messages.current_room_id.clone() {
+                    self.call_info = Some(CallInfo::new_outgoing(room_id.clone()));
                     if let Some(ref tx) = self.call_cmd_tx {
-                        let _ = tx.send(CallCommand::Initiate {
-                            call_id,
-                            room_id,
-                        });
+                        let _ = tx.send(CallCommand::Initiate { room_id });
                     }
                 } else {
-                    self.last_error = Some("Select a room first".to_string());
+                    self.last_error = Some("No room selected".to_string());
                 }
             }
             CommandAction::Answer => {
-                if let Some(ref info) = self.call_info {
-                    if info.state == CallState::Ringing {
-                        let call_id = info.call_id.clone();
-                        if let Some(ref tx) = self.call_cmd_tx {
-                            let _ = tx.send(CallCommand::Answer { call_id });
-                        }
-                    } else {
-                        self.last_error = Some("No incoming call to answer".to_string());
+                if let Some(room_id) = self.incoming_call_room.take() {
+                    let caller = self.incoming_call_user.take().unwrap_or_default();
+                    self.call_info = Some(CallInfo::new_incoming(room_id.clone(), caller));
+                    if let Some(ref tx) = self.call_cmd_tx {
+                        let _ = tx.send(CallCommand::Initiate { room_id });
                     }
                 } else {
                     self.last_error = Some("No incoming call".to_string());
                 }
             }
             CommandAction::Reject => {
-                if let Some(ref info) = self.call_info {
-                    if info.state == CallState::Ringing {
-                        let call_id = info.call_id.clone();
-                        let room_id = info.room_id.clone();
-                        if let Some(ref tx) = self.call_cmd_tx {
-                            let _ = tx.send(CallCommand::Reject { call_id, room_id });
-                        }
-                        self.call_info = None;
-                    } else {
-                        self.last_error = Some("No incoming call to reject".to_string());
-                    }
+                if self.incoming_call_room.is_some() {
+                    self.incoming_call_room = None;
+                    self.incoming_call_user = None;
                 } else {
                     self.last_error = Some("No incoming call".to_string());
                 }
             }
             CommandAction::Hangup => {
-                if let Some(ref info) = self.call_info {
-                    let call_id = info.call_id.clone();
-                    let room_id = info.room_id.clone();
+                if self.call_info.is_some() {
                     if let Some(ref tx) = self.call_cmd_tx {
-                        let _ = tx.send(CallCommand::Hangup { call_id, room_id });
+                        let _ = tx.send(CallCommand::Leave);
                     }
                     self.call_info = None;
                 } else {
@@ -656,6 +678,32 @@ impl App {
             }
             CommandAction::AudioSettings => {
                 self.open_audio_settings();
+            }
+            CommandAction::CreateRoom {
+                name,
+                history_visibility,
+            } => {
+                let vis = history_visibility.unwrap_or_else(|| "shared".to_string());
+                self.pending_create_room = Some((name, vis));
+            }
+            CommandAction::RoomInfo => {
+                if let Some(room_id) = self.messages.current_room_id.clone() {
+                    self.room_info = RoomInfoState {
+                        open: true,
+                        room_id,
+                        name: None,
+                        topic: None,
+                        history_visibility: String::new(),
+                        selected_field: 0,
+                        loading: true,
+                        saving: false,
+                        editing_name: false,
+                        name_buffer: String::new(),
+                    };
+                    self.pending_room_info = true;
+                } else {
+                    self.last_error = Some("No room selected".to_string());
+                }
             }
         }
     }
@@ -711,6 +759,116 @@ impl App {
 
     pub fn take_pending_dm(&mut self) -> Option<String> {
         self.pending_dm.take()
+    }
+
+    pub fn take_pending_create_room(&mut self) -> Option<(String, String)> {
+        self.pending_create_room.take()
+    }
+
+    // ── Room Info ───────────────────────────────────────
+
+    fn handle_room_info_key(&mut self, key: KeyEvent) {
+        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
+            self.room_info.open = false;
+            self.running = false;
+            return;
+        }
+
+        if self.room_info.loading || self.room_info.saving {
+            if key.code == KeyCode::Esc {
+                self.room_info.open = false;
+            }
+            return;
+        }
+
+        // Inline name editing mode
+        if self.room_info.editing_name {
+            match key.code {
+                KeyCode::Esc => {
+                    self.room_info.editing_name = false;
+                    self.room_info.name_buffer.clear();
+                }
+                KeyCode::Enter => {
+                    let new_name = self.room_info.name_buffer.clone();
+                    if !new_name.is_empty() {
+                        let room_id = self.room_info.room_id.clone();
+                        self.room_info.saving = true;
+                        self.room_info.editing_name = false;
+                        self.pending_set_room_name = Some((room_id, new_name));
+                    } else {
+                        self.room_info.editing_name = false;
+                        self.room_info.name_buffer.clear();
+                    }
+                }
+                KeyCode::Backspace => {
+                    self.room_info.name_buffer.pop();
+                }
+                KeyCode::Char(c) => {
+                    self.room_info.name_buffer.push(c);
+                }
+                _ => {}
+            }
+            return;
+        }
+
+        match key.code {
+            KeyCode::Esc => {
+                self.room_info.open = false;
+            }
+            KeyCode::Char('j') | KeyCode::Down => {
+                if self.room_info.selected_field < 1 {
+                    self.room_info.selected_field += 1;
+                }
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                if self.room_info.selected_field > 0 {
+                    self.room_info.selected_field -= 1;
+                }
+            }
+            KeyCode::Char('h') | KeyCode::Left => {
+                self.cycle_room_info_field(-1);
+            }
+            KeyCode::Char('l') | KeyCode::Right => {
+                self.cycle_room_info_field(1);
+            }
+            KeyCode::Enter => {
+                match self.room_info.selected_field {
+                    0 => {
+                        // Enter name editing mode
+                        self.room_info.editing_name = true;
+                        self.room_info.name_buffer =
+                            self.room_info.name.clone().unwrap_or_default();
+                    }
+                    1 => {
+                        // Save current history visibility
+                        let room_id = self.room_info.room_id.clone();
+                        let vis = self.room_info.history_visibility.clone();
+                        self.room_info.saving = true;
+                        self.pending_set_visibility = Some((room_id, vis));
+                    }
+                    _ => {}
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn cycle_room_info_field(&mut self, dir: i32) {
+        if self.room_info.selected_field == 1 {
+            // Cycle history visibility
+            let opts = HISTORY_VISIBILITY_OPTIONS;
+            let current_idx = opts
+                .iter()
+                .position(|&v| v == self.room_info.history_visibility)
+                .unwrap_or(0);
+            let len = opts.len();
+            let new_idx = if dir > 0 {
+                (current_idx + 1) % len
+            } else {
+                (current_idx + len - 1) % len
+            };
+            self.room_info.history_visibility = opts[new_idx].to_string();
+        }
     }
 
     // ── Audio Settings ──────────────────────────────────
@@ -798,7 +956,9 @@ impl App {
 
     pub fn start_mic_test(&mut self) {
         // Stop any existing mic test (old Arc stays false, old thread exits)
-        self.audio_settings.mic_test_running.store(false, Ordering::Relaxed);
+        self.audio_settings
+            .mic_test_running
+            .store(false, Ordering::Relaxed);
 
         // Create a fresh running flag for the new test
         let running = Arc::new(AtomicBool::new(true));
@@ -816,7 +976,9 @@ impl App {
         let tx = self.event_tx.clone();
 
         std::thread::spawn(move || {
-            if let Err(e) = AudioPipeline::start_mic_test(device_name.as_deref(), volume, tx, running) {
+            if let Err(e) =
+                AudioPipeline::start_mic_test(device_name.as_deref(), volume, tx, running)
+            {
                 info!("Mic test error: {}", e);
             }
         });

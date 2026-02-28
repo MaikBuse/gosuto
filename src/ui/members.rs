@@ -12,11 +12,11 @@ use crate::ui::theme;
 /// IRC-style power level prefix
 fn power_prefix(power_level: i64) -> &'static str {
     match power_level {
-        100 => "~", // owner
-        75..=99 => "&",  // admin
-        50..=74 => "@",  // mod/op
-        1..=49 => "+",   // voice
-        _ => " ",        // regular
+        100 => "~",     // owner
+        75..=99 => "&", // admin
+        50..=74 => "@", // mod/op
+        1..=49 => "+",  // voice
+        _ => " ",       // regular
     }
 }
 
@@ -32,7 +32,9 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
     let member_count = app.members_list.members.len();
     let title = format!(" MEMBERS ({}) ", member_count);
 
-    let title_line = app.members_title_reveal.render_line(&title, theme::title_style());
+    let title_line = app
+        .members_title_reveal
+        .render_line(&title, theme::title_style());
 
     let block = Block::default()
         .title(title_line)

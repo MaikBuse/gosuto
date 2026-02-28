@@ -17,7 +17,11 @@ pub(crate) struct Xorshift64(u64);
 
 impl Xorshift64 {
     pub fn new(seed: u64) -> Self {
-        Self(if seed == 0 { 0xDEAD_BEEF_CAFE_BABE } else { seed })
+        Self(if seed == 0 {
+            0xDEAD_BEEF_CAFE_BABE
+        } else {
+            seed
+        })
     }
 
     pub fn next(&mut self) -> u64 {

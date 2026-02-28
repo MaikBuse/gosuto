@@ -68,8 +68,7 @@ impl TextReveal {
                     let display = if revealed {
                         ch
                     } else {
-                        SCRAMBLE_CHARS
-                            [(scramble_rng.next() % SCRAMBLE_CHARS.len() as u64) as usize]
+                        SCRAMBLE_CHARS[(scramble_rng.next() % SCRAMBLE_CHARS.len() as u64) as usize]
                     };
                     Span::styled(display.to_string(), style)
                 }
@@ -100,8 +99,7 @@ impl TextReveal {
                     if revealed {
                         ch
                     } else {
-                        SCRAMBLE_CHARS
-                            [(scramble_rng.next() % SCRAMBLE_CHARS.len() as u64) as usize]
+                        SCRAMBLE_CHARS[(scramble_rng.next() % SCRAMBLE_CHARS.len() as u64) as usize]
                     }
                 }
             })

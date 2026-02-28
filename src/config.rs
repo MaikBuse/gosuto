@@ -3,12 +3,12 @@ use std::path::PathBuf;
 use anyhow::Result;
 use tracing::info;
 
-pub const APP_NAME: &str = "walrust";
+pub const APP_NAME: &str = "gosuto";
 pub const TICK_RATE_MS: u64 = 250;
 pub const RENDER_RATE_MS: u64 = 50;
 
 #[derive(Debug, Default, serde::Deserialize, serde::Serialize)]
-pub struct WalrustConfig {
+pub struct GosutoConfig {
     #[serde(default)]
     pub network: NetworkConfig,
     #[serde(default)]
@@ -92,10 +92,10 @@ pub fn config_dir() -> Result<PathBuf> {
     Ok(dir)
 }
 
-pub fn load_config() -> WalrustConfig {
+pub fn load_config() -> GosutoConfig {
     let path = match config_dir() {
         Ok(dir) => dir.join("config.toml"),
-        Err(_) => return WalrustConfig::default(),
+        Err(_) => return GosutoConfig::default(),
     };
 
     match std::fs::read_to_string(&path) {
@@ -106,21 +106,25 @@ pub fn load_config() -> WalrustConfig {
             }
             Err(e) => {
                 info!("Failed to parse config at {}: {}", path.display(), e);
-                WalrustConfig::default()
+                GosutoConfig::default()
             }
         },
         Err(_) => {
-            let config = WalrustConfig::default();
-            if let Some(parent) = path.parent() {
-                if let Err(e) = std::fs::create_dir_all(parent) {
-                    info!("Could not create config dir {}: {}", parent.display(), e);
-                    return config;
-                }
+            let config = GosutoConfig::default();
+            if let Some(parent) = path.parent()
+                && let Err(e) = std::fs::create_dir_all(parent)
+            {
+                info!("Could not create config dir {}: {}", parent.display(), e);
+                return config;
             }
             match toml::to_string_pretty(&config) {
                 Ok(contents) => {
                     if let Err(e) = std::fs::write(&path, &contents) {
-                        info!("Could not write default config to {}: {}", path.display(), e);
+                        info!(
+                            "Could not write default config to {}: {}",
+                            path.display(),
+                            e
+                        );
                     } else {
                         info!("Created default config at {}", path.display());
                     }
@@ -134,7 +138,7 @@ pub fn load_config() -> WalrustConfig {
     }
 }
 
-pub fn save_config(config: &WalrustConfig) {
+pub fn save_config(config: &GosutoConfig) {
     let path = match config_dir() {
         Ok(dir) => dir.join("config.toml"),
         Err(_) => return,

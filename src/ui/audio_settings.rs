@@ -1,7 +1,7 @@
+use ratatui::Frame;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
-use ratatui::Frame;
 
 use crate::app::AudioSettingsState;
 use crate::ui::theme;
@@ -98,7 +98,14 @@ fn render_field(
         });
 
     set_cell(buf, &bounds, left, row, marker, marker_s);
-    set_cell(buf, &bounds, left + 1, row, ' ', Style::default().bg(theme::BG));
+    set_cell(
+        buf,
+        &bounds,
+        left + 1,
+        row,
+        ' ',
+        Style::default().bg(theme::BG),
+    );
 
     let label_x = left + 2;
     let value_x = left + 19;
@@ -151,10 +158,7 @@ fn render_field(
                     .add_modifier(Modifier::BOLD);
                 write_str(buf, &bounds, value_x, row, "press key...", s);
             } else {
-                let key_name = state
-                    .push_to_talk_key
-                    .as_deref()
-                    .unwrap_or("not set");
+                let key_name = state.push_to_talk_key.as_deref().unwrap_or("not set");
                 let s = if selected {
                     Style::default().fg(theme::CYAN).bg(theme::BG)
                 } else {
@@ -196,14 +200,7 @@ fn render_device_selector(
     write_str(buf, bounds, x + 2, row, &display, name_s);
 
     let end_x = x + 2 + display.chars().count() as u16;
-    set_cell(
-        buf,
-        bounds,
-        end_x,
-        row,
-        ' ',
-        Style::default().bg(theme::BG),
-    );
+    set_cell(buf, bounds, end_x, row, ' ', Style::default().bg(theme::BG));
     set_cell(buf, bounds, end_x + 1, row, '▸', arrow_s);
 }
 
@@ -261,14 +258,7 @@ fn render_volume_bar(
     );
 }
 
-fn render_toggle(
-    buf: &mut Buffer,
-    bounds: &Rect,
-    x: u16,
-    row: u16,
-    on: bool,
-    selected: bool,
-) {
+fn render_toggle(buf: &mut Buffer, bounds: &Rect, x: u16, row: u16, on: bool, selected: bool) {
     let (text, color) = if on {
         ("ON", theme::GREEN)
     } else {
@@ -281,14 +271,7 @@ fn render_toggle(
     write_str(buf, bounds, x, row, text, s);
 }
 
-fn render_mic_meter(
-    buf: &mut Buffer,
-    bounds: &Rect,
-    left: u16,
-    right: u16,
-    row: u16,
-    level: f32,
-) {
+fn render_mic_meter(buf: &mut Buffer, bounds: &Rect, left: u16, right: u16, row: u16, level: f32) {
     let label = "MIC ";
     let label_s = Style::default().fg(theme::DIM).bg(theme::BG);
     write_str(buf, bounds, left, row, label, label_s);
@@ -357,14 +340,7 @@ fn render_title(buf: &mut Buffer, bounds: &Rect, area: Rect, color: Color) {
     let title_start = bracket_l + 2;
 
     set_cell(buf, bounds, bracket_l, area.y, '╡', border_s);
-    set_cell(
-        buf,
-        bounds,
-        bracket_l + 1,
-        area.y,
-        ' ',
-        border_s,
-    );
+    set_cell(buf, bounds, bracket_l + 1, area.y, ' ', border_s);
 
     for (i, ch) in title.chars().enumerate() {
         let x = title_start + i as u16;

@@ -147,22 +147,88 @@ impl LoginState {
     }
 }
 
+const LOGO_LINES: &[&str] = &[
+    r" ██████╗  ██████╗ ███████╗██╗   ██╗████████╗ ██████╗ ",
+    r"██╔════╝ ██╔═══██╗██╔════╝██║   ██║╚══██╔══╝██╔═══██╗",
+    r"██║  ███╗██║   ██║███████╗██║   ██║   ██║   ██║   ██║",
+    r"██║   ██║██║   ██║╚════██║██║   ██║   ██║   ██║   ██║",
+    r"╚██████╔╝╚██████╔╝███████║╚██████╔╝   ██║   ╚██████╔╝",
+    r" ╚═════╝  ╚═════╝ ╚══════╝ ╚═════╝    ╚═╝    ╚═════╝ ",
+];
+const LOGO_TOP_BORDER: &str = "════════════════════ ゴースト ════════════════════";
+const LOGO_BOTTOM_BORDER: &str = "════════════════════════════════════════════════════════";
+const LOGO_HEIGHT: u16 = 9; // top border + 6 lines + bottom border + gap
+
 pub fn render(login: &LoginState, auth_state: &AuthState, frame: &mut Frame) {
     let area = frame.area();
 
     let is_register = login.mode == FormMode::Register;
 
-    // Center the login form
-    let form_width = 50u16.min(area.width.saturating_sub(4));
-    let form_height = if is_register { 20u16 } else { 14u16 };
-    let form_area = centered_rect(form_width, form_height, area);
+    let form_width = 56u16.min(area.width.saturating_sub(4));
+    let form_height = if is_register { 19u16 } else { 13u16 };
+
+    let show_logo = area.height >= form_height + LOGO_HEIGHT + 2;
+
+    let total_height = if show_logo {
+        LOGO_HEIGHT + form_height
+    } else {
+        form_height
+    };
+
+    let outer_area = centered_rect(form_width, total_height, area);
+
+    let (logo_area, form_area) = if show_logo {
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(LOGO_HEIGHT),
+                Constraint::Length(form_height),
+            ])
+            .split(outer_area);
+        (Some(chunks[0]), chunks[1])
+    } else {
+        (None, centered_rect(form_width, form_height, area))
+    };
+
+    // Render logo (no Clear — rain shows through gaps)
+    if let Some(logo_rect) = logo_area {
+        let mut lines = Vec::with_capacity(LOGO_HEIGHT as usize);
+        lines.push(Line::from(Span::styled(
+            LOGO_TOP_BORDER,
+            ratatui::style::Style::default()
+                .fg(theme::CYAN)
+                .add_modifier(Modifier::BOLD),
+        )));
+        for logo_line in LOGO_LINES {
+            lines.push(Line::from(Span::styled(
+                *logo_line,
+                ratatui::style::Style::default()
+                    .fg(theme::CYAN)
+                    .add_modifier(Modifier::BOLD),
+            )));
+        }
+        lines.push(Line::from(Span::styled(
+            LOGO_BOTTOM_BORDER,
+            ratatui::style::Style::default()
+                .fg(theme::CYAN)
+                .add_modifier(Modifier::BOLD),
+        )));
+        // gap line (empty)
+        lines.push(Line::from(""));
+
+        frame.render_widget(
+            Paragraph::new(lines).alignment(Alignment::Center),
+            logo_rect,
+        );
+    }
 
     // Clear the form area so rain doesn't bleed through the panel
     frame.render_widget(Clear, form_area);
 
+    let title = if is_register { " Register " } else { " Login " };
     let block = Block::default()
         .title(Line::from(vec![Span::styled(
-            " WALRUST ",
+            title,
             ratatui::style::Style::default()
                 .fg(theme::CYAN)
                 .add_modifier(Modifier::BOLD),
@@ -176,25 +242,24 @@ pub fn render(login: &LoginState, auth_state: &AuthState, frame: &mut Frame) {
     frame.render_widget(block, form_area);
 
     let mut constraints = vec![
-        Constraint::Length(1), // [0] title spacer
-        Constraint::Length(1), // [1] homeserver label
-        Constraint::Length(1), // [2] homeserver input
-        Constraint::Length(1), // [3] spacer
-        Constraint::Length(1), // [4] username label
-        Constraint::Length(1), // [5] username input
-        Constraint::Length(1), // [6] spacer
-        Constraint::Length(1), // [7] password label
-        Constraint::Length(1), // [8] password input
+        Constraint::Length(1), // [0] homeserver label
+        Constraint::Length(1), // [1] homeserver input
+        Constraint::Length(1), // [2] spacer
+        Constraint::Length(1), // [3] username label
+        Constraint::Length(1), // [4] username input
+        Constraint::Length(1), // [5] spacer
+        Constraint::Length(1), // [6] password label
+        Constraint::Length(1), // [7] password input
     ];
 
     // Register mode: extra fields
     if is_register {
-        constraints.push(Constraint::Length(1)); // [9] spacer
-        constraints.push(Constraint::Length(1)); // [10] confirm password label
-        constraints.push(Constraint::Length(1)); // [11] confirm password input
-        constraints.push(Constraint::Length(1)); // [12] spacer
-        constraints.push(Constraint::Length(1)); // [13] token label
-        constraints.push(Constraint::Length(1)); // [14] token input
+        constraints.push(Constraint::Length(1)); // [8] spacer
+        constraints.push(Constraint::Length(1)); // [9] confirm password label
+        constraints.push(Constraint::Length(1)); // [10] confirm password input
+        constraints.push(Constraint::Length(1)); // [11] spacer
+        constraints.push(Constraint::Length(1)); // [12] token label
+        constraints.push(Constraint::Length(1)); // [13] token input
     }
 
     let status_idx = constraints.len();
@@ -207,18 +272,6 @@ pub fn render(login: &LoginState, auth_state: &AuthState, frame: &mut Frame) {
         .constraints(constraints)
         .split(inner);
 
-    // Title
-    let title_text = if is_register {
-        "Matrix Register"
-    } else {
-        "Matrix Login"
-    };
-    frame.render_widget(
-        Paragraph::new(Line::from(Span::styled(title_text, theme::title_style())))
-            .alignment(Alignment::Center),
-        chunks[0],
-    );
-
     // Homeserver
     render_field(
         frame,
@@ -226,8 +279,8 @@ pub fn render(login: &LoginState, auth_state: &AuthState, frame: &mut Frame) {
         &login.homeserver,
         false,
         login.focused_field == LoginField::Homeserver,
+        chunks[0],
         chunks[1],
-        chunks[2],
     );
 
     // Username
@@ -237,8 +290,8 @@ pub fn render(login: &LoginState, auth_state: &AuthState, frame: &mut Frame) {
         &login.username,
         false,
         login.focused_field == LoginField::Username,
+        chunks[3],
         chunks[4],
-        chunks[5],
     );
 
     // Password
@@ -248,8 +301,8 @@ pub fn render(login: &LoginState, auth_state: &AuthState, frame: &mut Frame) {
         &login.password,
         true,
         login.focused_field == LoginField::Password,
+        chunks[6],
         chunks[7],
-        chunks[8],
     );
 
     // Register-only fields
@@ -260,8 +313,8 @@ pub fn render(login: &LoginState, auth_state: &AuthState, frame: &mut Frame) {
             &login.confirm_password,
             true,
             login.focused_field == LoginField::ConfirmPassword,
+            chunks[9],
             chunks[10],
-            chunks[11],
         );
 
         render_field(
@@ -270,8 +323,8 @@ pub fn render(login: &LoginState, auth_state: &AuthState, frame: &mut Frame) {
             &login.registration_token,
             true,
             login.focused_field == LoginField::RegistrationToken,
+            chunks[12],
             chunks[13],
-            chunks[14],
         );
     }
 
@@ -299,11 +352,11 @@ pub fn render(login: &LoginState, auth_state: &AuthState, frame: &mut Frame) {
         AuthState::LoggingIn | AuthState::AutoLoggingIn | AuthState::Registering
     ) {
         let (cursor_chunk, offset) = match login.focused_field {
-            LoginField::Homeserver => (chunks[2], login.cursor_pos),
-            LoginField::Username => (chunks[5], login.cursor_pos),
-            LoginField::Password => (chunks[8], login.password.len()),
-            LoginField::ConfirmPassword => (chunks[11], login.confirm_password.len()),
-            LoginField::RegistrationToken => (chunks[14], login.registration_token.len()),
+            LoginField::Homeserver => (chunks[1], login.cursor_pos),
+            LoginField::Username => (chunks[4], login.cursor_pos),
+            LoginField::Password => (chunks[7], login.password.len()),
+            LoginField::ConfirmPassword => (chunks[10], login.confirm_password.len()),
+            LoginField::RegistrationToken => (chunks[13], login.registration_token.len()),
         };
         let cursor_x = cursor_chunk.x + 2 + offset as u16;
         let cursor_y = cursor_chunk.y;

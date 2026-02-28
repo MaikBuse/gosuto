@@ -15,7 +15,7 @@ pub const COMMANDS: &[CommandDef] = &[
         name: "quit",
         aliases: &["q"],
         syntax: ":quit",
-        description: "Exit walrust",
+        description: "Exit gōsuto",
         takes_arg: false,
     },
     CommandDef {
@@ -49,9 +49,9 @@ pub const COMMANDS: &[CommandDef] = &[
     CommandDef {
         name: "call",
         aliases: &[],
-        syntax: ":call <user>",
-        description: "Start a VoIP call",
-        takes_arg: true,
+        syntax: ":call",
+        description: "Start a call in current room",
+        takes_arg: false,
     },
     CommandDef {
         name: "answer",
@@ -95,6 +95,20 @@ pub const COMMANDS: &[CommandDef] = &[
         description: "Audio configuration",
         takes_arg: false,
     },
+    CommandDef {
+        name: "create",
+        aliases: &["new"],
+        syntax: ":create <name> [visibility]",
+        description: "Create a new room",
+        takes_arg: true,
+    },
+    CommandDef {
+        name: "info",
+        aliases: &["roominfo"],
+        syntax: ":info",
+        description: "Show room info",
+        takes_arg: false,
+    },
 ];
 
 pub fn filtered_commands(prefix: &str) -> Vec<&'static CommandDef> {
@@ -104,8 +118,7 @@ pub fn filtered_commands(prefix: &str) -> Vec<&'static CommandDef> {
     COMMANDS
         .iter()
         .filter(|cmd| {
-            cmd.name.starts_with(prefix)
-                || cmd.aliases.iter().any(|a| a.starts_with(prefix))
+            cmd.name.starts_with(prefix) || cmd.aliases.iter().any(|a| a.starts_with(prefix))
         })
         .collect()
 }
@@ -123,19 +136,19 @@ pub fn handle_command(key: KeyEvent, vim: &mut VimState) -> InputResult {
         }
         KeyCode::Enter => {
             // If popup is showing with a selection, accept it first
-            if !vim.command_buffer.contains(' ') {
-                if let Some(idx) = vim.completion.selected {
-                    let matches = filtered_commands(&vim.command_buffer);
-                    if let Some(cmd) = matches.get(idx) {
-                        if cmd.takes_arg {
-                            // Fill the command name + space, stay in command mode
-                            vim.command_buffer = format!("{} ", cmd.name);
-                            vim.completion.reset(0);
-                            return InputResult::None;
-                        }
-                        // No arg needed — execute it directly
-                        vim.command_buffer = cmd.name.to_string();
+            if !vim.command_buffer.contains(' ')
+                && let Some(idx) = vim.completion.selected
+            {
+                let matches = filtered_commands(&vim.command_buffer);
+                if let Some(cmd) = matches.get(idx) {
+                    if cmd.takes_arg {
+                        // Fill the command name + space, stay in command mode
+                        vim.command_buffer = format!("{} ", cmd.name);
+                        vim.completion.reset(0);
+                        return InputResult::None;
                     }
+                    // No arg needed — execute it directly
+                    vim.command_buffer = cmd.name.to_string();
                 }
             }
             let cmd = std::mem::take(&mut vim.command_buffer);
@@ -253,19 +266,30 @@ fn parse_command(input: &str) -> InputResult {
             }
         }
         "logout" => InputResult::Command(CommandAction::Logout),
-        "call" => {
-            if arg.is_empty() {
-                InputResult::None
-            } else {
-                InputResult::Command(CommandAction::Call(arg.to_string()))
-            }
-        }
+        "call" => InputResult::Command(CommandAction::Call),
         "answer" | "accept" => InputResult::Command(CommandAction::Answer),
         "reject" | "decline" => InputResult::Command(CommandAction::Reject),
         "hangup" | "end" => InputResult::Command(CommandAction::Hangup),
         "rain" | "matrix" | "effects" => InputResult::Command(CommandAction::Rain),
         "glitch" => InputResult::Command(CommandAction::Glitch),
         "audio" | "sound" => InputResult::Command(CommandAction::AudioSettings),
+        "create" | "new" => {
+            if arg.is_empty() {
+                InputResult::None
+            } else {
+                let mut parts = arg.splitn(2, ' ');
+                let name = parts.next().unwrap().to_string();
+                let visibility = parts
+                    .next()
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty());
+                InputResult::Command(CommandAction::CreateRoom {
+                    name,
+                    history_visibility: visibility,
+                })
+            }
+        }
+        "info" | "roominfo" => InputResult::Command(CommandAction::RoomInfo),
         _ => InputResult::None,
     }
 }

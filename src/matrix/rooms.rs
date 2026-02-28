@@ -1,10 +1,11 @@
 use matrix_sdk::Client;
 use matrix_sdk::RoomMemberships;
+use matrix_sdk::ruma::events::room::history_visibility::HistoryVisibility;
 use tracing::error;
 
+use crate::event::AppEvent;
 use crate::event::EventSender;
 use crate::state::{RoomCategory, RoomMember, RoomSummary};
-use crate::event::AppEvent;
 
 pub async fn get_room_list(client: &Client) -> Vec<RoomSummary> {
     let joined = client.joined_rooms();
@@ -80,7 +81,9 @@ pub async fn fetch_room_members(client: &Client, room_id: &str, tx: &EventSender
                         user_id: m.user_id().to_string(),
                         display_name,
                         power_level: match m.power_level() {
-                            matrix_sdk::ruma::events::room::power_levels::UserPowerLevel::Int(i) => i64::from(i),
+                            matrix_sdk::ruma::events::room::power_levels::UserPowerLevel::Int(
+                                i,
+                            ) => i64::from(i),
                             _ => i64::MAX,
                         },
                     }
@@ -94,6 +97,121 @@ pub async fn fetch_room_members(client: &Client, room_id: &str, tx: &EventSender
         }
         Err(e) => {
             error!("Failed to fetch room members: {}", e);
+        }
+    }
+}
+
+pub async fn fetch_room_info(client: &Client, room_id: &str, tx: &EventSender) {
+    let room_id_parsed: Result<matrix_sdk::ruma::OwnedRoomId, _> = room_id.try_into();
+    let Ok(rid) = room_id_parsed else {
+        error!("Invalid room id for info fetch: {}", room_id);
+        let _ = tx.send(AppEvent::RoomSettingError {
+            error: format!("Invalid room ID: {}", room_id),
+        });
+        return;
+    };
+
+    let Some(room) = client.get_room(&rid) else {
+        error!("Room not found for info fetch: {}", room_id);
+        let _ = tx.send(AppEvent::RoomSettingError {
+            error: "Room not found".to_string(),
+        });
+        return;
+    };
+
+    let name = match room.display_name().await {
+        Ok(dn) => Some(dn.to_string()),
+        Err(_) => None,
+    };
+    let topic = room.topic();
+    let visibility = room.history_visibility_or_default();
+
+    let _ = tx.send(AppEvent::RoomInfoLoaded {
+        room_id: room_id.to_string(),
+        name,
+        topic,
+        history_visibility: visibility.as_ref().to_string(),
+    });
+}
+
+pub async fn set_room_name(client: &Client, room_id: &str, name: &str, tx: &EventSender) {
+    let room_id_parsed: Result<matrix_sdk::ruma::OwnedRoomId, _> = room_id.try_into();
+    let Ok(rid) = room_id_parsed else {
+        let _ = tx.send(AppEvent::RoomSettingError {
+            error: format!("Invalid room ID: {}", room_id),
+        });
+        return;
+    };
+
+    let Some(room) = client.get_room(&rid) else {
+        let _ = tx.send(AppEvent::RoomSettingError {
+            error: "Room not found".to_string(),
+        });
+        return;
+    };
+
+    match room.set_name(name.to_string()).await {
+        Ok(_) => {
+            let _ = tx.send(AppEvent::RoomSettingUpdated {
+                room_id: room_id.to_string(),
+            });
+        }
+        Err(e) => {
+            let _ = tx.send(AppEvent::RoomSettingError {
+                error: format!("Failed to set room name: {}", e),
+            });
+        }
+    }
+}
+
+pub async fn set_history_visibility(
+    client: &Client,
+    room_id: &str,
+    visibility: &str,
+    tx: &EventSender,
+) {
+    let room_id_parsed: Result<matrix_sdk::ruma::OwnedRoomId, _> = room_id.try_into();
+    let Ok(rid) = room_id_parsed else {
+        let _ = tx.send(AppEvent::RoomSettingError {
+            error: format!("Invalid room ID: {}", room_id),
+        });
+        return;
+    };
+
+    let Some(room) = client.get_room(&rid) else {
+        let _ = tx.send(AppEvent::RoomSettingError {
+            error: "Room not found".to_string(),
+        });
+        return;
+    };
+
+    let vis = match visibility {
+        "shared" => HistoryVisibility::Shared,
+        "invited" => HistoryVisibility::Invited,
+        "joined" => HistoryVisibility::Joined,
+        "world_readable" => HistoryVisibility::WorldReadable,
+        other => {
+            let _ = tx.send(AppEvent::RoomSettingError {
+                error: format!("Invalid visibility: {}", other),
+            });
+            return;
+        }
+    };
+
+    match room
+        .privacy_settings()
+        .update_room_history_visibility(vis)
+        .await
+    {
+        Ok(()) => {
+            let _ = tx.send(AppEvent::RoomSettingUpdated {
+                room_id: room_id.to_string(),
+            });
+        }
+        Err(e) => {
+            let _ = tx.send(AppEvent::RoomSettingError {
+                error: format!("Failed to update visibility: {}", e),
+            });
         }
     }
 }

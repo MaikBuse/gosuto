@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 cargo check          # Type-check without building
 cargo build          # Debug build
 cargo run            # Run the TUI client
-WALRUST_LOG=debug cargo run  # Run with file-based debug logging
+GOSUTO_LOG=debug cargo run  # Run with file-based debug logging
 ```
 
 No tests, linting config, or CI are configured. Use `cargo clippy` and `cargo fmt` with defaults.
@@ -37,7 +37,7 @@ No tests, linting config, or CI are configured. Use `cargo clippy` and `cargo fm
 
 ## Architecture
 
-Walrust is a terminal Matrix chat client (~3,400 LOC Rust) with vim motions and a cyberpunk aesthetic, built on ratatui + crossterm + matrix-sdk. See `docs/architecture.md` for detailed diagrams and data flows.
+Gōsuto (ゴースト) is a terminal Matrix chat client (~3,400 LOC Rust) with vim motions and a cyberpunk aesthetic, built on ratatui + crossterm + matrix-sdk. See `docs/architecture.md` for detailed diagrams and data flows.
 
 ### Core Pattern: Async-TUI Event Bridge
 
@@ -55,7 +55,7 @@ Actions that require async work (sending messages, joining rooms) are queued as 
 - **`matrix/`** — Matrix SDK integration: login/session restore (`client.rs`), sync loop with event handlers (`sync.rs`), message fetch/send (`messages.rs`), room list extraction (`rooms.rs`)
 - **`state/`** — Domain state types: `AuthState`, `RoomListState`, `MessageState`, `MemberListState`
 - **`voip/`** — WebRTC VoIP: `CallManager` actor pattern with command channel, audio pipeline (cpal + audiopus), SDP/ICE signaling
-- **`config.rs`** — Path constants: data dir `~/.local/share/walrust/`, session file, sqlite store, logs
+- **`config.rs`** — Path constants: data dir `~/.local/share/gosuto/`, session file, sqlite store, logs
 
 ### Key Conventions
 
@@ -64,4 +64,4 @@ Actions that require async work (sending messages, joining rooms) are queued as 
 - Matrix client shared across tasks via `Arc<Mutex<Option<Client>>>`
 - UI rendering is purely functional — `render(app, frame)` reads state, never mutates it
 - Messages use inverted scroll (offset 0 = newest at bottom)
-- Logging goes to files in `~/.local/share/walrust/logs/`, controlled by `WALRUST_LOG` env var
+- Logging goes to files in `~/.local/share/gosuto/logs/`, controlled by `GOSUTO_LOG` env var

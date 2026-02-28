@@ -46,17 +46,26 @@ impl MessageState {
 
     pub fn add_message(&mut self, msg: DisplayMessage) {
         // Check if this message already exists (by event_id)
-        if !msg.event_id.is_empty()
-            && self.messages.iter().any(|m| m.event_id == msg.event_id)
-        {
+        if !msg.event_id.is_empty() && self.messages.iter().any(|m| m.event_id == msg.event_id) {
             return;
         }
         self.messages.push(msg);
     }
 
     pub fn prepend_messages(&mut self, msgs: Vec<DisplayMessage>, has_more: bool) {
-        let mut new_msgs = msgs;
-        new_msgs.extend(self.messages.drain(..));
+        // Filter out messages that already exist (by event_id) to avoid duplicates
+        // when sync events overlap with fetched messages
+        let mut new_msgs: Vec<DisplayMessage> = msgs
+            .into_iter()
+            .filter(|m| {
+                m.event_id.is_empty()
+                    || !self
+                        .messages
+                        .iter()
+                        .any(|existing| existing.event_id == m.event_id)
+            })
+            .collect();
+        new_msgs.append(&mut self.messages);
         self.messages = new_msgs;
         self.has_more = has_more;
         self.loading = false;

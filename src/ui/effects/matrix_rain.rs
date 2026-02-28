@@ -54,7 +54,9 @@ impl MatrixRain {
         for _ in 0..area.width {
             let active = self.rng.next_f32() < 0.70;
             let speed = self.rng.next_range(2.7, 10.7);
-            let trail_len = self.rng.next_range(4.0, (area.height as f32 * 0.8).max(6.0)) as u16;
+            let trail_len =
+                self.rng
+                    .next_range(4.0, (area.height as f32 * 0.8).max(6.0)) as u16;
             let delay = if active {
                 self.rng.next_range(0.0, 2000.0)
             } else {
@@ -80,8 +82,9 @@ impl MatrixRain {
     fn reset_column(&mut self, idx: usize, area: Rect) {
         let col = &mut self.columns[idx];
         col.speed = self.rng.next_range(2.7, 10.7);
-        col.trail_len =
-            self.rng.next_range(4.0, (area.height as f32 * 0.8).max(6.0)) as u16;
+        col.trail_len = self
+            .rng
+            .next_range(4.0, (area.height as f32 * 0.8).max(6.0)) as u16;
         col.head_y = -(self.rng.next_range(0.0, 4.0));
         col.delay_ms = self.rng.next_range(200.0, 3000.0);
         col.active = true;

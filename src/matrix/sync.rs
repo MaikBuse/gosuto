@@ -1,12 +1,10 @@
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
 use anyhow::Result;
 use matrix_sdk::Client;
-use matrix_sdk::ruma::events::room::message::{
-    MessageType, OriginalSyncRoomMessageEvent,
-};
+use matrix_sdk::ruma::events::room::message::{MessageType, OriginalSyncRoomMessageEvent};
 use tokio::time::sleep;
 use tracing::{info, warn};
 
@@ -18,8 +16,7 @@ pub async fn start_sync(client: Client, tx: EventSender) -> Result<()> {
     // Register event handler for messages
     let msg_tx = tx.clone();
     client.add_event_handler(
-        move |event: OriginalSyncRoomMessageEvent,
-              room: matrix_sdk::Room| {
+        move |event: OriginalSyncRoomMessageEvent, room: matrix_sdk::Room| {
             let tx = msg_tx.clone();
             async move {
                 let room_id = room.room_id().to_string();
@@ -57,8 +54,8 @@ pub async fn start_sync(client: Client, tx: EventSender) -> Result<()> {
         },
     );
 
-    // Register event handlers for VoIP call events
-    register_call_event_handlers(&client, &tx);
+    // Register event handlers for MatrixRTC call member events
+    register_matrixrtc_handlers(&client, &tx);
 
     // Initial room list
     let room_list = rooms::get_room_list(&client).await;
@@ -77,12 +74,13 @@ pub async fn start_sync(client: Client, tx: EventSender) -> Result<()> {
         let result = client
             .sync_with_callback(crate::matrix::client::default_sync_settings(), {
                 let client = client.clone();
-                move |_response| {
+                move |response| {
                     let tx = sync_tx.clone();
                     let client = client.clone();
                     let retry_reset = retry_reset.clone();
                     async move {
                         retry_reset.store(0, Ordering::Relaxed);
+                        let _ = tx.send(AppEvent::SyncTokenUpdated(response.next_batch.clone()));
                         let _ = tx.send(AppEvent::SyncStatus("synced".to_string()));
 
                         // Update room list after each sync
@@ -119,14 +117,17 @@ pub async fn start_sync(client: Client, tx: EventSender) -> Result<()> {
                     3 => 16,
                     _ => 30,
                 };
-                warn!("Sync error (attempt {}): {msg} — retrying in {backoff_secs}s", attempt + 1);
+                warn!(
+                    "Sync error (attempt {}): {msg} — retrying in {backoff_secs}s",
+                    attempt + 1
+                );
                 let _ = tx.send(AppEvent::SyncError(msg));
 
                 // Countdown
                 for remaining in (1..=backoff_secs).rev() {
-                    let _ = tx.send(AppEvent::SyncStatus(
-                        format!("reconnecting in {remaining}s..."),
-                    ));
+                    let _ = tx.send(AppEvent::SyncStatus(format!(
+                        "reconnecting in {remaining}s..."
+                    )));
                     sleep(Duration::from_secs(1)).await;
                 }
                 let _ = tx.send(AppEvent::SyncStatus("reconnecting...".to_string()));
@@ -152,96 +153,46 @@ fn sanitize_error(error: &str) -> String {
     msg
 }
 
-fn register_call_event_handlers(client: &Client, tx: &EventSender) {
-    // m.call.invite handler
-    let invite_tx = tx.clone();
+fn register_matrixrtc_handlers(client: &Client, tx: &EventSender) {
+    // Handle raw m.call.member / org.matrix.msc3401.call.member state events
+    let member_tx = tx.clone();
     client.add_event_handler(
-        move |event: matrix_sdk::ruma::events::call::invite::OriginalSyncCallInviteEvent,
-              room: matrix_sdk::Room| {
-            let tx = invite_tx.clone();
+        move |event: matrix_sdk::ruma::events::AnySyncStateEvent, room: matrix_sdk::Room| {
+            let tx = member_tx.clone();
             async move {
-                let room_id = room.room_id().to_string();
-                let sender = event.sender.to_string();
-                let call_id = event.content.call_id.to_string();
-                let sdp = event.content.offer.sdp.clone();
-                info!("Received m.call.invite from {} (call_id: {})", sender, call_id);
-                let _ = tx.send(AppEvent::CallInvite {
-                    call_id,
-                    room_id,
-                    sender,
-                    sdp,
-                });
-            }
-        },
-    );
+                let event_type = event.event_type().to_string();
+                if event_type != "org.matrix.msc3401.call.member" && event_type != "m.call.member" {
+                    return;
+                }
 
-    // m.call.answer handler
-    let answer_tx = tx.clone();
-    client.add_event_handler(
-        move |event: matrix_sdk::ruma::events::call::answer::OriginalSyncCallAnswerEvent,
-              room: matrix_sdk::Room| {
-            let tx = answer_tx.clone();
-            async move {
+                let sender = event.sender().to_string();
                 let room_id = room.room_id().to_string();
-                let call_id = event.content.call_id.to_string();
-                let sdp = event.content.answer.sdp.clone();
-                info!("Received m.call.answer (call_id: {})", call_id);
-                let _ = tx.send(AppEvent::CallAnswer {
-                    call_id,
-                    room_id,
-                    sdp,
-                });
-            }
-        },
-    );
 
-    // m.call.candidates handler
-    let candidates_tx = tx.clone();
-    client.add_event_handler(
-        move |event: matrix_sdk::ruma::events::call::candidates::OriginalSyncCallCandidatesEvent,
-              room: matrix_sdk::Room| {
-            let tx = candidates_tx.clone();
-            async move {
-                let room_id = room.room_id().to_string();
-                let call_id = event.content.call_id.to_string();
-                let candidates: Vec<String> = event
-                    .content
-                    .candidates
-                    .iter()
-                    .map(|c| {
-                        serde_json::json!({
-                            "candidate": c.candidate,
-                            "sdpMid": c.sdp_mid,
-                            "sdpMLineIndex": c.sdp_m_line_index,
-                        })
-                        .to_string()
+                // Parse the content to check for active memberships
+                let content = event.original_content();
+                let has_active_memberships = content
+                    .map(|raw| {
+                        let json = serde_json::to_value(raw).unwrap_or_default();
+                        json.get("memberships")
+                            .and_then(|m| m.as_array())
+                            .map(|arr| !arr.is_empty())
+                            .unwrap_or(false)
                     })
-                    .collect();
-                info!(
-                    "Received m.call.candidates (call_id: {}, count: {})",
-                    call_id,
-                    candidates.len()
-                );
-                let _ = tx.send(AppEvent::CallCandidates {
-                    call_id,
-                    room_id,
-                    candidates,
-                });
-            }
-        },
-    );
+                    .unwrap_or(false);
 
-    // m.call.hangup handler
-    let hangup_tx = tx.clone();
-    client.add_event_handler(
-        move |event: matrix_sdk::ruma::events::call::hangup::OriginalSyncCallHangupEvent,
-              room: matrix_sdk::Room| {
-            let tx = hangup_tx.clone();
-            async move {
-                let room_id = room.room_id().to_string();
-                let call_id = event.content.call_id.to_string();
-                info!("Received m.call.hangup (call_id: {})", call_id);
-                let _ = tx.send(AppEvent::CallHangup { call_id, room_id });
+                if has_active_memberships {
+                    info!("m.call.member joined: {} in {}", sender, room_id);
+                    let _ = tx.send(AppEvent::CallMemberJoined {
+                        room_id,
+                        user_id: sender,
+                    });
+                } else {
+                    info!("m.call.member left: {} in {}", sender, room_id);
+                    let _ = tx.send(AppEvent::CallMemberLeft {
+                        room_id,
+                        user_id: sender,
+                    });
+                }
             }
         },
     );

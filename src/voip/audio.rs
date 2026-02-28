@@ -1,22 +1,23 @@
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use anyhow::Result;
-use audiopus::coder::{Decoder as OpusDecoder, Encoder as OpusEncoder};
-use audiopus::{Application, Channels, MutSignals, SampleRate, packet::Packet};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use futures::StreamExt;
+use livekit::track::RemoteAudioTrack;
+use livekit::webrtc::audio_source::AudioSourceOptions;
+use livekit::webrtc::audio_source::native::NativeAudioSource;
+use livekit::webrtc::audio_stream::native::NativeAudioStream;
+use livekit::webrtc::prelude::AudioFrame;
 use tokio::sync::mpsc;
 use tracing::{error, info, warn};
-use webrtc::media::Sample;
-use webrtc::track::track_local::track_local_static_sample::TrackLocalStaticSample;
-use webrtc::track::track_remote::TrackRemote;
 
 use crate::config::AudioConfig;
 use crate::event::{AppEvent, EventSender};
 
-const SAMPLE_RATE: u32 = 48000;
-const FRAME_SIZE: usize = 960; // 20ms at 48kHz
+pub const SAMPLE_RATE: u32 = 48000;
+pub const FRAME_SIZE: usize = 960; // 20ms at 48kHz
 
 /// Wrapper to make cpal::Stream Send.
 /// cpal::Stream is !Send because the audio backend uses raw pointers internally,
@@ -32,23 +33,32 @@ unsafe impl Send for SendStream {}
 pub struct AudioPipeline {
     running: Arc<AtomicBool>,
     capture_stream: Option<SendStream>,
-    playback_stream: Option<SendStream>,
+    playback_streams: Vec<SendStream>,
+    playback_tasks: Vec<tokio::task::JoinHandle<()>>,
 }
 
 // ── Device enumeration ──────────────────────────────
 
 fn find_input_device(name: &str) -> Option<cpal::Device> {
     let host = cpal::default_host();
-    host.input_devices()
-        .ok()?
-        .find(|d| d.description().ok().map(|desc| desc.name().to_string()).as_deref() == Some(name))
+    host.input_devices().ok()?.find(|d| {
+        d.description()
+            .ok()
+            .map(|desc| desc.name().to_string())
+            .as_deref()
+            == Some(name)
+    })
 }
 
 fn find_output_device(name: &str) -> Option<cpal::Device> {
     let host = cpal::default_host();
-    host.output_devices()
-        .ok()?
-        .find(|d| d.description().ok().map(|desc| desc.name().to_string()).as_deref() == Some(name))
+    host.output_devices().ok()?.find(|d| {
+        d.description()
+            .ok()
+            .map(|desc| desc.name().to_string())
+            .as_deref()
+            == Some(name)
+    })
 }
 
 fn resolve_input_device(config: &AudioConfig) -> Result<cpal::Device> {
@@ -56,7 +66,10 @@ fn resolve_input_device(config: &AudioConfig) -> Result<cpal::Device> {
         if let Some(dev) = find_input_device(name) {
             return Ok(dev);
         }
-        warn!("Configured input device '{}' not found, using default", name);
+        warn!(
+            "Configured input device '{}' not found, using default",
+            name
+        );
     }
     cpal::default_host()
         .default_input_device()
@@ -68,7 +81,10 @@ fn resolve_output_device(config: &AudioConfig) -> Result<cpal::Device> {
         if let Some(dev) = find_output_device(name) {
             return Ok(dev);
         }
-        warn!("Configured output device '{}' not found, using default", name);
+        warn!(
+            "Configured output device '{}' not found, using default",
+            name
+        );
     }
     cpal::default_host()
         .default_output_device()
@@ -81,7 +97,8 @@ impl AudioPipeline {
         Self {
             running: Arc::new(AtomicBool::new(false)),
             capture_stream: None,
-            playback_stream: None,
+            playback_streams: Vec::new(),
+            playback_tasks: Vec::new(),
         }
     }
 
@@ -107,16 +124,23 @@ impl AudioPipeline {
             .unwrap_or_default()
     }
 
-    /// Start capture and return the running flag
-    pub fn start(
+    /// Start capture and return the NativeAudioSource for LiveKit publishing.
+    pub fn start_capture(
         &mut self,
-        local_track: Arc<TrackLocalStaticSample>,
         config: &AudioConfig,
         transmitting: Arc<AtomicBool>,
-    ) -> Result<Arc<AtomicBool>> {
+    ) -> Result<NativeAudioSource> {
         self.running.store(true, Ordering::Relaxed);
 
-        match Self::start_capture(local_track, self.running.clone(), config, transmitting) {
+        let source = NativeAudioSource::new(
+            AudioSourceOptions::default(),
+            SAMPLE_RATE,
+            1, // mono
+            FRAME_SIZE as u32,
+        );
+
+        match Self::build_capture_stream(source.clone(), self.running.clone(), config, transmitting)
+        {
             Ok(stream) => {
                 self.capture_stream = Some(SendStream(stream));
             }
@@ -126,17 +150,19 @@ impl AudioPipeline {
             }
         }
 
-        Ok(self.running.clone())
+        Ok(source)
     }
 
-    /// Add playback for a remote track
+    /// Add playback for a remote audio track from LiveKit.
     pub fn add_playback(
         &mut self,
-        remote_track: Arc<TrackRemote>,
+        remote_track: RemoteAudioTrack,
         config: &AudioConfig,
     ) -> Result<()> {
-        let stream = Self::start_playback(remote_track, self.running.clone(), config)?;
-        self.playback_stream = Some(SendStream(stream));
+        let (stream, task) =
+            Self::build_playback_stream(remote_track, self.running.clone(), config)?;
+        self.playback_streams.push(SendStream(stream));
+        self.playback_tasks.push(task);
         Ok(())
     }
 
@@ -144,12 +170,14 @@ impl AudioPipeline {
     pub fn stop(&mut self) {
         self.running.store(false, Ordering::Relaxed);
         self.capture_stream = None;
-        self.playback_stream = None;
+        self.playback_streams.clear();
+        for task in self.playback_tasks.drain(..) {
+            task.abort();
+        }
         info!("Audio pipeline stopped");
     }
 
     /// Start a mic test stream that captures audio and sends RMS levels.
-    /// Runs on the calling thread's audio context. Returns when `running` is set to false.
     pub fn start_mic_test(
         device_name: Option<&str>,
         volume: f32,
@@ -182,10 +210,13 @@ impl AudioPipeline {
                     return;
                 }
                 // Compute RMS
-                let sum_sq: f32 = data.iter().map(|&s| {
-                    let v = s * vol;
-                    v * v
-                }).sum();
+                let sum_sq: f32 = data
+                    .iter()
+                    .map(|&s| {
+                        let v = s * vol;
+                        v * v
+                    })
+                    .sum();
                 let rms = (sum_sq / data.len().max(1) as f32).sqrt();
                 let _ = level_tx.send(AppEvent::MicLevel(rms.clamp(0.0, 1.0)));
             },
@@ -208,10 +239,9 @@ impl AudioPipeline {
         Ok(())
     }
 
-    /// Start the audio capture pipeline.
-    /// Captures from configured input device, Opus-encodes, and writes to the WebRTC track.
-    fn start_capture(
-        local_track: Arc<TrackLocalStaticSample>,
+    /// Build the capture stream: cpal input → NativeAudioSource for LiveKit.
+    fn build_capture_stream(
+        source: NativeAudioSource,
         running: Arc<AtomicBool>,
         audio_config: &AudioConfig,
         transmitting: Arc<AtomicBool>,
@@ -226,14 +256,6 @@ impl AudioPipeline {
             buffer_size: cpal::BufferSize::Default,
         };
 
-        let encoder = OpusEncoder::new(
-            SampleRate::Hz48000,
-            Channels::Mono,
-            Application::Voip,
-        )
-        .map_err(|e| anyhow::anyhow!("Failed to create Opus encoder: {:?}", e))?;
-        let encoder = Arc::new(std::sync::Mutex::new(encoder));
-
         let running_flag = running.clone();
         let rt_handle = tokio::runtime::Handle::current();
         let input_volume = audio_config.input_volume;
@@ -241,7 +263,9 @@ impl AudioPipeline {
         let sensitivity = audio_config.sensitivity;
 
         // Buffer for accumulating samples to form complete frames
-        let sample_buffer = Arc::new(std::sync::Mutex::new(Vec::<i16>::with_capacity(FRAME_SIZE * 2)));
+        let sample_buffer = Arc::new(std::sync::Mutex::new(Vec::<i16>::with_capacity(
+            FRAME_SIZE * 2,
+        )));
 
         let stream = device.build_input_stream(
             &config,
@@ -255,23 +279,26 @@ impl AudioPipeline {
                     return;
                 }
 
-                // Convert f32 to i16 with volume
-                let samples: Vec<i16> = data
-                    .iter()
-                    .map(|&s| ((s * input_volume).clamp(-1.0, 1.0) * i16::MAX as f32) as i16)
-                    .collect();
-
                 // Voice activity gate: compute RMS and skip if below threshold
                 if voice_activity {
-                    let sum_sq: f32 = data.iter().map(|&s| {
-                        let v = s * input_volume;
-                        v * v
-                    }).sum();
+                    let sum_sq: f32 = data
+                        .iter()
+                        .map(|&s| {
+                            let v = s * input_volume;
+                            v * v
+                        })
+                        .sum();
                     let rms = (sum_sq / data.len().max(1) as f32).sqrt();
                     if rms < sensitivity {
                         return;
                     }
                 }
+
+                // Convert f32 to i16 with volume
+                let samples: Vec<i16> = data
+                    .iter()
+                    .map(|&s| ((s * input_volume).clamp(-1.0, 1.0) * i16::MAX as f32) as i16)
+                    .collect();
 
                 let mut buf = sample_buffer.lock().unwrap();
                 buf.extend_from_slice(&samples);
@@ -279,28 +306,16 @@ impl AudioPipeline {
                 // Process complete frames
                 while buf.len() >= FRAME_SIZE {
                     let frame: Vec<i16> = buf.drain(..FRAME_SIZE).collect();
-                    let mut opus_buf = vec![0u8; 4000];
-                    let enc = encoder.lock().unwrap();
-                    match enc.encode(&frame, &mut opus_buf) {
-                        Ok(len) => {
-                            opus_buf.truncate(len);
-                            let track = local_track.clone();
-                            let data = opus_buf;
-                            rt_handle.spawn(async move {
-                                let sample = Sample {
-                                    data: data.into(),
-                                    duration: Duration::from_millis(20),
-                                    ..Default::default()
-                                };
-                                if let Err(e) = track.write_sample(&sample).await {
-                                    error!("Failed to write audio sample: {}", e);
-                                }
-                            });
-                        }
-                        Err(e) => {
-                            error!("Opus encode error: {:?}", e);
-                        }
-                    }
+                    let source = source.clone();
+                    rt_handle.spawn(async move {
+                        let audio_frame = AudioFrame {
+                            data: frame.into(),
+                            sample_rate: SAMPLE_RATE,
+                            num_channels: 1,
+                            samples_per_channel: FRAME_SIZE as u32,
+                        };
+                        let _ = source.capture_frame(&audio_frame).await;
+                    });
                 }
             },
             move |err| {
@@ -315,13 +330,12 @@ impl AudioPipeline {
         Ok(stream)
     }
 
-    /// Start the audio playback pipeline.
-    /// Reads RTP from remote track, Opus-decodes, and plays through configured output device.
-    fn start_playback(
-        remote_track: Arc<TrackRemote>,
+    /// Build the playback stream for a remote LiveKit audio track.
+    fn build_playback_stream(
+        remote_track: RemoteAudioTrack,
         running: Arc<AtomicBool>,
         audio_config: &AudioConfig,
-    ) -> Result<cpal::Stream> {
+    ) -> Result<(cpal::Stream, tokio::task::JoinHandle<()>)> {
         let device = resolve_output_device(audio_config)?;
 
         info!("Using output device: {:?}", device.description());
@@ -334,7 +348,7 @@ impl AudioPipeline {
 
         let output_volume = audio_config.output_volume;
 
-        // Ring buffer for decoded audio samples
+        // Channel for decoded audio samples
         let (audio_tx, audio_rx) = mpsc::unbounded_channel::<Vec<f32>>();
         let audio_rx = Arc::new(std::sync::Mutex::new(audio_rx));
 
@@ -360,7 +374,6 @@ impl AudioPipeline {
                 let mut buf = playback_buf_clone.lock().unwrap();
                 let available = buf.len().min(data.len());
                 if available > 0 {
-                    // Apply output volume
                     for (i, sample) in buf.drain(..available).enumerate() {
                         data[i] = (sample * output_volume).clamp(-1.0, 1.0);
                     }
@@ -377,64 +390,28 @@ impl AudioPipeline {
         stream.play()?;
         info!("Audio playback started");
 
-        // Spawn a task to read RTP from remote track and decode
+        // Spawn a task to read from NativeAudioStream and forward to cpal
         let running_decode = running.clone();
-        tokio::spawn(async move {
-            let mut decoder = match OpusDecoder::new(SampleRate::Hz48000, Channels::Mono) {
-                Ok(d) => d,
-                Err(e) => {
-                    error!("Failed to create Opus decoder: {:?}", e);
-                    return;
-                }
-            };
-
-            let mut decode_buf = vec![0i16; FRAME_SIZE * 2];
+        let task = tokio::spawn(async move {
+            let mut audio_stream =
+                NativeAudioStream::new(remote_track.rtc_track(), SAMPLE_RATE as i32, 1);
 
             loop {
                 if !running_decode.load(Ordering::Relaxed) {
                     break;
                 }
 
-                match remote_track.read_rtp().await {
-                    Ok((rtp_packet, _)) => {
-                        let payload = &rtp_packet.payload;
-                        if payload.is_empty() {
-                            continue;
-                        }
-
-                        let packet = match Packet::try_from(payload.as_ref()) {
-                            Ok(p) => p,
-                            Err(e) => {
-                                warn!("Invalid Opus packet: {:?}", e);
-                                continue;
-                            }
-                        };
-
-                        let output = match MutSignals::try_from(decode_buf.as_mut_slice()) {
-                            Ok(s) => s,
-                            Err(e) => {
-                                warn!("MutSignals error: {:?}", e);
-                                continue;
-                            }
-                        };
-
-                        match decoder.decode(Some(packet), output, false) {
-                            Ok(decoded_samples) => {
-                                let f32_samples: Vec<f32> = decode_buf[..decoded_samples]
-                                    .iter()
-                                    .map(|&s| s as f32 / i16::MAX as f32)
-                                    .collect();
-                                let _ = audio_tx.send(f32_samples);
-                            }
-                            Err(e) => {
-                                warn!("Opus decode error: {:?}", e);
-                            }
-                        }
+                match audio_stream.next().await {
+                    Some(frame) => {
+                        let f32_samples: Vec<f32> = frame
+                            .data
+                            .iter()
+                            .map(|&s| s as f32 / i16::MAX as f32)
+                            .collect();
+                        let _ = audio_tx.send(f32_samples);
                     }
-                    Err(e) => {
-                        if running_decode.load(Ordering::Relaxed) {
-                            error!("RTP read error: {}", e);
-                        }
+                    None => {
+                        info!("Audio stream ended");
                         break;
                     }
                 }
@@ -443,7 +420,7 @@ impl AudioPipeline {
             info!("Audio decode loop ended");
         });
 
-        Ok(stream)
+        Ok((stream, task))
     }
 }
 

@@ -5,8 +5,8 @@ use ratatui::style::{Color, Style};
 use super::Xorshift64;
 
 const GLITCH_CHARS: &[char] = &[
-    '░', '▒', '▓', '█', '╌', '╍', '┄', '┅', '▌', '▐', '▀', '▄', '⣿', '⡟', '⠿', '⣏', '¦',
-    '÷', '±', '¬',
+    '░', '▒', '▓', '█', '╌', '╍', '┄', '┅', '▌', '▐', '▀', '▄', '⣿', '⡟', '⠿', '⣏', '¦', '÷', '±',
+    '¬',
 ];
 
 const CYAN: Color = Color::Rgb(0x00, 0xFF, 0xFF);
@@ -60,7 +60,10 @@ impl GlitchEffect {
 
     fn spawn_band(&mut self, max_height: u16) {
         let y_offset = self.rng.next_u32_range(0, max_height as u32) as u16;
-        let height = self.rng.next_u32_range(1, 4).min(max_height as u32 - y_offset as u32) as u16;
+        let height = self
+            .rng
+            .next_u32_range(1, 4)
+            .min(max_height as u32 - y_offset as u32) as u16;
         if height == 0 {
             return;
         }
@@ -166,8 +169,7 @@ impl GlitchEffect {
             for ci in 0..band.corrupt_count as usize {
                 let cx = area.x + (band.corrupt_positions[ci] % area.width);
                 if cx < buf_area.x + buf_area.width {
-                    let glyph_idx =
-                        (band.corrupt_positions[ci] as usize + ci) % GLITCH_CHARS.len();
+                    let glyph_idx = (band.corrupt_positions[ci] as usize + ci) % GLITCH_CHARS.len();
                     let cell = &mut buf[(cx, row)];
                     cell.set_char(GLITCH_CHARS[glyph_idx]);
                     cell.set_style(Style::default().fg(band.tint));

@@ -7,6 +7,7 @@ pub mod input_bar;
 pub mod layout;
 pub mod login;
 pub mod members;
+pub mod room_info;
 pub mod room_list;
 pub mod status_bar;
 pub mod theme;
@@ -18,13 +19,12 @@ pub fn render(app: &App, frame: &mut Frame) {
     if !app.auth.is_logged_in() {
         login::render(&app.login, &app.auth, frame);
         let area = frame.area();
-        if app.effects.enabled {
-            if let Some(effect_buf) = app.effects.render_to_buffer(area) {
-                effects::composite(frame.buffer_mut(), &effect_buf, area);
-            }
+        if app.effects.enabled
+            && let Some(effect_buf) = app.effects.render_to_buffer(area)
+        {
+            effects::composite(frame.buffer_mut(), &effect_buf, area);
         }
-        app.effects
-            .post_process_glitch(frame.buffer_mut(), &[area]);
+        app.effects.post_process_glitch(frame.buffer_mut(), &[area]);
         return;
     }
 
@@ -53,13 +53,32 @@ pub fn render(app: &App, frame: &mut Frame) {
     // Command auto-completion popup (rendered after effects so it isn't overwritten)
     completion_popup::render(app, frame, layout.input_bar);
 
-    // Render call overlay on top for any active call state
+    // Render call overlay on top for any active call state or incoming ringing
     if let Some(ref info) = app.call_info {
-        call_overlay::render(&app.call_popup, info, frame);
+        let ds = if info.is_incoming
+            && info.state == crate::voip::CallState::Connecting
+            && info.started_at.is_none()
+        {
+            call_overlay::CallDisplayState::Connecting
+        } else {
+            match info.state {
+                crate::voip::CallState::Connecting => call_overlay::CallDisplayState::Connecting,
+                crate::voip::CallState::Active => call_overlay::CallDisplayState::Active,
+            }
+        };
+        call_overlay::render(&app.call_popup, info, &ds, frame);
+    } else if let Some(ref room_id) = app.incoming_call_room {
+        let caller = app.incoming_call_user.as_deref().unwrap_or("unknown");
+        call_overlay::render_ringing(&app.call_popup, caller, room_id, frame);
     }
 
     // Audio settings modal overlay
     if app.audio_settings.open {
         audio_settings::render(&app.audio_settings, frame);
+    }
+
+    // Room info modal overlay
+    if app.room_info.open {
+        room_info::render(&app.room_info, frame);
     }
 }

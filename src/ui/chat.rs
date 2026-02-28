@@ -27,7 +27,9 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
         .unwrap_or_else(|| "No room selected".to_string());
 
     let title_text = format!(" > {} ", room_name);
-    let title_line = app.chat_title_reveal.render_line(&title_text, theme::title_style());
+    let title_line = app
+        .chat_title_reveal
+        .render_line(&title_text, theme::title_style());
 
     let block = Block::default()
         .title(title_line)

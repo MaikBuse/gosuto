@@ -8,7 +8,10 @@ use crate::config;
 use crate::event::{AppEvent, EventSender};
 use crate::matrix::session::{self, StoredSession};
 
-pub async fn try_restore_session(tx: &EventSender, accept_invalid_certs: bool) -> Result<Option<Client>> {
+pub async fn try_restore_session(
+    tx: &EventSender,
+    accept_invalid_certs: bool,
+) -> Result<Option<Client>> {
     let session_path = config::session_path()?;
     if !session_path.exists() {
         return Ok(None);
@@ -32,7 +35,10 @@ pub async fn try_restore_session(tx: &EventSender, accept_invalid_certs: bool) -
         Err(e) => {
             // Server unreachable (DNS, network, etc.) — session is likely still valid.
             // Return Ok(None) so main.rs does NOT delete session.json.
-            info!("Cannot reach homeserver during session restore, keeping session: {}", e);
+            info!(
+                "Cannot reach homeserver during session restore, keeping session: {}",
+                e
+            );
             return Ok(None);
         }
     };
@@ -126,7 +132,7 @@ pub async fn login(
         client
             .matrix_auth()
             .login_username(username, password)
-            .initial_device_display_name("walrust"),
+            .initial_device_display_name("gosuto"),
     )
     .await
     .map_err(|_| {
@@ -184,7 +190,10 @@ pub async fn register(
     accept_invalid_certs: bool,
 ) -> Result<Client> {
     let homeserver = normalize_homeserver_url(homeserver);
-    info!("Registration requested for homeserver input: {}", homeserver);
+    info!(
+        "Registration requested for homeserver input: {}",
+        homeserver
+    );
 
     let store_path = config::store_path_for_homeserver(&homeserver)?;
 
@@ -247,7 +256,7 @@ pub async fn register(
         client
             .matrix_auth()
             .login_username(username, password)
-            .initial_device_display_name("walrust")
+            .initial_device_display_name("gosuto")
             .await
             .context("Login after registration failed")?;
     }
@@ -297,10 +306,10 @@ async fn attempt_register(
     let mut request = RegisterRequest::new();
     request.username = Some(username.to_owned());
     request.password = Some(password.to_owned());
-    request.initial_device_display_name = Some("walrust".to_owned());
+    request.initial_device_display_name = Some("gosuto".to_owned());
 
     match client.matrix_auth().register(request).await {
-        Ok(response) => return Ok(response),
+        Ok(response) => Ok(response),
         Err(err) => {
             let Some(uiaa) = err.as_uiaa_response() else {
                 return Err(anyhow::anyhow!("Registration failed: {}", err));
@@ -330,12 +339,9 @@ async fn complete_uia_flow(
         .flows
         .iter()
         .find(|f| {
-            f.stages.iter().all(|s| {
-                matches!(
-                    s,
-                    AuthType::Dummy | AuthType::RegistrationToken
-                )
-            })
+            f.stages
+                .iter()
+                .all(|s| matches!(s, AuthType::Dummy | AuthType::RegistrationToken))
         })
         .ok_or_else(|| {
             let types: Vec<String> = initial_uiaa
@@ -373,10 +379,7 @@ async fn complete_uia_flow(
                 AuthData::RegistrationToken(token)
             }
             other => {
-                return Err(anyhow::anyhow!(
-                    "Unsupported auth stage: {:?}",
-                    other
-                ));
+                return Err(anyhow::anyhow!("Unsupported auth stage: {:?}", other));
             }
         };
 
@@ -384,7 +387,7 @@ async fn complete_uia_flow(
         let mut request = RegisterRequest::new();
         request.username = Some(username.to_owned());
         request.password = Some(password.to_owned());
-        request.initial_device_display_name = Some("walrust".to_owned());
+        request.initial_device_display_name = Some("gosuto".to_owned());
         request.auth = Some(auth_data);
 
         match client.matrix_auth().register(request).await {
@@ -452,7 +455,10 @@ mod tests {
 
     #[test]
     fn normalize_strips_trailing_slashes() {
-        assert_eq!(normalize_homeserver_url("matrix.org/"), "https://matrix.org");
+        assert_eq!(
+            normalize_homeserver_url("matrix.org/"),
+            "https://matrix.org"
+        );
         assert_eq!(
             normalize_homeserver_url("matrix.org///"),
             "https://matrix.org"

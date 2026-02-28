@@ -29,33 +29,38 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
     let sync_status = format!(" {} ", app.sync_status);
 
     // Call status
+    let participants_label = |info: &crate::voip::CallInfo| -> String {
+        if info.participants.is_empty() {
+            String::new()
+        } else if info.participants.len() == 1 {
+            info.participants[0].clone()
+        } else {
+            format!("{} participants", info.participants.len())
+        }
+    };
     let call_span = if let Some(ref info) = app.call_info {
+        let label = participants_label(info);
         match info.state {
-            CallState::Ringing => Span::styled(
-                format!(" INCOMING: {} ", info.remote_user),
-                ratatui::style::Style::default()
-                    .fg(theme::GREEN)
-                    .add_modifier(Modifier::BOLD | Modifier::SLOW_BLINK),
-            ),
-            CallState::Inviting => Span::styled(
-                format!(" CALLING: {} ", info.remote_user),
-                ratatui::style::Style::default()
-                    .fg(theme::CYAN)
-                    .add_modifier(Modifier::BOLD),
-            ),
             CallState::Connecting => Span::styled(
-                format!(" CONNECTING: {} ", info.remote_user),
+                format!(" CONNECTING: {} ", label),
                 ratatui::style::Style::default()
                     .fg(theme::CYAN)
                     .add_modifier(Modifier::BOLD),
             ),
             CallState::Active => Span::styled(
-                format!(" CALL {} {} ", info.elapsed_display(), info.remote_user),
+                format!(" CALL {} {} ", info.elapsed_display(), label),
                 ratatui::style::Style::default()
                     .fg(theme::GREEN)
                     .add_modifier(Modifier::BOLD),
             ),
         }
+    } else if let Some(ref caller) = app.incoming_call_user {
+        Span::styled(
+            format!(" INCOMING: {} ", caller),
+            ratatui::style::Style::default()
+                .fg(theme::GREEN)
+                .add_modifier(Modifier::BOLD | Modifier::SLOW_BLINK),
+        )
     } else {
         Span::raw("")
     };
@@ -76,8 +81,7 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
         error_span,
     ]);
 
-    let bar = Paragraph::new(line)
-        .style(ratatui::style::Style::default().bg(theme::BG));
+    let bar = Paragraph::new(line).style(ratatui::style::Style::default().bg(theme::BG));
 
     frame.render_widget(bar, area);
 }

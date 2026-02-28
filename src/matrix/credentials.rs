@@ -1,6 +1,6 @@
 use tracing::warn;
 
-const SERVICE: &str = "walrust";
+const SERVICE: &str = "gosuto";
 
 pub struct SavedCredentials {
     pub homeserver: String,
@@ -14,8 +14,8 @@ pub fn save_credentials(homeserver: &str, username: &str, password: &str) {
         ("username", username),
         ("password", password),
     ] {
-        if let Err(e) = keyring::Entry::new(SERVICE, key)
-            .and_then(|entry| entry.set_password(value))
+        if let Err(e) =
+            keyring::Entry::new(SERVICE, key).and_then(|entry| entry.set_password(value))
         {
             warn!("Failed to save {key} to keyring: {e}");
             return;

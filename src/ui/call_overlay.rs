@@ -1,22 +1,30 @@
+use ratatui::Frame;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
-use ratatui::Frame;
 
 use crate::ui::effects::{TextReveal, Xorshift64};
 use crate::ui::theme;
 use crate::voip::{CallInfo, CallState};
 
 const POPUP_WIDTH: u16 = 52;
-const POPUP_HEIGHT: u16 = 13;
+const BASE_POPUP_HEIGHT: u16 = 13;
 const WAVEFORM_LEN: usize = 38;
 
 const WAVEFORM_CHARS: &[char] = &['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
 
+/// Display state combines app-level ringing with CallState
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CallDisplayState {
+    Ringing,
+    Connecting,
+    Active,
+}
+
 pub struct TransmissionPopup {
     rng: Xorshift64,
     title_reveal: TextReveal,
-    last_state: Option<CallState>,
+    last_display_state: Option<CallDisplayState>,
     pulse_phase: f32,
     waveform: [f32; WAVEFORM_LEN],
     waveform_targets: [f32; WAVEFORM_LEN],
@@ -32,7 +40,7 @@ impl TransmissionPopup {
         Self {
             rng: Xorshift64::new(0xCAFE_BABE_DEAD_BEEF),
             title_reveal: TextReveal::new(0xC0DE_CAFE_0003),
-            last_state: None,
+            last_display_state: None,
             pulse_phase: 0.0,
             waveform: [0.0; WAVEFORM_LEN],
             waveform_targets: [0.0; WAVEFORM_LEN],
@@ -44,21 +52,20 @@ impl TransmissionPopup {
         }
     }
 
-    pub fn tick(&mut self, dt_ms: u64, call_state: &CallState) {
+    pub fn tick(&mut self, dt_ms: u64, display_state: &CallDisplayState) {
         // Reset reveal on state change
-        if self.last_state.as_ref() != Some(call_state) {
+        if self.last_display_state.as_ref() != Some(display_state) {
             self.title_reveal.trigger();
-            self.last_state = Some(call_state.clone());
+            self.last_display_state = Some(display_state.clone());
         }
 
         self.title_reveal.tick(dt_ms);
 
         // Pulse phase — speed varies by state
-        let pulse_period_ms = match call_state {
-            CallState::Inviting => 2000.0,
-            CallState::Ringing => 800.0,
-            CallState::Connecting => 600.0,
-            CallState::Active => 4000.0,
+        let pulse_period_ms = match display_state {
+            CallDisplayState::Ringing => 800.0,
+            CallDisplayState::Connecting => 600.0,
+            CallDisplayState::Active => 4000.0,
         };
         self.pulse_phase += (dt_ms as f32 / pulse_period_ms) * std::f32::consts::TAU;
         if self.pulse_phase > std::f32::consts::TAU {
@@ -67,10 +74,10 @@ impl TransmissionPopup {
 
         // Waveform
         self.waveform_phase += dt_ms as f32 * 0.003;
-        let amplitude = match call_state {
-            CallState::Active => 1.0,
-            CallState::Connecting => 0.7,
-            CallState::Ringing | CallState::Inviting => 0.3,
+        let amplitude = match display_state {
+            CallDisplayState::Active => 1.0,
+            CallDisplayState::Connecting => 0.7,
+            CallDisplayState::Ringing => 0.3,
         };
         self.generate_waveform_targets(amplitude);
         for i in 0..WAVEFORM_LEN {
@@ -105,18 +112,27 @@ impl TransmissionPopup {
         }
     }
 
-    fn render_popup(&self, info: &CallInfo, frame: &mut Frame) {
+    fn render_popup(&self, info: &CallInfo, display_state: &CallDisplayState, frame: &mut Frame) {
         let area = frame.area();
         if area.width < 20 || area.height < 14 {
             return;
         }
 
         let popup_w = POPUP_WIDTH.min(area.width.saturating_sub(4));
-        let show_waveform = area.height >= POPUP_HEIGHT + 4;
-        let popup_h = if show_waveform {
-            POPUP_HEIGHT
+
+        // Dynamic height for participant list in group calls
+        let participant_lines = if info.participants.len() > 1 {
+            info.participants.len() as u16
         } else {
-            POPUP_HEIGHT - 3
+            1 // single participant or joining
+        };
+        let popup_height = BASE_POPUP_HEIGHT + participant_lines.saturating_sub(1);
+
+        let show_waveform = area.height >= popup_height + 4;
+        let popup_h = if show_waveform {
+            popup_height
+        } else {
+            popup_height - 3
         }
         .min(area.height.saturating_sub(4));
 
@@ -134,22 +150,22 @@ impl TransmissionPopup {
             }
         }
 
-        let border_color = self.pulse_color(&info.state);
+        let border_color = self.pulse_color(display_state);
         self.render_border(buf, &bounds, popup, border_color);
-        self.render_title(buf, &bounds, popup, border_color, &info.state);
-        self.render_caller_line(buf, &bounds, popup, info);
+        self.render_title(buf, &bounds, popup, border_color, display_state, info);
+        self.render_caller_line(buf, &bounds, popup, info, display_state);
         self.render_separator(buf, &bounds, popup);
-        self.render_state_content(buf, &bounds, popup, info);
+        self.render_state_content(buf, &bounds, popup, info, display_state);
         if show_waveform {
-            self.render_waveform(buf, &bounds, popup, &info.state);
+            self.render_waveform(buf, &bounds, popup, display_state);
         }
-        self.render_hints(buf, &bounds, popup, &info.state);
+        self.render_hints(buf, &bounds, popup, display_state);
     }
 
-    fn pulse_color(&self, state: &CallState) -> Color {
+    fn pulse_color(&self, state: &CallDisplayState) -> Color {
         let base = match state {
-            CallState::Inviting | CallState::Connecting => theme::CYAN,
-            CallState::Ringing | CallState::Active => theme::GREEN,
+            CallDisplayState::Connecting => theme::CYAN,
+            CallDisplayState::Ringing | CallDisplayState::Active => theme::GREEN,
         };
         let brightness = (self.pulse_phase.sin() + 1.0) / 2.0;
         let factor = 0.35 + brightness * 0.65;
@@ -202,13 +218,20 @@ impl TransmissionPopup {
         bounds: &Rect,
         area: Rect,
         color: Color,
-        state: &CallState,
+        state: &CallDisplayState,
+        info: &CallInfo,
     ) {
         let title = match state {
-            CallState::Inviting => "OUTGOING TRANSMISSION",
-            CallState::Ringing => "INCOMING TRANSMISSION",
-            CallState::Connecting => "ESTABLISHING LINK",
-            CallState::Active => "TRANSMISSION ACTIVE",
+            CallDisplayState::Ringing => "INCOMING TRANSMISSION",
+            CallDisplayState::Connecting => "ESTABLISHING LINK",
+            CallDisplayState::Active => {
+                if info.participants.len() > 1 {
+                    // Will format dynamically below
+                    "TRANSMISSION ACTIVE"
+                } else {
+                    "TRANSMISSION ACTIVE"
+                }
+            }
         };
         let border_s = Style::default().fg(color).bg(theme::BG);
         let title_s = border_s.add_modifier(Modifier::BOLD);
@@ -220,8 +243,15 @@ impl TransmissionPopup {
         set_cell(buf, bounds, bracket_l, area.y, '╡', border_s);
         set_cell(buf, bounds, bracket_l + 1, area.y, ' ', border_s);
 
+        // For active group calls, show participant count
+        let display_title = if *state == CallDisplayState::Active && info.participants.len() > 1 {
+            format!("{} ({})", title, info.participants.len())
+        } else {
+            title.to_string()
+        };
+
         // Text reveal effect
-        let revealed_chars = self.title_reveal.render_chars(title);
+        let revealed_chars = self.title_reveal.render_chars(&display_title);
         for (i, ch) in revealed_chars.into_iter().enumerate() {
             let x = title_start + i as u16;
             if x >= area.x + area.width - 1 {
@@ -230,7 +260,7 @@ impl TransmissionPopup {
             set_cell(buf, bounds, x, area.y, ch, title_s);
         }
 
-        let bracket_r_space = title_start + title.len() as u16;
+        let bracket_r_space = title_start + display_title.len() as u16;
         let bracket_r = bracket_r_space + 1;
         set_cell(buf, bounds, bracket_r_space, area.y, ' ', border_s);
         if bracket_r < area.x + area.width - 1 {
@@ -244,38 +274,86 @@ impl TransmissionPopup {
         bounds: &Rect,
         area: Rect,
         info: &CallInfo,
+        state: &CallDisplayState,
     ) {
         let row = area.y + 2;
         let left = area.x + 3;
         let right = area.x + area.width.saturating_sub(3);
 
-        let color = match info.state {
-            CallState::Ringing | CallState::Active => theme::GREEN,
+        let color = match state {
+            CallDisplayState::Ringing | CallDisplayState::Active => theme::GREEN,
             _ => theme::CYAN,
         };
 
-        // ▶ username
         let name_s = Style::default()
             .fg(color)
             .bg(theme::BG)
             .add_modifier(Modifier::BOLD);
-        set_cell(
-            buf,
-            bounds,
-            left,
-            row,
-            '▶',
-            Style::default().fg(color).bg(theme::BG),
-        );
-        set_cell(
-            buf,
-            bounds,
-            left + 1,
-            row,
-            ' ',
-            Style::default().bg(theme::BG),
-        );
-        write_str(buf, bounds, left + 2, row, &info.remote_user, name_s);
+
+        if info.participants.is_empty() {
+            // Joining, no participants yet
+            set_cell(
+                buf,
+                bounds,
+                left,
+                row,
+                '▶',
+                Style::default().fg(color).bg(theme::BG),
+            );
+            set_cell(
+                buf,
+                bounds,
+                left + 1,
+                row,
+                ' ',
+                Style::default().bg(theme::BG),
+            );
+            write_str(buf, bounds, left + 2, row, "joining...", name_s);
+        } else if info.participants.len() == 1 {
+            // 1:1 call — show single participant
+            set_cell(
+                buf,
+                bounds,
+                left,
+                row,
+                '▶',
+                Style::default().fg(color).bg(theme::BG),
+            );
+            set_cell(
+                buf,
+                bounds,
+                left + 1,
+                row,
+                ' ',
+                Style::default().bg(theme::BG),
+            );
+            write_str(buf, bounds, left + 2, row, &info.participants[0], name_s);
+        } else {
+            // Group call — show participant list
+            for (i, participant) in info.participants.iter().enumerate() {
+                let y = row + i as u16;
+                if y >= area.y + area.height - 3 {
+                    break;
+                }
+                set_cell(
+                    buf,
+                    bounds,
+                    left,
+                    y,
+                    '▶',
+                    Style::default().fg(color).bg(theme::BG),
+                );
+                set_cell(
+                    buf,
+                    bounds,
+                    left + 1,
+                    y,
+                    ' ',
+                    Style::default().bg(theme::BG),
+                );
+                write_str(buf, bounds, left + 2, y, participant, name_s);
+            }
+        }
 
         // ◉ VOICE right-aligned
         let voice = "◉ VOICE";
@@ -306,35 +384,20 @@ impl TransmissionPopup {
         bounds: &Rect,
         area: Rect,
         info: &CallInfo,
+        state: &CallDisplayState,
     ) {
         let row = area.y + 5;
         let left = area.x + 3;
         let right = area.x + area.width.saturating_sub(3);
 
-        match info.state {
-            CallState::Inviting => {
-                let dots = ".".repeat((self.connecting_dots % 3) as usize + 1);
-                let text = format!("DIALING{}", dots);
-                write_str(
-                    buf,
-                    bounds,
-                    left,
-                    row,
-                    &text,
-                    Style::default().fg(theme::CYAN).bg(theme::BG),
-                );
-            }
-            CallState::Ringing => {
+        match state {
+            CallDisplayState::Ringing => {
                 let s = Style::default().fg(theme::GREEN).bg(theme::BG);
                 write_str(buf, bounds, left, row, "SIGNAL DETECTED", s);
                 write_str(buf, bounds, left, row + 1, "AWAITING RESPONSE", s);
             }
-            CallState::Connecting => {
-                let texts = [
-                    "NEGOTIATING HANDSHAKE",
-                    "EXCHANGING KEYS",
-                    "ROUTING SIGNAL",
-                ];
+            CallDisplayState::Connecting => {
+                let texts = ["NEGOTIATING HANDSHAKE", "EXCHANGING KEYS", "ROUTING SIGNAL"];
                 let idx = (self.connecting_dots as usize) % texts.len();
                 write_str(
                     buf,
@@ -358,14 +421,12 @@ impl TransmissionPopup {
                     let px = left + pos as u16;
                     if in_bounds(px, row + 1, bounds) {
                         buf[(px, row + 1)].set_style(
-                            Style::default()
-                                .fg(Color::Rgb(255, 255, 255))
-                                .bg(theme::BG),
+                            Style::default().fg(Color::Rgb(255, 255, 255)).bg(theme::BG),
                         );
                     }
                 }
             }
-            CallState::Active => {
+            CallDisplayState::Active => {
                 let elapsed = info.elapsed_display();
                 let text = format!("◧ VOICE ━━━━━━━ {}", elapsed);
                 write_str(
@@ -385,7 +446,7 @@ impl TransmissionPopup {
         buf: &mut Buffer,
         bounds: &Rect,
         area: Rect,
-        state: &CallState,
+        state: &CallDisplayState,
     ) {
         let top = area.y + 8;
         let mid = area.y + 9;
@@ -425,7 +486,7 @@ impl TransmissionPopup {
         );
 
         let wave_color = match state {
-            CallState::Active | CallState::Ringing => theme::GREEN,
+            CallDisplayState::Active | CallDisplayState::Ringing => theme::GREEN,
             _ => theme::CYAN,
         };
         let ws = Style::default().fg(wave_color).bg(theme::BG);
@@ -441,32 +502,19 @@ impl TransmissionPopup {
 
         let after = wave_x + WAVEFORM_LEN as u16;
         if after < right {
-            set_cell(
-                buf,
-                bounds,
-                after,
-                mid,
-                ' ',
-                Style::default().bg(theme::BG),
-            );
+            set_cell(buf, bounds, after, mid, ' ', Style::default().bg(theme::BG));
         }
         set_cell(buf, bounds, right, mid, '╎', dim);
     }
 
-    fn render_hints(
-        &self,
-        buf: &mut Buffer,
-        bounds: &Rect,
-        area: Rect,
-        state: &CallState,
-    ) {
+    fn render_hints(&self, buf: &mut Buffer, bounds: &Rect, area: Rect, state: &CallDisplayState) {
         let row = area.y + area.height - 2;
 
         let segments: &[(&str, Color, bool)] = match state {
-            CallState::Inviting | CallState::Connecting | CallState::Active => {
+            CallDisplayState::Connecting | CallDisplayState::Active => {
                 &[("c ", theme::CYAN, true), (":hangup", theme::RED, true)]
             }
-            CallState::Ringing => &[
+            CallDisplayState::Ringing => &[
                 ("a ", theme::CYAN, true),
                 (":answer", theme::CYAN, true),
                 (" │ ", theme::DIM, false),
@@ -522,7 +570,25 @@ fn write_str(buf: &mut Buffer, bounds: &Rect, x: u16, y: u16, text: &str, style:
     }
 }
 
-/// Public entry point for ui::mod to call
-pub fn render(popup: &TransmissionPopup, info: &CallInfo, frame: &mut Frame) {
-    popup.render_popup(info, frame);
+/// Public entry point — render with appropriate display state
+pub fn render(
+    popup: &TransmissionPopup,
+    info: &CallInfo,
+    ds: &CallDisplayState,
+    frame: &mut Frame,
+) {
+    popup.render_popup(info, ds, frame);
+}
+
+/// Render for incoming ringing (no CallInfo yet)
+pub fn render_ringing(popup: &TransmissionPopup, caller: &str, room_id: &str, frame: &mut Frame) {
+    // Create a temporary CallInfo for display
+    let info = CallInfo {
+        room_id: room_id.to_string(),
+        state: CallState::Connecting, // doesn't matter, display_state overrides
+        is_incoming: true,
+        participants: vec![caller.to_string()],
+        started_at: None,
+    };
+    popup.render_popup(&info, &CallDisplayState::Ringing, frame);
 }

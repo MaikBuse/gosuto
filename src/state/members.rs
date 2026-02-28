@@ -24,9 +24,11 @@ impl MemberListState {
     pub fn set_members(&mut self, room_id: &str, mut members: Vec<RoomMember>) {
         // Sort: highest power level first, then alphabetical
         members.sort_by(|a, b| {
-            b.power_level
-                .cmp(&a.power_level)
-                .then(a.display_name.to_lowercase().cmp(&b.display_name.to_lowercase()))
+            b.power_level.cmp(&a.power_level).then(
+                a.display_name
+                    .to_lowercase()
+                    .cmp(&b.display_name.to_lowercase()),
+            )
         });
         self.current_room_id = Some(room_id.to_string());
         self.members = members;

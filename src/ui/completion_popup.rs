@@ -59,9 +59,7 @@ pub fn render(app: &App, frame: &mut Frame, input_bar_area: Rect) {
             let desc_span = Span::styled(
                 cmd.description,
                 if is_selected {
-                    Style::default()
-                        .fg(theme::BLACK)
-                        .bg(theme::MAGENTA)
+                    Style::default().fg(theme::BLACK).bg(theme::MAGENTA)
                 } else {
                     Style::default().fg(theme::DIM)
                 },

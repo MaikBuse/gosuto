@@ -21,9 +21,10 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
     };
 
     let block = Block::default()
-        .title(Line::from(vec![
-            Span::styled(" ROOMS ", theme::title_style()),
-        ]))
+        .title(Line::from(vec![Span::styled(
+            " ROOMS ",
+            theme::title_style(),
+        )]))
         .borders(Borders::ALL)
         .border_style(border_style)
         .style(ratatui::style::Style::default().bg(theme::BG));
