@@ -9,143 +9,114 @@
 
 **Gōsuto** (ゴースト) — _ghost_ — a cyberpunk terminal Matrix client with vim motions.
 
-<!-- TODO: Add demo video -->
+```
+#00ffff cyan │ #ff00ff magenta │ #00ff80 green │ #ff503c red │ #0a0a0f black
+───────────────────────────────────────────────────────────────────────────────
+  focus/normal │   command mode  │  insert mode  │   errors    │  background
+```
 
-## Table of Contents
+## ════════════════════ the point ════════════════════
 
-- [Why Gosuto](#why-gosuto)
-- [Features](#features)
-- [Quick Start](#quick-start)
-- [Configuration](#configuration)
-- [License](#license)
+~3,400 lines of Rust. One static binary. No Electron, no browser, no bloat.
 
-## Why Gosuto
+- Vim-first — Normal, Insert, Command modes. If you know vim, you know Gosuto.
+- Full E2EE via matrix-sdk with automatic room key forwarding
+- Async Tokio runtime, 50ms render cycle
+- Neon-on-black palette, matrix rain, glitch effects, text reveal animations
 
-- **Lightweight** — ~3,400 LOC Rust, compiles to a single static binary
-- **Performant** — async Tokio runtime with a 50ms render cycle
-- **Vim-first** — Normal, Insert, and Command modes with familiar keybindings
-- **Cyberpunk aesthetic** — neon-on-black palette, matrix rain, glitch effects, text reveal animations
-- **End-to-end encrypted** — full E2EE via matrix-sdk with automatic room key forwarding
+## ════════════════════ features ════════════════════
 
-## Features
+### chat
 
-### Chat
+Browse and join rooms, spaces, and DMs. Send encrypted messages. Scroll history with `j`/`k`. Date separators between days.
 
-- Browse and join rooms, spaces, and DMs
-- Send and receive messages with full E2E encryption
-- Scroll through message history with inverted scroll (newest at bottom)
-- Date separators between messages from different days
-- Room creation with configurable history visibility
-- Power level prefixes: `~` owner, `&` admin, `@` op, `+` voice
-- Room glyphs: `≡` spaces, `#` rooms, `@` DMs
+Power levels: `~` owner `&` admin `@` op `+` voice
+Room glyphs: `≡` spaces `#` rooms `@` DMs
 
-### VoIP
+Room creation with configurable history visibility.
 
-- LiveKit-based voice calls
-- Audio device configuration (`:audio`)
-- Call controls: start, answer, reject, hangup
+### voip
 
-### Visual Effects
+LiveKit-based voice calls. Configure audio devices with `:audio`. Start, answer, reject, hangup.
 
-- **Matrix rain** — cascading green characters across the terminal
-- **Glitch** — randomized text corruption effect
-- **Text reveal** — characters materialize progressively on the login screen
+### effects
 
-### Keybindings
+- **matrix rain** — cascading green characters across the terminal
+- **glitch** — randomized text corruption
+- **text reveal** — characters materialize on the login screen
 
-Gosuto uses three vim-inspired modes:
+## ════════════════════ keybindings ════════════════════
 
-| Mode | Indicator | Enter | Exit |
-|------|-----------|-------|------|
-| **Normal** | Cyan | `Esc` from Insert/Command | — |
-| **Insert** | Green | `i` | `Esc` |
-| **Command** | Magenta | `:` | `Esc` or `Enter` |
+Three modes, color-coded in the status bar:
 
-**Normal mode:**
+```
+ Normal  │ cyan    │ Esc from Insert/Command
+ Insert  │ green   │ i
+ Command │ magenta │ :
+```
 
-| Key | Action |
-|-----|--------|
-| `j` / `↓` | Move down |
-| `k` / `↑` | Move up |
-| `gg` | Jump to top |
-| `G` | Jump to bottom |
-| `h` | Focus left panel |
-| `l` | Focus right panel |
-| `Tab` | Cycle panel focus |
-| `Enter` | Select item |
-| `/` | Search / filter rooms |
-| `i` | Enter Insert mode |
-| `:` | Enter Command mode |
-| `c` | Call selected member |
-| `a` | Answer incoming call |
-| `r` | Reject incoming call |
-| `q` | Quit |
+### normal mode
 
-**Insert mode:** Type your message, press `Enter` to send, `Esc` to return to Normal.
+```
+ j / ↓       move down             h          focus left panel
+ k / ↑       move up               l          focus right panel
+ gg          jump to top            Tab        cycle panel focus
+ G           jump to bottom         Enter      select item
+ /           search / filter        i          insert mode
+ :           command mode           q          quit
+ c           call member            a          answer call
+ r           reject call
+```
 
-### Commands
+### insert mode
 
-| Command | Aliases | Description |
-|---------|---------|-------------|
-| `:quit` | `:q` | Exit gosuto |
-| `:join <room>` | | Join a room |
-| `:leave` | | Leave current room |
-| `:dm <user>` | | Direct message a user |
-| `:create <name> [visibility]` | `:new` | Create a new room |
-| `:info` | `:roominfo` | Show room info |
-| `:call` | | Start a call in current room |
-| `:answer` | `:accept` | Answer incoming call |
-| `:reject` | `:decline` | Reject incoming call |
-| `:hangup` | `:end` | End active call |
-| `:audio` | `:sound` | Audio device configuration |
-| `:rain` | `:matrix`, `:effects` | Toggle matrix rain effect |
-| `:glitch` | | Toggle glitch effect |
-| `:logout` | | Log out of session |
+Type your message. `Enter` sends. `Esc` returns to Normal.
 
-## Quick Start
+## ════════════════════ commands ════════════════════
 
-### Build from source
+```
+ :quit, :q                     exit gosuto
+ :join <room>                  join a room
+ :leave                        leave current room
+ :dm <user>                    direct message a user
+ :create <name> [visibility]   create a room        (alias: :new)
+ :info                         show room info       (alias: :roominfo)
+ :call                         start a call
+ :answer                       answer a call        (alias: :accept)
+ :reject                       reject a call        (alias: :decline)
+ :hangup                       end a call           (alias: :end)
+ :audio                        audio config         (alias: :sound)
+ :rain                         toggle matrix rain   (alias: :matrix, :effects)
+ :glitch                       toggle glitch effect
+ :logout                       log out
+```
+
+## ════════════════════ install ════════════════════
 
 ```bash
-# Install directly
+# install directly
 cargo install --git https://github.com/maikbuse/gosuto.git
 
-# Or clone and build
+# or clone and build
 git clone https://github.com/maikbuse/gosuto.git
 cd gosuto
 cargo build --release
 ./target/release/gosuto
 ```
 
-### Run
+Run `gosuto` and log in with your Matrix homeserver, username, and password.
 
-```bash
-gosuto
+## ════════════════════ config ════════════════════
+
+Data lives in `~/.local/share/gosuto/`:
+
+```
+ session.json   encrypted session credentials
+ store/         matrix-sdk SQLite store
+ logs/          log files (enable with GOSUTO_LOG=debug gosuto)
 ```
 
-You'll be greeted with the login screen. Enter your Matrix homeserver, username, and password.
-
-## Configuration
-
-Gosuto stores its data in `~/.local/share/gosuto/`:
-
-| Path | Purpose |
-|------|---------|
-| `session.json` | Encrypted session credentials |
-| `store/` | matrix-sdk SQLite store |
-| `logs/` | Log files |
-
-### Logging
-
-Enable debug logging with the `GOSUTO_LOG` environment variable:
-
-```bash
-GOSUTO_LOG=debug gosuto
-```
-
-Logs are written to `~/.local/share/gosuto/logs/`.
-
-## License
+## ════════════════════ license ════════════════════
 
 Licensed under either of
 
