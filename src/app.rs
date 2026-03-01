@@ -469,24 +469,22 @@ impl App {
                 self.call_info = None;
             }
             // Verification events
-            AppEvent::VerificationRequestReceived { sender, flow_id } => {
+            AppEvent::VerificationRequestReceived { sender, flow_id: _ } => {
                 self.verification_modal = Some(crate::state::VerificationModalState {
                     stage: crate::state::VerificationStage::WaitingForOtherDevice,
                     sender,
                     emojis: vec![],
-                    flow_id,
                 });
             }
             AppEvent::VerificationSasEmoji {
                 emojis,
-                flow_id,
+                flow_id: _,
                 sender,
             } => {
                 self.verification_modal = Some(crate::state::VerificationModalState {
                     stage: crate::state::VerificationStage::EmojiConfirmation,
                     sender,
                     emojis,
-                    flow_id,
                 });
             }
             AppEvent::VerificationCompleted { sender: _ } => {
@@ -601,11 +599,11 @@ impl App {
                 } else if self.vim.focus == FocusPanel::Members
                     && let Some(member) = self.members_list.selected_member()
                 {
-                    if let AuthState::LoggedIn { ref user_id, .. } = self.auth {
-                        if member.user_id == *user_id {
-                            self.last_error = Some("Cannot DM yourself".to_string());
-                            return;
-                        }
+                    if let AuthState::LoggedIn { ref user_id, .. } = self.auth
+                        && member.user_id == *user_id
+                    {
+                        self.last_error = Some("Cannot DM yourself".to_string());
+                        return;
                     }
                     self.effects
                         .members_emp_pulse
@@ -707,11 +705,11 @@ impl App {
                 }
             }
             CommandAction::DirectMessage(user) => {
-                if let AuthState::LoggedIn { ref user_id, .. } = self.auth {
-                    if user == *user_id {
-                        self.last_error = Some("Cannot DM yourself".to_string());
-                        return;
-                    }
+                if let AuthState::LoggedIn { ref user_id, .. } = self.auth
+                    && user == *user_id
+                {
+                    self.last_error = Some("Cannot DM yourself".to_string());
+                    return;
                 }
                 self.pending_dm = Some(user);
             }

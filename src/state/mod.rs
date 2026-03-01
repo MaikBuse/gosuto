@@ -13,7 +13,6 @@ pub struct VerificationModalState {
     pub stage: VerificationStage,
     pub sender: String,
     pub emojis: Vec<(String, String)>,
-    pub flow_id: String,
 }
 
 #[derive(Debug, PartialEq)]

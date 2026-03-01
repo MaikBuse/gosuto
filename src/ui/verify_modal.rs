@@ -236,30 +236,18 @@ fn render_emoji_row(
     let total_width = slot_width * count;
     let start_x = left + (inner_w.saturating_sub(total_width)) as u16 / 2;
 
-    for (i, (symbol, description)) in emojis.iter().enumerate() {
+    for (i, (_symbol, description)) in emojis.iter().enumerate() {
         let slot_x = start_x + (i * slot_width) as u16;
-        let center_offset = (slot_width.saturating_sub(symbol.chars().count())) / 2;
 
-        // Symbol line
-        write_str(
-            buf,
-            bounds,
-            slot_x + center_offset as u16,
-            y,
-            symbol,
-            Style::default().fg(theme::TEXT).bg(theme::BG),
-        );
-
-        // Description line (below symbol)
         let desc = truncate_str(description, slot_width);
         let desc_offset = (slot_width.saturating_sub(desc.len())) / 2;
         write_str(
             buf,
             bounds,
             slot_x + desc_offset as u16,
-            y + 1,
+            y,
             &desc,
-            Style::default().fg(theme::DIM).bg(theme::BG),
+            Style::default().fg(theme::TEXT).bg(theme::BG),
         );
     }
 }

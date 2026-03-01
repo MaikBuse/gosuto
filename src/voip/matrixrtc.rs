@@ -352,6 +352,9 @@ pub async fn send_call_notify(
         "m.call.intent": "audio"
     });
 
+    let pretty_json = serde_json::to_string_pretty(&content).unwrap_or_default();
+    debug!("Sending rtc.notification: content={}", pretty_json);
+
     // Try unstable prefix first (Element X only recognizes this while MSC4075 is unstable),
     // fall back to stable event type
     let result = room
@@ -383,16 +386,14 @@ pub async fn publish_call_member(
     let user_id = client.user_id().context("Not logged in")?;
     let room = client.get_room(room_id).context("Room not found")?;
 
-    let state_key = format!("_{}_{}", user_id, device_id);
+    let state_key = format!("_{}_{}_{}", user_id, device_id, "m.call");
 
     let content = serde_json::json!({
         "application": "m.call",
         "call_id": "",
         "scope": "m.room",
         "device_id": device_id.to_string(),
-        "membershipID": format!("{}:{}", user_id, device_id),
-        "expires": 14_400_000,
-        "m.call.intent": "audio",
+        "expires": 7_200_000,
         "focus_active": {
             "type": "livekit",
             "focus_selection": "oldest_membership",
@@ -404,17 +405,20 @@ pub async fn publish_call_member(
         }],
     });
 
-    // Try stable event type first (spec v1.11+), fall back to unstable
+    let pretty_json = serde_json::to_string_pretty(&content).unwrap_or_default();
+    debug!("Publishing m.call.member: state_key={}, content={}", state_key, pretty_json);
+
+    // Try unstable event type first (Element X watches for this), fall back to stable
     let result = room
-        .send_state_event_raw(&state_key, "m.call.member", content.clone())
+        .send_state_event_raw(&state_key, "org.matrix.msc3401.call.member", content.clone())
         .await;
 
     let event_id = match result {
         Ok(resp) => resp.event_id.to_string(),
-        Err(stable_err) => {
-            debug!("Stable m.call.member failed ({stable_err:#}), trying unstable type");
+        Err(unstable_err) => {
+            debug!("Unstable org.matrix.msc3401.call.member failed ({unstable_err:#}), trying stable type");
             let resp = room
-                .send_state_event_raw(&state_key, "org.matrix.msc3401.call.member", content)
+                .send_state_event_raw(&state_key, "m.call.member", content)
                 .await
                 .context("Failed to publish m.call.member state event")?;
             resp.event_id.to_string()
@@ -437,18 +441,18 @@ pub async fn remove_call_member(
     let user_id = client.user_id().context("Not logged in")?;
     let room = client.get_room(room_id).context("Room not found")?;
 
-    let state_key = format!("_{}_{}", user_id, device_id);
+    let state_key = format!("_{}_{}_{}", user_id, device_id, "m.call");
 
     let content = serde_json::json!({});
 
-    // Try stable event type first (spec v1.11+), fall back to unstable
+    // Try unstable event type first (Element X watches for this), fall back to stable
     let result = room
-        .send_state_event_raw(&state_key, "m.call.member", content.clone())
+        .send_state_event_raw(&state_key, "org.matrix.msc3401.call.member", content.clone())
         .await;
 
-    if let Err(stable_err) = result {
-        debug!("Stable m.call.member failed ({stable_err:#}), trying unstable type");
-        room.send_state_event_raw(&state_key, "org.matrix.msc3401.call.member", content)
+    if let Err(unstable_err) = result {
+        debug!("Unstable org.matrix.msc3401.call.member failed ({unstable_err:#}), trying stable type");
+        room.send_state_event_raw(&state_key, "m.call.member", content)
             .await
             .context("Failed to remove m.call.member state event")?;
     }
