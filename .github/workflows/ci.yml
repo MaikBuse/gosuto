@@ -15,8 +15,8 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  check:
-    name: Lint & Check
+  fmt:
+    name: Formatting
     runs-on: ubuntu-latest
 
     steps:
@@ -24,7 +24,21 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt, clippy
+          components: rustfmt
+
+      - name: Check formatting
+        run: cargo fmt --check
+
+  check:
+    name: Clippy & Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
 
       - name: Install system dependencies
         run: |
@@ -36,25 +50,10 @@ jobs:
           version: "25.x"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-          key: ${{ runner.os }}-cargo-debug-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-debug-
-
-      - name: Check formatting
-        run: cargo fmt --check
+      - uses: Swatinem/rust-cache@v2
 
       - name: Clippy lints
         run: cargo clippy --all-targets --all-features -- -D warnings
-
-      - name: Type check
-        run: cargo check
 
       - name: Run tests
         run: cargo test
