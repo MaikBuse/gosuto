@@ -2,7 +2,15 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 use matrix_sdk::{Client, config::SyncSettings};
+use matrix_sdk::encryption::EncryptionSettings;
 use tracing::{debug, info, warn};
+
+fn encryption_settings() -> EncryptionSettings {
+    EncryptionSettings {
+        auto_enable_cross_signing: true,
+        ..Default::default()
+    }
+}
 
 use crate::config;
 use crate::event::{AppEvent, EventSender};
@@ -24,7 +32,8 @@ pub async fn try_restore_session(
     debug!("Using per-server store at {}", store_path.display());
     let mut builder = Client::builder()
         .homeserver_url(&stored.homeserver)
-        .sqlite_store(&store_path, None);
+        .sqlite_store(&store_path, None)
+        .with_encryption_settings(encryption_settings());
 
     if accept_invalid_certs {
         builder = builder.disable_ssl_verification();
@@ -99,7 +108,8 @@ pub async fn login(
         // Try with server discovery first
         let mut builder = Client::builder()
             .server_name_or_homeserver_url(&homeserver)
-            .sqlite_store(&store_path, None);
+            .sqlite_store(&store_path, None)
+            .with_encryption_settings(encryption_settings());
         if accept_invalid_certs {
             builder = builder.disable_ssl_verification();
         }
@@ -112,7 +122,8 @@ pub async fn login(
                 );
                 let mut builder = Client::builder()
                     .homeserver_url(&homeserver)
-                    .sqlite_store(&store_path, None);
+                    .sqlite_store(&store_path, None)
+                    .with_encryption_settings(encryption_settings());
                 if accept_invalid_certs {
                     builder = builder.disable_ssl_verification();
                 }
@@ -207,7 +218,8 @@ pub async fn register(
     let client = {
         let mut builder = Client::builder()
             .server_name_or_homeserver_url(&homeserver)
-            .sqlite_store(&store_path, None);
+            .sqlite_store(&store_path, None)
+            .with_encryption_settings(encryption_settings());
         if accept_invalid_certs {
             builder = builder.disable_ssl_verification();
         }
@@ -220,7 +232,8 @@ pub async fn register(
                 );
                 let mut builder = Client::builder()
                     .homeserver_url(&homeserver)
-                    .sqlite_store(&store_path, None);
+                    .sqlite_store(&store_path, None)
+                    .with_encryption_settings(encryption_settings());
                 if accept_invalid_certs {
                     builder = builder.disable_ssl_verification();
                 }

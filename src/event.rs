@@ -98,6 +98,23 @@ pub enum AppEvent {
     // Audio settings events
     MicLevel(f32),
     KeyRelease(KeyEvent),
+    // Verification events
+    VerificationRequestReceived {
+        sender: String,
+        flow_id: String,
+    },
+    VerificationSasEmoji {
+        emojis: Vec<(String, String)>,
+        flow_id: String,
+        sender: String,
+    },
+    VerificationCompleted {
+        sender: String,
+    },
+    VerificationCancelled {
+        reason: String,
+    },
+    VerificationError(String),
 }
 
 pub type EventSender = mpsc::UnboundedSender<AppEvent>;

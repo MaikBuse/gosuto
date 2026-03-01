@@ -84,13 +84,21 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
 
         let mut spans = vec![
             Span::styled(format!("{} ", time), theme::dim_style()),
-            Span::styled(
-                format!("{} ", msg.sender),
-                ratatui::style::Style::default()
-                    .fg(sender_color)
-                    .add_modifier(ratatui::style::Modifier::BOLD),
-            ),
         ];
+
+        if msg.verified == Some(false) {
+            spans.push(Span::styled(
+                "\u{26A0} ",
+                ratatui::style::Style::default().fg(theme::RED),
+            ));
+        }
+
+        spans.push(Span::styled(
+            format!("{} ", msg.sender),
+            ratatui::style::Style::default()
+                .fg(sender_color)
+                .add_modifier(ratatui::style::Modifier::BOLD),
+        ));
 
         if msg.pending {
             spans.push(Span::styled(&msg.body, theme::dim_style()));

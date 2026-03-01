@@ -109,6 +109,13 @@ pub const COMMANDS: &[CommandDef] = &[
         description: "Show room info",
         takes_arg: false,
     },
+    CommandDef {
+        name: "verify",
+        aliases: &[],
+        syntax: ":verify [@user:server]",
+        description: "Verify device (self or user)",
+        takes_arg: true,
+    },
 ];
 
 pub fn filtered_commands(prefix: &str) -> Vec<&'static CommandDef> {
@@ -290,6 +297,14 @@ fn parse_command(input: &str) -> InputResult {
             }
         }
         "info" | "roominfo" => InputResult::Command(CommandAction::RoomInfo),
+        "verify" => {
+            let target = if arg.is_empty() {
+                None
+            } else {
+                Some(arg.to_string())
+            };
+            InputResult::Command(CommandAction::Verify(target))
+        }
         _ => InputResult::None,
     }
 }

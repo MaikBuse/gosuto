@@ -9,6 +9,7 @@ pub struct DisplayMessage {
     pub is_emote: bool,
     pub is_notice: bool,
     pub pending: bool,
+    pub verified: Option<bool>,
 }
 
 #[derive(Debug)]

@@ -66,13 +66,18 @@ async fn main() -> Result<()> {
     // Shared Matrix client
     let matrix_client: Arc<Mutex<Option<matrix_sdk::Client>>> = Arc::new(Mutex::new(None));
 
+    // Shared state for incoming verification requests
+    let incoming_verification: matrix::sync::IncomingVerification =
+        Arc::new(Mutex::new(None));
+
     // Try to restore session
     match matrix::client::try_restore_session(&event_tx, accept_invalid_certs).await {
         Ok(Some(client)) => {
             *matrix_client.lock().await = Some(client.clone());
             let tx = event_tx.clone();
+            let iv = incoming_verification.clone();
             tokio::spawn(async move {
-                if let Err(e) = matrix::sync::start_sync(client, tx.clone()).await {
+                if let Err(e) = matrix::sync::start_sync(client, tx.clone(), iv).await {
                     error!("Sync error: {}", e);
                     let _ = tx.send(AppEvent::SyncError(e.to_string()));
                 }
@@ -424,6 +429,51 @@ async fn main() -> Result<()> {
                                 }
                             });
                         }
+
+                        // Handle outgoing verification (:verify command)
+                        if let Some(target) = app.take_pending_verify() {
+                            let client_holder = matrix_client.clone();
+                            let tx = event_tx.clone();
+                            let (confirm_tx, confirm_rx) = tokio::sync::oneshot::channel();
+                            app.verify_confirm_tx = Some(confirm_tx);
+
+                            tokio::spawn(async move {
+                                let client = { client_holder.lock().await.clone() };
+                                if let Some(client) = client {
+                                    match target {
+                                        None => {
+                                            matrix::verification::start_self_verification(
+                                                client, tx, confirm_rx,
+                                            )
+                                            .await;
+                                        }
+                                        Some(user_id) => {
+                                            matrix::verification::start_user_verification(
+                                                client, &user_id, tx, confirm_rx,
+                                            )
+                                            .await;
+                                        }
+                                    }
+                                }
+                            });
+                        }
+
+                        // Handle incoming verification requests
+                        {
+                            let mut iv_guard = incoming_verification.lock().await;
+                            if let Some(request) = iv_guard.take() {
+                                let tx = event_tx.clone();
+                                let (confirm_tx, confirm_rx) = tokio::sync::oneshot::channel();
+                                app.verify_confirm_tx = Some(confirm_tx);
+
+                                tokio::spawn(async move {
+                                    matrix::verification::handle_incoming_verification(
+                                        request, tx, confirm_rx,
+                                    )
+                                    .await;
+                                });
+                            }
+                        }
                     }
                     None => break,
                 }
@@ -437,6 +487,7 @@ async fn main() -> Result<()> {
             let (homeserver, username, password) = app.login_credentials();
             let tx = event_tx.clone();
             let client_holder = matrix_client.clone();
+            let iv = incoming_verification.clone();
             tokio::spawn(async move {
                 match matrix::client::login(
                     &homeserver,
@@ -451,7 +502,7 @@ async fn main() -> Result<()> {
                         *client_holder.lock().await = Some(client.clone());
                         let sync_tx = tx.clone();
                         tokio::spawn(async move {
-                            if let Err(e) = matrix::sync::start_sync(client, sync_tx.clone()).await
+                            if let Err(e) = matrix::sync::start_sync(client, sync_tx.clone(), iv).await
                             {
                                 error!("Sync error: {}", e);
                                 let _ = sync_tx.send(AppEvent::SyncError(e.to_string()));
@@ -477,6 +528,7 @@ async fn main() -> Result<()> {
             let (homeserver, username, password, token) = app.registration_credentials();
             let tx = event_tx.clone();
             let client_holder = matrix_client.clone();
+            let iv = incoming_verification.clone();
             tokio::spawn(async move {
                 match matrix::client::register(
                     &homeserver,
@@ -492,7 +544,7 @@ async fn main() -> Result<()> {
                         *client_holder.lock().await = Some(client.clone());
                         let sync_tx = tx.clone();
                         tokio::spawn(async move {
-                            if let Err(e) = matrix::sync::start_sync(client, sync_tx.clone()).await
+                            if let Err(e) = matrix::sync::start_sync(client, sync_tx.clone(), iv).await
                             {
                                 error!("Sync error: {}", e);
                                 let _ = sync_tx.send(AppEvent::SyncError(e.to_string()));

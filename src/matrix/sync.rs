@@ -4,15 +4,23 @@ use std::time::Duration;
 
 use anyhow::Result;
 use matrix_sdk::Client;
+use matrix_sdk::encryption::verification::VerificationRequest;
 use matrix_sdk::ruma::events::room::message::{MessageType, OriginalSyncRoomMessageEvent};
+use tokio::sync::Mutex;
 use tokio::time::sleep;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use crate::config;
 use crate::event::{AppEvent, EventSender};
 use crate::matrix::{rooms, session};
 
-pub async fn start_sync(client: Client, tx: EventSender) -> Result<()> {
+pub type IncomingVerification = Arc<Mutex<Option<VerificationRequest>>>;
+
+pub async fn start_sync(
+    client: Client,
+    tx: EventSender,
+    incoming_verification: IncomingVerification,
+) -> Result<()> {
     // Register event handler for messages
     let msg_tx = tx.clone();
     client.add_event_handler(
@@ -44,12 +52,42 @@ pub async fn start_sync(client: Client, tx: EventSender) -> Result<()> {
                     is_emote,
                     is_notice,
                     pending: false,
+                    verified: None,
                 };
 
                 let _ = tx.send(AppEvent::NewMessage {
                     room_id,
                     message: msg,
                 });
+            }
+        },
+    );
+
+    // Register event handler for incoming verification requests
+    let verify_tx = tx.clone();
+    let incoming_verify = incoming_verification.clone();
+    client.add_event_handler(
+        move |event: matrix_sdk::ruma::events::ToDeviceEvent<
+            matrix_sdk::ruma::events::key::verification::request::ToDeviceKeyVerificationRequestEventContent,
+        >,
+              client: matrix_sdk::Client| {
+            let tx = verify_tx.clone();
+            let incoming_verify = incoming_verify.clone();
+            async move {
+                let request = client
+                    .encryption()
+                    .get_verification_request(&event.sender, event.content.transaction_id.as_str())
+                    .await;
+
+                if let Some(request) = request {
+                    info!("Incoming verification request from {}", event.sender);
+                    // Store the request for main.rs to drive
+                    *incoming_verify.lock().await = Some(request);
+                    let _ = tx.send(crate::event::AppEvent::VerificationRequestReceived {
+                        sender: event.sender.to_string(),
+                        flow_id: event.content.transaction_id.to_string(),
+                    });
+                }
             }
         },
     );
@@ -167,6 +205,15 @@ fn register_matrixrtc_handlers(client: &Client, tx: &EventSender) {
 
                 let sender = event.sender().to_string();
                 let room_id = room.room_id().to_string();
+
+                let raw_content = event
+                    .original_content()
+                    .map(|raw| serde_json::to_string_pretty(&serde_json::to_value(raw).unwrap_or_default()).unwrap_or_default())
+                    .unwrap_or_else(|| "<redacted>".to_string());
+                debug!(
+                    "m.call.member raw: type={}, sender={}, room={}, state_key={}, content={}",
+                    event_type, sender, room_id, event.state_key(), raw_content,
+                );
 
                 // Parse the content to check for active memberships
                 // New format (MSC4143): top-level "application" field means joined

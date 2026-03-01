@@ -149,6 +149,10 @@ pub struct App {
     pub audio_settings: AudioSettingsState,
     pub ptt_transmitting: Arc<AtomicBool>,
     pub sync_token: Option<String>,
+    // Verification
+    pub verification_modal: Option<crate::state::VerificationModalState>,
+    pub pending_verify: Option<Option<String>>,
+    pub verify_confirm_tx: Option<tokio::sync::oneshot::Sender<bool>>,
 }
 
 impl App {
@@ -192,6 +196,9 @@ impl App {
             audio_settings: AudioSettingsState::new(),
             ptt_transmitting: Arc::new(AtomicBool::new(true)), // default: always transmit (no PTT)
             sync_token: None,
+            verification_modal: None,
+            pending_verify: None,
+            verify_confirm_tx: None,
         }
     }
 
@@ -205,6 +212,8 @@ impl App {
             AppEvent::Key(key) => {
                 if !self.auth.is_logged_in() {
                     self.handle_login_key(key);
+                } else if self.verification_modal.is_some() {
+                    self.handle_verify_modal_key(key);
                 } else if self.room_info.open {
                     self.handle_room_info_key(key);
                 } else if self.audio_settings.open {
@@ -459,6 +468,46 @@ impl App {
             AppEvent::CallEnded => {
                 self.call_info = None;
             }
+            // Verification events
+            AppEvent::VerificationRequestReceived { sender, flow_id } => {
+                self.verification_modal = Some(crate::state::VerificationModalState {
+                    stage: crate::state::VerificationStage::WaitingForOtherDevice,
+                    sender,
+                    emojis: vec![],
+                    flow_id,
+                });
+            }
+            AppEvent::VerificationSasEmoji {
+                emojis,
+                flow_id,
+                sender,
+            } => {
+                self.verification_modal = Some(crate::state::VerificationModalState {
+                    stage: crate::state::VerificationStage::EmojiConfirmation,
+                    sender,
+                    emojis,
+                    flow_id,
+                });
+            }
+            AppEvent::VerificationCompleted { sender: _ } => {
+                if let Some(ref mut modal) = self.verification_modal {
+                    modal.stage = crate::state::VerificationStage::Completed;
+                }
+            }
+            AppEvent::VerificationCancelled { reason } => {
+                if let Some(ref mut modal) = self.verification_modal {
+                    modal.stage = crate::state::VerificationStage::Failed(reason);
+                }
+            }
+            AppEvent::VerificationError(err) => {
+                if self.verification_modal.is_some() {
+                    if let Some(ref mut modal) = self.verification_modal {
+                        modal.stage = crate::state::VerificationStage::Failed(err);
+                    }
+                } else {
+                    self.last_error = Some(err);
+                }
+            }
         }
     }
 
@@ -632,6 +681,7 @@ impl App {
                 is_emote: false,
                 is_notice: false,
                 pending: true,
+                verified: None,
             };
             self.messages.add_message(msg);
             self.messages.scroll_to_bottom();
@@ -744,6 +794,9 @@ impl App {
                 let vis = history_visibility.unwrap_or_else(|| "shared".to_string());
                 self.pending_create_room = Some((name, vis));
             }
+            CommandAction::Verify(target) => {
+                self.pending_verify = Some(target);
+            }
             CommandAction::RoomInfo => {
                 if let Some(room_id) = self.messages.current_room_id.clone() {
                     self.room_info = RoomInfoState {
@@ -821,6 +874,69 @@ impl App {
 
     pub fn take_pending_create_room(&mut self) -> Option<(String, String)> {
         self.pending_create_room.take()
+    }
+
+    pub fn take_pending_verify(&mut self) -> Option<Option<String>> {
+        self.pending_verify.take()
+    }
+
+    // ── Verification Modal ────────────────────────────
+
+    fn handle_verify_modal_key(&mut self, key: KeyEvent) {
+        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
+            self.verification_modal = None;
+            self.verify_confirm_tx = None;
+            self.running = false;
+            return;
+        }
+
+        let stage = self
+            .verification_modal
+            .as_ref()
+            .map(|m| &m.stage);
+
+        match stage {
+            Some(crate::state::VerificationStage::EmojiConfirmation) => {
+                match key.code {
+                    KeyCode::Char('y') | KeyCode::Char('Y') => {
+                        if let Some(tx) = self.verify_confirm_tx.take() {
+                            let _ = tx.send(true);
+                        }
+                        if let Some(ref mut modal) = self.verification_modal {
+                            modal.stage = crate::state::VerificationStage::WaitingForOtherDevice;
+                        }
+                    }
+                    KeyCode::Char('n') | KeyCode::Char('N') => {
+                        if let Some(tx) = self.verify_confirm_tx.take() {
+                            let _ = tx.send(false);
+                        }
+                    }
+                    KeyCode::Esc => {
+                        // Drop the sender to cancel verification
+                        self.verify_confirm_tx = None;
+                        self.verification_modal = None;
+                    }
+                    _ => {}
+                }
+            }
+            Some(crate::state::VerificationStage::Completed)
+            | Some(crate::state::VerificationStage::Failed(_)) => {
+                match key.code {
+                    KeyCode::Enter | KeyCode::Esc => {
+                        self.verification_modal = None;
+                        self.verify_confirm_tx = None;
+                    }
+                    _ => {}
+                }
+            }
+            Some(crate::state::VerificationStage::WaitingForOtherDevice) => {
+                if key.code == KeyCode::Esc {
+                    self.verify_confirm_tx = None;
+                    self.verification_modal = None;
+                }
+            }
+            None => {}
+        }
     }
 
     // ── Room Info ───────────────────────────────────────

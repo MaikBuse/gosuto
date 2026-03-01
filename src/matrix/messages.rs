@@ -70,6 +70,7 @@ pub async fn fetch_messages(
                 is_emote,
                 is_notice,
                 pending: false,
+                verified: None,
             });
         } else {
             skipped += 1;
