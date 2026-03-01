@@ -194,6 +194,7 @@ pub struct App {
     pub verification_modal: Option<crate::state::VerificationModalState>,
     pub pending_verify: Option<Option<String>>,
     pub verify_confirm_tx: Option<tokio::sync::oneshot::Sender<bool>>,
+    pub self_verified: bool,
     // Recovery
     pub recovery_modal: Option<crate::state::RecoveryModalState>,
     pub pending_recovery: bool,
@@ -251,6 +252,7 @@ impl App {
             verification_modal: None,
             pending_verify: None,
             verify_confirm_tx: None,
+            self_verified: false,
             recovery_modal: None,
             pending_recovery: false,
             pending_recovery_create: false,
@@ -538,7 +540,7 @@ impl App {
             } => {
                 if self.user_config.open {
                     self.user_config.display_name = display_name;
-                    self.user_config.verified = verified;
+                    self.user_config.verified = verified || self.self_verified;
                     self.user_config.loading = false;
                 }
             }
@@ -586,6 +588,8 @@ impl App {
                 if let Some(ref mut modal) = self.verification_modal {
                     modal.stage = crate::state::VerificationStage::Completed;
                 }
+                self.self_verified = true;
+                self.user_config.verified = true;
             }
             AppEvent::VerificationCancelled { reason } => {
                 if let Some(ref mut modal) = self.verification_modal {
@@ -949,7 +953,7 @@ impl App {
                         display_name: None,
                         display_name_buffer: String::new(),
                         editing_display_name: false,
-                        verified: false,
+                        verified: self.self_verified,
                         selected_field: 0,
                         loading: true,
                         saving: false,
