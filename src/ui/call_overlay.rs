@@ -9,7 +9,7 @@ use crate::voip::{CallInfo, CallState};
 
 const POPUP_WIDTH: u16 = 52;
 const BASE_POPUP_HEIGHT: u16 = 13;
-const WAVEFORM_LEN: usize = 38;
+const WAVEFORM_LEN: usize = (POPUP_WIDTH - 9) as usize;
 
 const WAVEFORM_CHARS: &[char] = &['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
 
@@ -126,7 +126,8 @@ impl TransmissionPopup {
         } else {
             1 // single participant or joining
         };
-        let popup_height = BASE_POPUP_HEIGHT + participant_lines.saturating_sub(1);
+        let room_name_line: u16 = if info.room_name.is_some() { 1 } else { 0 };
+        let popup_height = BASE_POPUP_HEIGHT + participant_lines.saturating_sub(1) + room_name_line;
 
         let show_waveform = area.height >= popup_height + 4;
         let popup_h = if show_waveform {
@@ -154,10 +155,10 @@ impl TransmissionPopup {
         self.render_border(buf, &bounds, popup, border_color);
         self.render_title(buf, &bounds, popup, border_color, display_state, info);
         self.render_caller_line(buf, &bounds, popup, info, display_state);
-        self.render_separator(buf, &bounds, popup);
-        self.render_state_content(buf, &bounds, popup, info, display_state);
+        self.render_separator(buf, &bounds, popup, room_name_line);
+        self.render_state_content(buf, &bounds, popup, info, display_state, room_name_line);
         if show_waveform {
-            self.render_waveform(buf, &bounds, popup, display_state);
+            self.render_waveform(buf, &bounds, popup, display_state, room_name_line);
         }
         self.render_hints(buf, &bounds, popup, display_state);
     }
@@ -290,13 +291,26 @@ impl TransmissionPopup {
             .bg(theme::BG)
             .add_modifier(Modifier::BOLD);
 
+        // Room name line (above participant line)
+        if let Some(ref name) = info.room_name {
+            let room_s = Style::default()
+                .fg(theme::CYAN)
+                .bg(theme::BG);
+            let label = format!("⌂ {}", name);
+            let max_w = (right - left) as usize;
+            let truncated: String = label.chars().take(max_w).collect();
+            write_str(buf, bounds, left, row, &truncated, room_s);
+        }
+
+        let caller_row = if info.room_name.is_some() { row + 1 } else { row };
+
         if info.participants.is_empty() {
             // Joining, no participants yet
             set_cell(
                 buf,
                 bounds,
                 left,
-                row,
+                caller_row,
                 '▶',
                 Style::default().fg(color).bg(theme::BG),
             );
@@ -304,18 +318,18 @@ impl TransmissionPopup {
                 buf,
                 bounds,
                 left + 1,
-                row,
+                caller_row,
                 ' ',
                 Style::default().bg(theme::BG),
             );
-            write_str(buf, bounds, left + 2, row, "joining...", name_s);
+            write_str(buf, bounds, left + 2, caller_row, "joining...", name_s);
         } else if info.participants.len() == 1 {
             // 1:1 call — show single participant
             set_cell(
                 buf,
                 bounds,
                 left,
-                row,
+                caller_row,
                 '▶',
                 Style::default().fg(color).bg(theme::BG),
             );
@@ -323,15 +337,15 @@ impl TransmissionPopup {
                 buf,
                 bounds,
                 left + 1,
-                row,
+                caller_row,
                 ' ',
                 Style::default().bg(theme::BG),
             );
-            write_str(buf, bounds, left + 2, row, &info.participants[0], name_s);
+            write_str(buf, bounds, left + 2, caller_row, &info.participants[0], name_s);
         } else {
             // Group call — show participant list
             for (i, participant) in info.participants.iter().enumerate() {
-                let y = row + i as u16;
+                let y = caller_row + i as u16;
                 if y >= area.y + area.height - 3 {
                     break;
                 }
@@ -362,14 +376,14 @@ impl TransmissionPopup {
             buf,
             bounds,
             vx,
-            row,
+            caller_row,
             voice,
             Style::default().fg(theme::DIM).bg(theme::BG),
         );
     }
 
-    fn render_separator(&self, buf: &mut Buffer, bounds: &Rect, area: Rect) {
-        let row = area.y + 3;
+    fn render_separator(&self, buf: &mut Buffer, bounds: &Rect, area: Rect, y_offset: u16) {
+        let row = area.y + 3 + y_offset;
         let left = area.x + 3;
         let right = area.x + area.width.saturating_sub(3);
         let s = Style::default().fg(theme::DIM).bg(theme::BG);
@@ -385,8 +399,9 @@ impl TransmissionPopup {
         area: Rect,
         info: &CallInfo,
         state: &CallDisplayState,
+        y_offset: u16,
     ) {
-        let row = area.y + 5;
+        let row = area.y + 5 + y_offset;
         let left = area.x + 3;
         let right = area.x + area.width.saturating_sub(3);
 
@@ -447,10 +462,11 @@ impl TransmissionPopup {
         bounds: &Rect,
         area: Rect,
         state: &CallDisplayState,
+        y_offset: u16,
     ) {
-        let top = area.y + 8;
-        let mid = area.y + 9;
-        let bot = area.y + 10;
+        let top = area.y + 8 + y_offset;
+        let mid = area.y + 9 + y_offset;
+        let bot = area.y + 10 + y_offset;
         let left = area.x + 3;
         let right = area.x + area.width.saturating_sub(4);
 
@@ -585,6 +601,7 @@ pub fn render_ringing(popup: &TransmissionPopup, caller: &str, room_id: &str, fr
     // Create a temporary CallInfo for display
     let info = CallInfo {
         room_id: room_id.to_string(),
+        room_name: None,
         state: CallState::Connecting, // doesn't matter, display_state overrides
         is_incoming: true,
         participants: vec![caller.to_string()],
