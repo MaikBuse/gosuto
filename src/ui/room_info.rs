@@ -7,7 +7,7 @@ use crate::app::{HISTORY_VISIBILITY_OPTIONS, RoomInfoState};
 use crate::ui::theme;
 
 const POPUP_WIDTH: u16 = 54;
-const POPUP_HEIGHT: u16 = 18;
+const POPUP_HEIGHT: u16 = 19;
 
 pub fn render(state: &RoomInfoState, frame: &mut Frame) {
     let area = frame.area();
@@ -219,6 +219,12 @@ pub fn render(state: &RoomInfoState, frame: &mut Frame) {
     set_cell(buf, &bounds, end_x + 1, row, '\u{25B8}', arrow_s);
     row += 1;
 
+    // History visibility description
+    let desc = history_visibility_description(&state.history_visibility);
+    let desc_s = Style::default().fg(theme::DIM).bg(theme::BG);
+    write_str(buf, &bounds, value_x, row, desc, desc_s);
+    row += 1;
+
     // ── Field 2: ENCRYPTED (editable when unencrypted, read-only when encrypted) ──
     if state.encrypted {
         // Read-only: show "yes" in green, no marker, not selectable
@@ -418,6 +424,16 @@ fn render_border(buf: &mut Buffer, bounds: &Rect, area: Rect, color: Color) {
     let gx = x2.saturating_sub(5);
     if gx > x1 {
         set_cell(buf, bounds, gx, y2, '◈', s);
+    }
+}
+
+fn history_visibility_description(value: &str) -> &'static str {
+    match value {
+        "shared" => "All members can see the full history",
+        "invited" => "Members see history from when invited",
+        "joined" => "Members see history from when they joined",
+        "world_readable" => "Anyone can read the full history",
+        _ => "",
     }
 }
 
