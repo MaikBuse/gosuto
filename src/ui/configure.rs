@@ -157,11 +157,7 @@ pub fn render(state: &UserConfigState, frame: &mut Frame) {
     } else {
         theme::TEXT
     };
-    let ver_marker = if ver_selected {
-        '\u{25C8}'
-    } else {
-        '\u{25C7}'
-    };
+    let ver_marker = if ver_selected { '\u{25C8}' } else { '\u{25C7}' };
 
     let ver_marker_s = Style::default().fg(ver_marker_color).bg(theme::BG);
     let ver_label_s = Style::default()
