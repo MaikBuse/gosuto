@@ -195,6 +195,10 @@ async fn main() -> Result<()> {
 
                         // Fetch messages and members when room changes
                         if prev_room != new_room {
+                            // Clear stale members immediately so guards
+                            // don't use the previous room's member list.
+                            app.members_list.clear();
+
                             if let Some(ref room_id) = new_room {
                                 // Fetch messages
                                 let client_holder = matrix_client.clone();
@@ -229,8 +233,6 @@ async fn main() -> Result<()> {
                                         matrix::rooms::fetch_room_members(&client, &rid2, &tx2).await;
                                     }
                                 });
-                            } else {
-                                app.members_list.clear();
                             }
                         }
 

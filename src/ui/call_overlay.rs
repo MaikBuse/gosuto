@@ -597,11 +597,17 @@ pub fn render(
 }
 
 /// Render for incoming ringing (no CallInfo yet)
-pub fn render_ringing(popup: &TransmissionPopup, caller: &str, room_id: &str, frame: &mut Frame) {
+pub fn render_ringing(
+    popup: &TransmissionPopup,
+    caller: &str,
+    room_id: &str,
+    room_name: Option<&str>,
+    frame: &mut Frame,
+) {
     // Create a temporary CallInfo for display
     let info = CallInfo {
         room_id: room_id.to_string(),
-        room_name: None,
+        room_name: room_name.map(|s| s.to_string()),
         state: CallState::Connecting, // doesn't matter, display_state overrides
         is_incoming: true,
         participants: vec![caller.to_string()],

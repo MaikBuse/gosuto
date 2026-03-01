@@ -11,6 +11,7 @@ pub enum CallState {
 #[derive(Debug, Clone)]
 pub struct CallInfo {
     pub room_id: String,
+    pub room_name: Option<String>,
     pub state: CallState,
     pub is_incoming: bool,
     pub participants: Vec<String>,
@@ -18,9 +19,10 @@ pub struct CallInfo {
 }
 
 impl CallInfo {
-    pub fn new_outgoing(room_id: String) -> Self {
+    pub fn new_outgoing(room_id: String, room_name: Option<String>) -> Self {
         Self {
             room_id,
+            room_name,
             state: CallState::Connecting,
             is_incoming: false,
             participants: Vec::new(),
@@ -28,9 +30,10 @@ impl CallInfo {
         }
     }
 
-    pub fn new_incoming(room_id: String, caller: String) -> Self {
+    pub fn new_incoming(room_id: String, caller: String, room_name: Option<String>) -> Self {
         Self {
             room_id,
+            room_name,
             state: CallState::Connecting,
             is_incoming: true,
             participants: vec![caller],

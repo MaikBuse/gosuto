@@ -133,6 +133,7 @@ pub struct App {
     pub call_cmd_tx: Option<CallCommandSender>,
     pub incoming_call_room: Option<String>,
     pub incoming_call_user: Option<String>,
+    pub incoming_call_room_name: Option<String>,
     // Auto-login
     pub auto_login_attempted: bool,
     pub pending_credential_clear: bool,
@@ -179,6 +180,7 @@ impl App {
             call_cmd_tx: None,
             incoming_call_room: None,
             incoming_call_user: None,
+            incoming_call_room_name: None,
             auto_login_attempted: false,
             pending_credential_clear: false,
             effects: EffectsState::new(rain_enabled, glitch_enabled),
@@ -381,9 +383,17 @@ impl App {
                 {
                     return;
                 }
+                // Resolve room name from room list
+                let room_name = self
+                    .room_list
+                    .rooms
+                    .iter()
+                    .find(|r| r.id == room_id)
+                    .map(|r| r.name.clone());
                 // Someone started a call — show ringing UI
                 self.incoming_call_room = Some(room_id);
                 self.incoming_call_user = Some(user_id);
+                self.incoming_call_room_name = room_name;
             }
             AppEvent::CallMemberLeft { room_id, user_id } => {
                 // If it was the incoming caller, clear ringing state
@@ -392,6 +402,7 @@ impl App {
                 {
                     self.incoming_call_room = None;
                     self.incoming_call_user = None;
+                    self.incoming_call_room_name = None;
                 }
                 // Update participants if in active call
                 if let Some(ref mut info) = self.call_info {
@@ -541,6 +552,12 @@ impl App {
                 } else if self.vim.focus == FocusPanel::Members
                     && let Some(member) = self.members_list.selected_member()
                 {
+                    if let AuthState::LoggedIn { ref user_id, .. } = self.auth {
+                        if member.user_id == *user_id {
+                            self.last_error = Some("Cannot DM yourself".to_string());
+                            return;
+                        }
+                    }
                     self.effects
                         .members_emp_pulse
                         .trigger_burst(self.members_list.selected as u16);
@@ -640,6 +657,12 @@ impl App {
                 }
             }
             CommandAction::DirectMessage(user) => {
+                if let AuthState::LoggedIn { ref user_id, .. } = self.auth {
+                    if user == *user_id {
+                        self.last_error = Some("Cannot DM yourself".to_string());
+                        return;
+                    }
+                }
                 self.pending_dm = Some(user);
             }
             CommandAction::Call => {
@@ -648,7 +671,20 @@ impl App {
                     return;
                 }
                 if let Some(room_id) = self.messages.current_room_id.clone() {
-                    self.call_info = Some(CallInfo::new_outgoing(room_id.clone()));
+                    if let AuthState::LoggedIn { ref user_id, .. } = self.auth {
+                        // Only trust the members list if it's loaded for the current room
+                        let members_loaded = self.members_list.current_room_id.as_deref() == Some(&room_id);
+                        let others = members_loaded && self.members_list.members.iter()
+                            .any(|m| m.user_id != *user_id);
+                        if members_loaded && !others {
+                            self.last_error = Some("Cannot call yourself".to_string());
+                            return;
+                        }
+                    }
+                    let room_name = self.room_list.rooms.iter()
+                        .find(|r| r.id == room_id)
+                        .map(|r| r.name.clone());
+                    self.call_info = Some(CallInfo::new_outgoing(room_id.clone(), room_name));
                     if let Some(ref tx) = self.call_cmd_tx {
                         let _ = tx.send(CallCommand::Initiate { room_id });
                     }
@@ -659,7 +695,9 @@ impl App {
             CommandAction::Answer => {
                 if let Some(room_id) = self.incoming_call_room.take() {
                     let caller = self.incoming_call_user.take().unwrap_or_default();
-                    self.call_info = Some(CallInfo::new_incoming(room_id.clone(), caller));
+                    let room_name = self.incoming_call_room_name.take();
+                    self.call_info =
+                        Some(CallInfo::new_incoming(room_id.clone(), caller, room_name));
                     if let Some(ref tx) = self.call_cmd_tx {
                         let _ = tx.send(CallCommand::Initiate { room_id });
                     }
@@ -671,6 +709,7 @@ impl App {
                 if self.incoming_call_room.is_some() {
                     self.incoming_call_room = None;
                     self.incoming_call_user = None;
+                    self.incoming_call_room_name = None;
                 } else {
                     self.last_error = Some("No incoming call".to_string());
                 }

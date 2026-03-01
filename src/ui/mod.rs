@@ -83,7 +83,13 @@ pub fn render(app: &App, frame: &mut Frame) {
         call_overlay::render(&app.call_popup, info, &ds, frame);
     } else if let Some(ref room_id) = app.incoming_call_room {
         let caller = app.incoming_call_user.as_deref().unwrap_or("unknown");
-        call_overlay::render_ringing(&app.call_popup, caller, room_id, frame);
+        call_overlay::render_ringing(
+            &app.call_popup,
+            caller,
+            room_id,
+            app.incoming_call_room_name.as_deref(),
+            frame,
+        );
     }
 
     // Audio settings modal overlay

@@ -104,6 +104,21 @@ impl RoomListAnimState {
     }
 }
 
+/// Compute the scroll offset for the room list given the current state and area.
+pub fn scroll_offset(app: &App, area: Rect) -> usize {
+    let inner_height = area.height.saturating_sub(2) as usize; // subtract borders
+    let total_rows = app.room_list.display_rows.len();
+    let selected = app.room_list.selected;
+
+    if total_rows <= inner_height || selected < inner_height / 2 {
+        0
+    } else if selected > total_rows - inner_height / 2 {
+        total_rows - inner_height
+    } else {
+        selected - inner_height / 2
+    }
+}
+
 pub fn render(app: &App, frame: &mut Frame, area: Rect) {
     let focused = app.vim.focus == FocusPanel::RoomList;
 

@@ -386,17 +386,22 @@ pub async fn publish_call_member(
     let state_key = format!("_{}_{}", user_id, device_id);
 
     let content = serde_json::json!({
-        "memberships": [{
-            "application": "m.call",
-            "call_id": "",
-            "scope": "m.room",
-            "device_id": device_id.to_string(),
-            "expires": 3600,
-            "foci_active": [{
-                "type": "livekit",
-                "livekit_service_url": focus.livekit_service_url,
-            }],
-        }]
+        "application": "m.call",
+        "call_id": "",
+        "scope": "m.room",
+        "device_id": device_id.to_string(),
+        "membershipID": format!("{}:{}", user_id, device_id),
+        "expires": 14_400_000,
+        "m.call.intent": "audio",
+        "focus_active": {
+            "type": "livekit",
+            "focus_selection": "oldest_membership",
+        },
+        "foci_preferred": [{
+            "type": "livekit",
+            "livekit_alias": room_id.to_string(),
+            "livekit_service_url": focus.livekit_service_url,
+        }],
     });
 
     // Try stable event type first (spec v1.11+), fall back to unstable
@@ -434,9 +439,7 @@ pub async fn remove_call_member(
 
     let state_key = format!("_{}_{}", user_id, device_id);
 
-    let content = serde_json::json!({
-        "memberships": []
-    });
+    let content = serde_json::json!({});
 
     // Try stable event type first (spec v1.11+), fall back to unstable
     let result = room

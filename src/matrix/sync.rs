@@ -169,10 +169,18 @@ fn register_matrixrtc_handlers(client: &Client, tx: &EventSender) {
                 let room_id = room.room_id().to_string();
 
                 // Parse the content to check for active memberships
+                // New format (MSC4143): top-level "application" field means joined
+                // Old format (MSC3401): non-empty "memberships" array means joined
+                // Leave: empty {} or empty memberships array
                 let content = event.original_content();
                 let has_active_memberships = content
                     .map(|raw| {
                         let json = serde_json::to_value(raw).unwrap_or_default();
+                        // New format: presence of "application" field = active
+                        if json.get("application").is_some() {
+                            return true;
+                        }
+                        // Old format: non-empty memberships array = active
                         json.get("memberships")
                             .and_then(|m| m.as_array())
                             .map(|arr| !arr.is_empty())
