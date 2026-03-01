@@ -293,16 +293,18 @@ impl TransmissionPopup {
 
         // Room name line (above participant line)
         if let Some(ref name) = info.room_name {
-            let room_s = Style::default()
-                .fg(theme::CYAN)
-                .bg(theme::BG);
+            let room_s = Style::default().fg(theme::CYAN).bg(theme::BG);
             let label = format!("⌂ {}", name);
             let max_w = (right - left) as usize;
             let truncated: String = label.chars().take(max_w).collect();
             write_str(buf, bounds, left, row, &truncated, room_s);
         }
 
-        let caller_row = if info.room_name.is_some() { row + 1 } else { row };
+        let caller_row = if info.room_name.is_some() {
+            row + 1
+        } else {
+            row
+        };
 
         if info.participants.is_empty() {
             // Joining, no participants yet
@@ -341,7 +343,14 @@ impl TransmissionPopup {
                 ' ',
                 Style::default().bg(theme::BG),
             );
-            write_str(buf, bounds, left + 2, caller_row, &info.participants[0], name_s);
+            write_str(
+                buf,
+                bounds,
+                left + 2,
+                caller_row,
+                &info.participants[0],
+                name_s,
+            );
         } else {
             // Group call — show participant list
             for (i, participant) in info.participants.iter().enumerate() {

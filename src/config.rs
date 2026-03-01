@@ -199,8 +199,8 @@ pub fn log_path() -> Result<PathBuf> {
 
 /// Delete log files older than `max_days`. Best-effort — errors are silently ignored.
 pub fn cleanup_old_logs(path: &std::path::Path, max_days: u64) {
-    let cutoff = std::time::SystemTime::now()
-        - std::time::Duration::from_secs(max_days * 24 * 60 * 60);
+    let cutoff =
+        std::time::SystemTime::now() - std::time::Duration::from_secs(max_days * 24 * 60 * 60);
     let entries = match std::fs::read_dir(path) {
         Ok(e) => e,
         Err(_) => return,

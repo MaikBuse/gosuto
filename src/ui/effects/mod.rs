@@ -105,11 +105,7 @@ impl EffectsState {
         self.members_emp_pulse.tick(dt_ms, area, focused);
     }
 
-    pub fn render_emp_buffer(
-        &self,
-        area: Rect,
-        scroll_offset: usize,
-    ) -> Option<Buffer> {
+    pub fn render_emp_buffer(&self, area: Rect, scroll_offset: usize) -> Option<Buffer> {
         if !self.enabled {
             return None;
         }
@@ -118,11 +114,7 @@ impl EffectsState {
         Some(buf)
     }
 
-    pub fn render_members_emp_buffer(
-        &self,
-        area: Rect,
-        scroll_offset: usize,
-    ) -> Option<Buffer> {
+    pub fn render_members_emp_buffer(&self, area: Rect, scroll_offset: usize) -> Option<Buffer> {
         if !self.enabled {
             return None;
         }

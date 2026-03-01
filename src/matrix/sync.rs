@@ -208,11 +208,18 @@ fn register_matrixrtc_handlers(client: &Client, tx: &EventSender) {
 
                 let raw_content = event
                     .original_content()
-                    .map(|raw| serde_json::to_string_pretty(&serde_json::to_value(raw).unwrap_or_default()).unwrap_or_default())
+                    .map(|raw| {
+                        serde_json::to_string_pretty(&serde_json::to_value(raw).unwrap_or_default())
+                            .unwrap_or_default()
+                    })
                     .unwrap_or_else(|| "<redacted>".to_string());
                 debug!(
                     "m.call.member raw: type={}, sender={}, room={}, state_key={}, content={}",
-                    event_type, sender, room_id, event.state_key(), raw_content,
+                    event_type,
+                    sender,
+                    room_id,
+                    event.state_key(),
+                    raw_content,
                 );
 
                 // Parse the content to check for active memberships

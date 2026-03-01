@@ -7,11 +7,11 @@ pub mod input_bar;
 pub mod layout;
 pub mod login;
 pub mod members;
+pub mod recovery_modal;
 pub mod room_info;
 pub mod room_list;
 pub mod status_bar;
 pub mod theme;
-pub mod recovery_modal;
 pub mod verify_modal;
 
 use ratatui::Frame;
@@ -48,9 +48,9 @@ pub fn render(app: &App, frame: &mut Frame) {
 
         // Members list: EMP pulse effect
         let members_scroll_off = members::scroll_offset(app, layout.members_list);
-        if let Some(emp_buf) =
-            app.effects
-                .render_members_emp_buffer(layout.members_list, members_scroll_off)
+        if let Some(emp_buf) = app
+            .effects
+            .render_members_emp_buffer(layout.members_list, members_scroll_off)
         {
             effects::composite(frame.buffer_mut(), &emp_buf, layout.members_list);
         }

@@ -1,8 +1,8 @@
 use futures::StreamExt;
+use matrix_sdk::Client;
 use matrix_sdk::encryption::verification::{
     SasState, SasVerification, Verification, VerificationRequest, VerificationRequestState,
 };
-use matrix_sdk::Client;
 use tracing::{info, warn};
 
 use crate::event::{AppEvent, EventSender};
@@ -106,9 +106,7 @@ async fn drive_request(
     let flow_id = request.flow_id().to_owned();
 
     // If we received the request (didn't initiate), accept it
-    if !we_initiated
-        && let Err(e) = request.accept().await
-    {
+    if !we_initiated && let Err(e) = request.accept().await {
         let _ = tx.send(AppEvent::VerificationError(format!(
             "Failed to accept verification: {e}"
         )));
@@ -139,29 +137,26 @@ async fn drive_request(
                             return;
                         }
                         Err(e) => {
-                            let _ = tx.send(AppEvent::VerificationError(format!(
-                                "SAS start error: {e}"
-                            )));
+                            let _ = tx
+                                .send(AppEvent::VerificationError(format!("SAS start error: {e}")));
                             return;
                         }
                     }
                 }
                 // If we're responding, wait for Transitioned (other side starts SAS)
             }
-            VerificationRequestState::Transitioned { verification } => {
-                match verification {
-                    Verification::SasV1(sas) => {
-                        drive_sas(sas, flow_id, tx, confirm_rx).await;
-                        return;
-                    }
-                    _ => {
-                        let _ = tx.send(AppEvent::VerificationError(
-                            "Unsupported verification method".to_string(),
-                        ));
-                        return;
-                    }
+            VerificationRequestState::Transitioned { verification } => match verification {
+                Verification::SasV1(sas) => {
+                    drive_sas(sas, flow_id, tx, confirm_rx).await;
+                    return;
                 }
-            }
+                _ => {
+                    let _ = tx.send(AppEvent::VerificationError(
+                        "Unsupported verification method".to_string(),
+                    ));
+                    return;
+                }
+            },
             VerificationRequestState::Done => {
                 let _ = tx.send(AppEvent::VerificationCompleted {
                     sender: sender.clone(),
@@ -231,18 +226,16 @@ pub async fn start_user_verification(
     let user_id: matrix_sdk::ruma::OwnedUserId = match user_id_str.try_into() {
         Ok(id) => id,
         Err(e) => {
-            let _ = tx.send(AppEvent::VerificationError(format!(
-                "Invalid user ID: {e}"
-            )));
+            let _ = tx.send(AppEvent::VerificationError(format!("Invalid user ID: {e}")));
             return;
         }
     };
 
-    let identity = match client.encryption().get_user_identity(&user_id).await {
+    let identity = match client.encryption().request_user_identity(&user_id).await {
         Ok(Some(identity)) => identity,
         Ok(None) => {
             let _ = tx.send(AppEvent::VerificationError(format!(
-                "No identity found for {user_id}"
+                "No cross-signing identity found for {user_id}. They may not have set up cross-signing."
             )));
             return;
         }

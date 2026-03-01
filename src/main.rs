@@ -67,8 +67,7 @@ async fn main() -> Result<()> {
     let matrix_client: Arc<Mutex<Option<matrix_sdk::Client>>> = Arc::new(Mutex::new(None));
 
     // Shared state for incoming verification requests
-    let incoming_verification: matrix::sync::IncomingVerification =
-        Arc::new(Mutex::new(None));
+    let incoming_verification: matrix::sync::IncomingVerification = Arc::new(Mutex::new(None));
 
     // Try to restore session
     match matrix::client::try_restore_session(&event_tx, accept_invalid_certs).await {
@@ -602,7 +601,8 @@ async fn main() -> Result<()> {
                         *client_holder.lock().await = Some(client.clone());
                         let sync_tx = tx.clone();
                         tokio::spawn(async move {
-                            if let Err(e) = matrix::sync::start_sync(client, sync_tx.clone(), iv).await
+                            if let Err(e) =
+                                matrix::sync::start_sync(client, sync_tx.clone(), iv).await
                             {
                                 error!("Sync error: {}", e);
                                 let _ = sync_tx.send(AppEvent::SyncError(e.to_string()));
@@ -644,7 +644,8 @@ async fn main() -> Result<()> {
                         *client_holder.lock().await = Some(client.clone());
                         let sync_tx = tx.clone();
                         tokio::spawn(async move {
-                            if let Err(e) = matrix::sync::start_sync(client, sync_tx.clone(), iv).await
+                            if let Err(e) =
+                                matrix::sync::start_sync(client, sync_tx.clone(), iv).await
                             {
                                 error!("Sync error: {}", e);
                                 let _ = sync_tx.send(AppEvent::SyncError(e.to_string()));
@@ -676,8 +677,7 @@ async fn main() -> Result<()> {
             app.effects.tick(dt, term_area);
 
             // Tick EMP effect with approximate room pane area
-            let room_focused =
-                app.vim.focus == crate::input::FocusPanel::RoomList;
+            let room_focused = app.vim.focus == crate::input::FocusPanel::RoomList;
             let room_area = ratatui::layout::Rect::new(
                 term_area.x,
                 term_area.y,
@@ -687,8 +687,7 @@ async fn main() -> Result<()> {
             app.effects.tick_emp(dt, room_area, room_focused);
 
             // Tick EMP effect for members pane
-            let members_focused =
-                app.vim.focus == crate::input::FocusPanel::Members;
+            let members_focused = app.vim.focus == crate::input::FocusPanel::Members;
             let members_area = ratatui::layout::Rect::new(
                 term_area.width.saturating_sub(20),
                 term_area.y,

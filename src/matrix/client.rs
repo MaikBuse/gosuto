@@ -1,8 +1,8 @@
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use matrix_sdk::{Client, config::SyncSettings};
 use matrix_sdk::encryption::EncryptionSettings;
+use matrix_sdk::{Client, config::SyncSettings};
 use tracing::{debug, info, warn};
 
 fn encryption_settings() -> EncryptionSettings {

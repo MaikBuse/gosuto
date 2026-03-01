@@ -82,9 +82,7 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
         let time = msg.timestamp.format("%H:%M").to_string();
         let sender_color = theme::sender_color(&msg.sender);
 
-        let mut spans = vec![
-            Span::styled(format!("{} ", time), theme::dim_style()),
-        ];
+        let mut spans = vec![Span::styled(format!("{} ", time), theme::dim_style())];
 
         if msg.verified == Some(false) {
             spans.push(Span::styled(
