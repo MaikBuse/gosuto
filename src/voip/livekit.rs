@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context as _, Result};
 use livekit::options::TrackPublishOptions;
 use livekit::prelude::*;
 use livekit::webrtc::audio_source::RtcAudioSource;
@@ -40,8 +40,14 @@ pub struct LiveKitSession {
 
 impl LiveKitSession {
     pub async fn connect(server_url: &str, token: &str) -> Result<Self> {
+        // Append access_token as query param — the Rust SDK only sends it
+        // as an Authorization header, which reverse proxies may strip during
+        // WebSocket upgrade. The query param ensures the token reaches LiveKit.
+        let mut url = url::Url::parse(server_url).context("Invalid LiveKit server URL")?;
+        url.query_pairs_mut().append_pair("access_token", token);
+
         let (room, mut room_events) =
-            Room::connect(server_url, token, RoomOptions::default()).await?;
+            Room::connect(url.as_str(), token, RoomOptions::default()).await?;
         info!("Connected to LiveKit room: {}", room.name());
 
         let (event_tx, event_rx) = mpsc::unbounded_channel();

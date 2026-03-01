@@ -187,12 +187,14 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
                 let arrow = if *collapsed { "▶" } else { "▼" };
                 let label = format!("{} \u{2261} {}", arrow, name);
 
-                let style = anim.row_style(row_idx, is_selected, focused).unwrap_or_else(|| {
-                    Style::default()
-                        .fg(theme::DIM)
-                        .bg(theme::BG)
-                        .add_modifier(Modifier::BOLD)
-                });
+                let style = anim
+                    .row_style(row_idx, is_selected, focused)
+                    .unwrap_or_else(|| {
+                        Style::default()
+                            .fg(theme::DIM)
+                            .bg(theme::BG)
+                            .add_modifier(Modifier::BOLD)
+                    });
 
                 // Fill background for selected row
                 if is_selected {

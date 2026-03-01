@@ -5,7 +5,7 @@ use base64::Engine;
 use matrix_sdk::Client;
 use matrix_sdk::ruma::{OwnedDeviceId, OwnedRoomId};
 use tokio::sync::{Mutex, mpsc};
-use tracing::{debug, error, info, warn};
+use tracing::{error, info, warn};
 
 use crate::config::AudioConfig;
 use crate::event::{AppEvent, EventSender};
@@ -205,6 +205,8 @@ impl CallManager {
         };
 
         // 5. Connect to LiveKit
+        warn!("Connecting to LiveKit server: {}", creds.server_url);
+        log_jwt_claims(&creds.token);
         let session = match LiveKitSession::connect(&creds.server_url, &creds.token).await {
             Ok(s) => s,
             Err(e) => {
@@ -369,7 +371,7 @@ impl CallManager {
 fn log_jwt_claims(token: &str) {
     let parts: Vec<&str> = token.split('.').collect();
     if parts.len() != 3 {
-        debug!("JWT: malformed token ({} parts)", parts.len());
+        warn!("JWT: malformed token ({} parts)", parts.len());
         return;
     }
 
@@ -380,7 +382,7 @@ fn log_jwt_claims(token: &str) {
             match base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(parts[1]) {
                 Ok(bytes) => bytes,
                 Err(e) => {
-                    debug!("JWT: failed to decode payload: {}", e);
+                    warn!("JWT: failed to decode payload: {}", e);
                     return;
                 }
             }
@@ -390,13 +392,14 @@ fn log_jwt_claims(token: &str) {
     let claims: serde_json::Value = match serde_json::from_slice(&payload) {
         Ok(v) => v,
         Err(e) => {
-            debug!("JWT: failed to parse payload JSON: {}", e);
+            warn!("JWT: failed to parse payload JSON: {}", e);
             return;
         }
     };
 
-    let room = claims
-        .get("video")
+    let video = claims.get("video");
+
+    let room = video
         .and_then(|v| v.get("room"))
         .and_then(|v| v.as_str())
         .unwrap_or("<missing>");
@@ -404,7 +407,21 @@ fn log_jwt_claims(token: &str) {
         .get("sub")
         .and_then(|v| v.as_str())
         .unwrap_or("<missing>");
+    let iss = claims
+        .get("iss")
+        .and_then(|v| v.as_str())
+        .unwrap_or("<missing>");
     let exp = claims.get("exp").and_then(|v| v.as_i64());
+
+    let room_join = video
+        .and_then(|v| v.get("roomJoin"))
+        .map_or("<missing>".to_string(), |v| v.to_string());
+    let can_publish = video
+        .and_then(|v| v.get("canPublish"))
+        .map_or("<missing>".to_string(), |v| v.to_string());
+    let can_subscribe = video
+        .and_then(|v| v.get("canSubscribe"))
+        .map_or("<missing>".to_string(), |v| v.to_string());
 
     let expired = exp.map_or("unknown".to_string(), |exp_ts| {
         let now = chrono::Utc::now().timestamp();
@@ -415,8 +432,15 @@ fn log_jwt_claims(token: &str) {
         }
     });
 
-    debug!(
+    warn!(
+        "JWT grant: iss={}, roomJoin={}, canPublish={}, canSubscribe={}",
+        iss, room_join, can_publish, can_subscribe
+    );
+    warn!(
         "JWT claims: video.room={}, sub={}, expired={}",
         room, sub, expired
     );
+    if let Some(v) = video {
+        warn!("JWT full video grant: {}", v);
+    }
 }

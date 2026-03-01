@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use matrix_sdk::Client;
 use matrix_sdk::ruma::{OwnedDeviceId, OwnedRoomId};
 use serde::{Deserialize, Serialize};
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 
 pub struct LiveKitCredentials {
     pub server_url: String,
@@ -76,6 +76,7 @@ pub async fn get_livekit_credentials(
         );
     let openid = client.send(openid_request).await?;
     let access_token = openid.access_token;
+    let expires_in = openid.expires_in.as_secs();
 
     let http_client = reqwest::Client::new();
 
@@ -84,6 +85,7 @@ pub async fn get_livekit_credentials(
         access_token: String,
         token_type: String,
         matrix_server_name: String,
+        expires_in: u64,
     }
 
     #[derive(Serialize)]
@@ -126,63 +128,95 @@ pub async fn get_livekit_credentials(
         access_token,
         token_type: "Bearer".to_string(),
         matrix_server_name: server_name.clone(),
+        expires_in,
     };
 
-    // Try new endpoint first: /get_token
-    let new_url = format!("{}/get_token", base);
-    let new_body = SfuRequest {
-        room_id: room_id.to_string(),
-        slot_id: "0".to_string(),
+    // Try legacy endpoint first: /sfu/get (compatible with Element X)
+    let legacy_url = format!("{}/sfu/get", base);
+    let legacy_body = LegacySfuRequest {
+        room: room_id.to_string(),
         openid_token: make_openid_token(access_token.clone()),
-        member: MatrixRTCMember {
-            id: format!("{}_{}", user_id, device_id),
-            claimed_user_id: user_id.to_string(),
-            claimed_device_id: device_id.to_string(),
-        },
+        device_id: device_id.to_string(),
     };
 
-    let response = http_client
-        .post(&new_url)
-        .json(&new_body)
+    let legacy_result = http_client
+        .post(&legacy_url)
+        .json(&legacy_body)
         .send()
-        .await
-        .context("Failed to contact LiveKit JWT service")?;
+        .await;
+    let legacy_ok = legacy_result
+        .as_ref()
+        .is_ok_and(|r| r.status().is_success());
 
-    let response = if response.status() == reqwest::StatusCode::NOT_FOUND {
-        // Fallback to legacy endpoint: /sfu/get
-        debug!("LiveKit /get_token returned 404, falling back to /sfu/get");
-        let legacy_url = format!("{}/sfu/get", base);
-        let legacy_body = LegacySfuRequest {
-            room: room_id.to_string(),
+    let (response, endpoint_used) = if legacy_ok {
+        debug!("LiveKit /sfu/get succeeded");
+        (legacy_result.unwrap(), "/sfu/get")
+    } else {
+        match legacy_result {
+            Ok(resp) => {
+                let status = resp.status();
+                let body = resp
+                    .text()
+                    .await
+                    .unwrap_or_else(|_| "<unreadable>".to_string());
+                let truncated = &body[..body.floor_char_boundary(500)];
+                error!(
+                    "LiveKit /sfu/get returned {} (body: {}), falling back to /get_token",
+                    status, truncated
+                );
+            }
+            Err(e) => error!(
+                "LiveKit /sfu/get network error ({}), falling back to /get_token",
+                e
+            ),
+        }
+
+        // Fallback to new endpoint: /get_token (MSC4195)
+        let new_url = format!("{}/get_token", base);
+        let new_body = SfuRequest {
+            room_id: room_id.to_string(),
+            slot_id: "0".to_string(),
             openid_token: make_openid_token(access_token),
-            device_id: device_id.to_string(),
+            member: MatrixRTCMember {
+                id: format!("{}_{}", user_id, device_id),
+                claimed_user_id: user_id.to_string(),
+                claimed_device_id: device_id.to_string(),
+            },
         };
         let resp = http_client
-            .post(&legacy_url)
-            .json(&legacy_body)
+            .post(&new_url)
+            .json(&new_body)
             .send()
             .await
-            .context("Failed to contact LiveKit JWT service (legacy endpoint)")?;
+            .context("Failed to contact LiveKit JWT service (/get_token)")?;
         if !resp.status().is_success() {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
-            anyhow::bail!("LiveKit JWT service (legacy) returned {}: {}", status, body);
+            anyhow::bail!(
+                "LiveKit JWT service (/get_token) returned {}: {}",
+                status,
+                body
+            );
         }
-        resp
-    } else if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        anyhow::bail!("LiveKit JWT service returned {}: {}", status, body);
-    } else {
-        response
+        (resp, "/get_token")
     };
 
-    let sfu_resp: SfuResponse = response
-        .json()
+    let raw_body = response
+        .text()
         .await
-        .context("Invalid JWT service response")?;
+        .context("Failed to read JWT service response body")?;
+    debug!(
+        "SFU response (via {}): {}",
+        endpoint_used,
+        &raw_body[..raw_body.len().min(2000)]
+    );
+    let sfu_resp: SfuResponse =
+        serde_json::from_str(&raw_body).context("Invalid JWT service response JSON")?;
 
-    info!("Got LiveKit credentials for room {}", room_id);
+    info!(
+        "Got LiveKit credentials for room {} (via {})",
+        room_id, endpoint_used
+    );
     Ok(LiveKitCredentials {
         server_url: sfu_resp.url,
         token: sfu_resp.jwt,

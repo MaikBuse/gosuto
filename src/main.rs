@@ -32,7 +32,10 @@ async fn main() -> Result<()> {
 
     tracing_subscriber::registry()
         .with(fmt::layer().with_writer(non_blocking).with_ansi(false))
-        .with(EnvFilter::try_from_env("GOSUTO_LOG").unwrap_or_else(|_| EnvFilter::new("error")))
+        .with(
+            EnvFilter::try_from_env("GOSUTO_LOG")
+                .unwrap_or_else(|_| EnvFilter::new("error,gosuto::voip=warn")),
+        )
         .init();
 
     info!("Starting gōsuto");
