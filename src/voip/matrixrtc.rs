@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use base64::Engine;
 use matrix_sdk::Client;
 use matrix_sdk::ruma::{OwnedDeviceId, OwnedRoomId};
 use serde::{Deserialize, Serialize};
@@ -430,6 +431,185 @@ pub async fn publish_call_member(
         room_id, state_key, event_id
     );
     Ok(event_id)
+}
+
+// --- Encryption key exchange (SFrame E2EE for MatrixRTC) ---
+
+#[derive(Debug, Clone)]
+pub struct ParticipantKey {
+    pub identity: String,
+    pub key_index: i32,
+    pub key_bytes: Vec<u8>,
+}
+
+/// Publish our SFrame encryption key as an `io.element.call.encryption_keys` state event.
+/// Element X reads these to decrypt audio from other participants.
+pub async fn publish_encryption_keys(
+    client: &Client,
+    room_id: &OwnedRoomId,
+    device_id: &OwnedDeviceId,
+    key: &[u8],
+) -> Result<()> {
+    let user_id = client.user_id().context("Not logged in")?;
+    let room = client.get_room(room_id).context("Room not found")?;
+
+    let encoded_key = base64::engine::general_purpose::STANDARD.encode(key);
+
+    let state_key = format!("_{}_{}", user_id, device_id);
+
+    let content = serde_json::json!({
+        "keys": [{
+            "index": 0,
+            "key": encoded_key,
+        }],
+        "device_id": device_id.to_string(),
+        "call_id": "",
+    });
+
+    debug!(
+        "Publishing encryption key: state_key={}, key_len={}",
+        state_key,
+        key.len()
+    );
+
+    room.send_state_event_raw("io.element.call.encryption_keys", &state_key, content)
+        .await
+        .context("Failed to publish encryption keys")?;
+
+    info!("Published encryption key for room {}", room_id);
+    Ok(())
+}
+
+/// Read all encryption keys published by other participants in the room.
+pub async fn get_encryption_keys(
+    client: &Client,
+    room_id: &OwnedRoomId,
+) -> Result<Vec<ParticipantKey>> {
+    use matrix_sdk::deserialized_responses::RawAnySyncOrStrippedState;
+
+    let our_user_id = client.user_id().context("Not logged in")?.to_string();
+    let our_device_id = client
+        .device_id()
+        .map(|d| d.to_string())
+        .unwrap_or_default();
+
+    let room = client.get_room(room_id).context("Room not found")?;
+
+    let state_events = room
+        .get_state_events("io.element.call.encryption_keys".into())
+        .await
+        .context("Failed to fetch encryption key state events")?;
+
+    let mut keys = Vec::new();
+
+    for raw_event in state_events {
+        // Extract the raw JSON from the sync state event
+        let json_str = match &raw_event {
+            RawAnySyncOrStrippedState::Sync(raw) => raw.json().get().to_owned(),
+            _ => continue,
+        };
+
+        let event: serde_json::Value = match serde_json::from_str(&json_str) {
+            Ok(v) => v,
+            Err(e) => {
+                debug!("Failed to parse encryption key event: {}", e);
+                continue;
+            }
+        };
+
+        let content = match event.get("content") {
+            Some(c) => c,
+            None => continue,
+        };
+
+        let event_device_id = content
+            .get("device_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default();
+        let sender = event
+            .get("sender")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default();
+
+        // Skip our own keys
+        if sender == our_user_id && event_device_id == our_device_id {
+            continue;
+        }
+
+        // Skip empty content (removed keys)
+        let key_entries = match content.get("keys").and_then(|v| v.as_array()) {
+            Some(arr) => arr,
+            None => continue,
+        };
+
+        // The LiveKit participant identity follows Element X convention: "{user_id}:{device_id}"
+        let identity = format!("{}:{}", sender, event_device_id);
+
+        for entry in key_entries {
+            let index = entry
+                .get("index")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0) as i32;
+            let encoded = match entry.get("key").and_then(|v| v.as_str()) {
+                Some(k) => k,
+                None => continue,
+            };
+            let key_bytes =
+                match base64::engine::general_purpose::STANDARD.decode(encoded) {
+                    Ok(b) => b,
+                    Err(e) => {
+                        debug!(
+                            "Failed to decode encryption key from {}: {}",
+                            identity, e
+                        );
+                        continue;
+                    }
+                };
+
+            debug!(
+                "Found encryption key: identity={}, index={}, key_len={}",
+                identity,
+                index,
+                key_bytes.len()
+            );
+
+            keys.push(ParticipantKey {
+                identity: identity.clone(),
+                key_index: index,
+                key_bytes,
+            });
+        }
+    }
+
+    info!(
+        "Found {} encryption keys from other participants in room {}",
+        keys.len(),
+        room_id
+    );
+    Ok(keys)
+}
+
+/// Remove our encryption key state event (called when leaving a call).
+pub async fn remove_encryption_keys(
+    client: &Client,
+    room_id: &OwnedRoomId,
+    device_id: &OwnedDeviceId,
+) -> Result<()> {
+    let user_id = client.user_id().context("Not logged in")?;
+    let room = client.get_room(room_id).context("Room not found")?;
+
+    let state_key = format!("_{}_{}", user_id, device_id);
+
+    room.send_state_event_raw(
+        "io.element.call.encryption_keys",
+        &state_key,
+        serde_json::json!({}),
+    )
+    .await
+    .context("Failed to remove encryption keys")?;
+
+    info!("Removed encryption keys for room {}", room_id);
+    Ok(())
 }
 
 /// Remove the m.call.member state event (leave the call).

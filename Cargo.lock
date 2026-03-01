@@ -1880,6 +1880,7 @@ dependencies = [
  "crossterm",
  "dirs",
  "futures",
+ "getrandom 0.2.17",
  "keyring",
  "livekit",
  "matrix-sdk",

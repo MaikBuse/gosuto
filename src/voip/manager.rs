@@ -214,16 +214,48 @@ impl CallManager {
             }
         };
 
-        // 5. Connect to LiveKit
+        // 5. Generate E2EE encryption key
+        let mut encryption_key = vec![0u8; 32];
+        if let Err(e) = getrandom::getrandom(&mut encryption_key) {
+            error!("Failed to generate encryption key: {}", e);
+            let _ = matrixrtc::remove_call_member(&client, &room_id, &device_id).await;
+            let _ = self
+                .event_tx
+                .send(AppEvent::CallError("Failed to generate encryption key".to_string()));
+            return;
+        }
+
+        // 5b. Publish our encryption key to Matrix
+        if let Err(e) =
+            matrixrtc::publish_encryption_keys(&client, &room_id, &device_id, &encryption_key)
+                .await
+        {
+            error!("Failed to publish encryption key: {:#}", e);
+            let _ = matrixrtc::remove_call_member(&client, &room_id, &device_id).await;
+            let _ = self
+                .event_tx
+                .send(AppEvent::CallError("Failed to publish encryption key".to_string()));
+            return;
+        }
+
+        // 5c. Connect to LiveKit with E2EE
         warn!("Connecting to LiveKit server: {}", creds.server_url);
         log_jwt_claims(&creds.token);
-        let session = match LiveKitSession::connect(&creds.server_url, &creds.token).await {
+        let session = match LiveKitSession::connect(
+            &creds.server_url,
+            &creds.token,
+            encryption_key,
+        )
+        .await
+        {
             Ok(s) => s,
             Err(e) => {
                 error!("Failed to connect to LiveKit: {:#}", e);
                 log_jwt_claims(&creds.token);
-                // Try to clean up the state event
+                // Try to clean up state events
                 let _ = matrixrtc::remove_call_member(&client, &room_id, &device_id).await;
+                let _ =
+                    matrixrtc::remove_encryption_keys(&client, &room_id, &device_id).await;
                 let err_str = format!("{:#}", e);
                 let msg = if err_str.contains("401") || err_str.contains("nauthorized") {
                     "LiveKit rejected credentials — check SFU server configuration".to_string()
@@ -234,6 +266,18 @@ impl CallManager {
                 return;
             }
         };
+
+        // 5d. Read other participants' encryption keys and set them on the session
+        match matrixrtc::get_encryption_keys(&client, &room_id).await {
+            Ok(participant_keys) => {
+                for pk in participant_keys {
+                    session.set_participant_key(&pk.identity, pk.key_index, pk.key_bytes);
+                }
+            }
+            Err(e) => {
+                warn!("Failed to read participant encryption keys: {:#}", e);
+            }
+        }
 
         // 6. Start audio capture
         let mut audio = AudioPipeline::new();
@@ -281,13 +325,15 @@ impl CallManager {
             let room_id = call.room_id.clone();
             info!("Leaving call in room {}", room_id);
 
-            // Remove m.call.member state event
+            // Remove m.call.member and encryption key state events
             let client = self.client.lock().await.clone();
             if let Some(client) = client
                 && let Some(device_id) = client.device_id()
             {
+                let device_id = device_id.to_owned();
+                let _ = matrixrtc::remove_call_member(&client, &room_id, &device_id).await;
                 let _ =
-                    matrixrtc::remove_call_member(&client, &room_id, &device_id.to_owned()).await;
+                    matrixrtc::remove_encryption_keys(&client, &room_id, &device_id).await;
             }
         }
 
@@ -332,6 +378,25 @@ impl CallManager {
             } => {
                 info!("Track subscribed from: {}", participant_identity);
                 if let Some(ref mut call) = self.active_call {
+                    // Refresh encryption keys for the new participant
+                    let client = self.client.lock().await.clone();
+                    if let Some(ref client) = client {
+                        match matrixrtc::get_encryption_keys(client, &call.room_id).await {
+                            Ok(keys) => {
+                                for pk in keys {
+                                    call.livekit_session.set_participant_key(
+                                        &pk.identity,
+                                        pk.key_index,
+                                        pk.key_bytes,
+                                    );
+                                }
+                            }
+                            Err(e) => {
+                                warn!("Failed to refresh encryption keys: {:#}", e);
+                            }
+                        }
+                    }
+
                     let audio_cfg = self.audio_config.lock().unwrap().clone();
                     if let Err(e) = call.audio.add_playback(track, &audio_cfg) {
                         error!(

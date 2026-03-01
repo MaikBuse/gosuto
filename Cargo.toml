@@ -35,6 +35,9 @@ rubato = "0.16"
 uuid = { version = "1", features = ["v4"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 
+# Crypto
+getrandom = "0.2"
+
 # Utils
 dirs = "6"
 anyhow = "1"

@@ -1,6 +1,8 @@
 use anyhow::{Context as _, Result};
 use livekit::options::TrackPublishOptions;
 use livekit::prelude::*;
+use livekit::e2ee::key_provider::{KeyProvider, KeyProviderOptions};
+use livekit::e2ee::{E2eeOptions, EncryptionType};
 use livekit::webrtc::audio_source::RtcAudioSource;
 use livekit::webrtc::audio_source::native::NativeAudioSource;
 use tokio::sync::mpsc;
@@ -34,21 +36,37 @@ pub enum LiveKitEvent {
 
 pub struct LiveKitSession {
     room: Room,
+    key_provider: KeyProvider,
     event_rx: mpsc::UnboundedReceiver<LiveKitEvent>,
     _event_task: JoinHandle<()>,
 }
 
 impl LiveKitSession {
-    pub async fn connect(server_url: &str, token: &str) -> Result<Self> {
+    pub async fn connect(
+        server_url: &str,
+        token: &str,
+        encryption_key: Vec<u8>,
+    ) -> Result<Self> {
         // Append access_token as query param — the Rust SDK only sends it
         // as an Authorization header, which reverse proxies may strip during
         // WebSocket upgrade. The query param ensures the token reaches LiveKit.
         let mut url = url::Url::parse(server_url).context("Invalid LiveKit server URL")?;
         url.query_pairs_mut().append_pair("access_token", token);
 
-        let (room, mut room_events) =
-            Room::connect(url.as_str(), token, RoomOptions::default()).await?;
-        info!("Connected to LiveKit room: {}", room.name());
+        let key_provider =
+            KeyProvider::with_shared_key(KeyProviderOptions::default(), encryption_key);
+
+        let mut options = RoomOptions::default();
+        options.encryption = Some(E2eeOptions {
+            encryption_type: EncryptionType::Gcm,
+            key_provider: key_provider.clone(),
+        });
+
+        let (room, mut room_events) = Room::connect(url.as_str(), token, options).await?;
+        info!(
+            "Connected to LiveKit room: {} (E2EE enabled, GCM)",
+            room.name()
+        );
 
         let (event_tx, event_rx) = mpsc::unbounded_channel();
 
@@ -106,6 +124,7 @@ impl LiveKitSession {
 
         Ok(Self {
             room,
+            key_provider,
             event_rx,
             _event_task: event_task,
         })
@@ -137,6 +156,12 @@ impl LiveKitSession {
             .values()
             .map(|p| p.identity().to_string())
             .collect()
+    }
+
+    /// Set the encryption key for a specific remote participant.
+    pub fn set_participant_key(&self, identity: &str, key_index: i32, key: Vec<u8>) {
+        self.key_provider
+            .set_key(&identity.to_owned().into(), key_index, key);
     }
 
     pub async fn close(self) -> Result<()> {
