@@ -315,7 +315,7 @@ pub async fn ensure_call_member_permissions(client: &Client, room_id: &OwnedRoom
         serde_json::json!(0),
     );
 
-    room.send_state_event_raw("", "m.room.power_levels", updated)
+    room.send_state_event_raw("m.room.power_levels", "", updated)
         .await
         .context("Failed to update power levels for call events")?;
 
@@ -410,7 +410,7 @@ pub async fn publish_call_member(
 
     // Try unstable event type first (Element X watches for this), fall back to stable
     let result = room
-        .send_state_event_raw(&state_key, "org.matrix.msc3401.call.member", content.clone())
+        .send_state_event_raw("org.matrix.msc3401.call.member", &state_key, content.clone())
         .await;
 
     let event_id = match result {
@@ -418,7 +418,7 @@ pub async fn publish_call_member(
         Err(unstable_err) => {
             debug!("Unstable org.matrix.msc3401.call.member failed ({unstable_err:#}), trying stable type");
             let resp = room
-                .send_state_event_raw(&state_key, "m.call.member", content)
+                .send_state_event_raw("m.call.member", &state_key, content)
                 .await
                 .context("Failed to publish m.call.member state event")?;
             resp.event_id.to_string()
@@ -447,12 +447,12 @@ pub async fn remove_call_member(
 
     // Try unstable event type first (Element X watches for this), fall back to stable
     let result = room
-        .send_state_event_raw(&state_key, "org.matrix.msc3401.call.member", content.clone())
+        .send_state_event_raw("org.matrix.msc3401.call.member", &state_key, content.clone())
         .await;
 
     if let Err(unstable_err) = result {
         debug!("Unstable org.matrix.msc3401.call.member failed ({unstable_err:#}), trying stable type");
-        room.send_state_event_raw(&state_key, "m.call.member", content)
+        room.send_state_event_raw("m.call.member", &state_key, content)
             .await
             .context("Failed to remove m.call.member state event")?;
     }
