@@ -237,8 +237,8 @@ impl EmpPulse {
                 let dist = (dx as f32 - sweep_x as f32).abs() / (band_width as f32 / 2.0);
                 let intensity = (1.0 - dist).max(0.0) * (1.0 - progress);
                 let r = (255.0 * intensity) as u8;
-                let g = (140.0 * intensity) as u8;
-                let b = 0u8;
+                let g = 0u8;
+                let b = (255.0 * intensity) as u8;
                 let color = Color::Rgb(r, g, b);
 
                 let cell = &mut buf[(x, row)];
@@ -279,15 +279,11 @@ impl EmpPulse {
                     .min(WAVE_CHARS.len() - 1);
                 let ch = WAVE_CHARS[char_idx];
 
-                // 3-zone color: cyan core → orange mid → magenta fringe
-                let (cr, cg, cb) = if dist < 0.35 {
-                    // Core: cyan (0, 255, 255) → orange (255, 140, 0)
-                    let t = dist / 0.35;
-                    (255.0 * t, 255.0 - 115.0 * t, 255.0 * (1.0 - t))
-                } else {
-                    // Fringe: orange (255, 140, 0) → magenta (255, 0, 200)
-                    let t = ((dist - 0.35) / 0.65).min(1.0);
-                    (255.0, 140.0 * (1.0 - t), 200.0 * t)
+                // 2-zone color: cyan core → magenta fringe
+                let (cr, cg, cb) = {
+                    // Core: cyan (0, 255, 255) → magenta (255, 0, 255)
+                    let t = dist.min(1.0);
+                    (255.0 * t, 255.0 * (1.0 - t), 255.0)
                 };
                 let r = (cr * intensity) as u8;
                 let g = (cg * intensity) as u8;
@@ -309,10 +305,10 @@ impl EmpPulse {
                 let epi_y = visual_epi;
                 if epi_y >= area.y as i32 && epi_y < (area.y + area.height) as i32 {
                     let bright = intensity * (1.0 - progress / 0.3);
-                    // Hot orange-white flash
+                    // Hot magenta-white flash
                     let r = (255.0 * bright) as u8;
-                    let g = (200.0 * bright) as u8;
-                    let b = (50.0 * bright) as u8;
+                    let g = (50.0 * bright) as u8;
+                    let b = (255.0 * bright) as u8;
                     let color = Color::Rgb(r, g, b);
                     let style = Style::default().fg(color);
                     for dx in 0..area.width {
@@ -342,12 +338,12 @@ impl EmpPulse {
             let ch = SPARK_CHARS[spark.char_idx % SPARK_CHARS.len()];
             let intensity = spark.intensity;
 
-            // Alternate orange-white and cyan-white sparks
+            // Alternate magenta-white and cyan-white sparks
             let (r, g, b) = if spark.char_idx % 2 == 0 {
                 (
                     (255.0 * intensity) as u8,
-                    (160.0 * intensity) as u8,
                     (30.0 * intensity) as u8,
+                    (255.0 * intensity) as u8,
                 )
             } else {
                 (
