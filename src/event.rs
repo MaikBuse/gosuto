@@ -88,6 +88,7 @@ pub enum AppEvent {
         name: Option<String>,
         topic: Option<String>,
         history_visibility: String,
+        encrypted: bool,
     },
     RoomSettingUpdated {
         room_id: String,

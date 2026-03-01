@@ -162,12 +162,18 @@ pub async fn fetch_room_info(client: &Client, room_id: &str, tx: &EventSender) {
     };
     let topic = room.topic();
     let visibility = room.history_visibility_or_default();
+    let encrypted = room
+        .latest_encryption_state()
+        .await
+        .map(|s| s.is_encrypted())
+        .unwrap_or(false);
 
     let _ = tx.send(AppEvent::RoomInfoLoaded {
         room_id: room_id.to_string(),
         name,
         topic,
         history_visibility: visibility.as_ref().to_string(),
+        encrypted,
     });
 }
 

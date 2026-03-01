@@ -314,6 +314,12 @@ async fn main() -> Result<()> {
                                                 request.invite = vec![uid.clone()];
                                                 request.is_direct = true;
 
+                                                use matrix_sdk::ruma::events::InitialStateEvent;
+                                                use matrix_sdk::ruma::events::room::encryption::RoomEncryptionEventContent;
+                                                let enc = RoomEncryptionEventContent::with_recommended_defaults();
+                                                let enc_event = InitialStateEvent::with_empty_state_key(enc);
+                                                request.initial_state.push(enc_event.to_raw_any());
+
                                                 match client.create_room(request).await {
                                                     Ok(response) => {
                                                         let _ = tx.send(AppEvent::DmRoomReady {
@@ -359,6 +365,11 @@ async fn main() -> Result<()> {
                                     let vis_content = RoomHistoryVisibilityEventContent::new(vis);
                                     let initial_event = InitialStateEvent::with_empty_state_key(vis_content);
                                     request.initial_state.push(initial_event.to_raw_any());
+
+                                    use matrix_sdk::ruma::events::room::encryption::RoomEncryptionEventContent;
+                                    let enc = RoomEncryptionEventContent::with_recommended_defaults();
+                                    let enc_event = InitialStateEvent::with_empty_state_key(enc);
+                                    request.initial_state.push(enc_event.to_raw_any());
 
                                     match client.create_room(request).await {
                                         Ok(response) => {

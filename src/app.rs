@@ -24,6 +24,7 @@ pub struct RoomInfoState {
     pub name: Option<String>,
     pub topic: Option<String>,
     pub history_visibility: String,
+    pub encrypted: bool,
     pub selected_field: usize,
     pub loading: bool,
     pub saving: bool,
@@ -39,6 +40,7 @@ impl RoomInfoState {
             name: None,
             topic: None,
             history_visibility: "shared".to_string(),
+            encrypted: false,
             selected_field: 0,
             loading: false,
             saving: false,
@@ -454,11 +456,13 @@ impl App {
                 name,
                 topic,
                 history_visibility,
+                encrypted,
             } => {
                 if self.room_info.open && self.room_info.room_id == room_id {
                     self.room_info.name = name;
                     self.room_info.topic = topic;
                     self.room_info.history_visibility = history_visibility;
+                    self.room_info.encrypted = encrypted;
                     self.room_info.loading = false;
                 }
             }
@@ -862,6 +866,7 @@ impl App {
                         name: None,
                         topic: None,
                         history_visibility: String::new(),
+                        encrypted: false,
                         selected_field: 0,
                         loading: true,
                         saving: false,

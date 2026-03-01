@@ -7,7 +7,7 @@ use crate::app::{HISTORY_VISIBILITY_OPTIONS, RoomInfoState};
 use crate::ui::theme;
 
 const POPUP_WIDTH: u16 = 54;
-const POPUP_HEIGHT: u16 = 16;
+const POPUP_HEIGHT: u16 = 17;
 
 pub fn render(state: &RoomInfoState, frame: &mut Frame) {
     let area = frame.area();
@@ -72,6 +72,15 @@ pub fn render(state: &RoomInfoState, frame: &mut Frame) {
     let topic = state.topic.as_deref().unwrap_or("\u{2014}");
     let topic_display = truncate_str(topic, (right - value_x) as usize);
     write_str(buf, &bounds, value_x, row, &topic_display, value_s);
+    row += 1;
+
+    // Encrypted (read-only)
+    write_str(buf, &bounds, label_x, row, "ENCRYPTED", label_s);
+    let enc_val = if state.encrypted { "yes" } else { "no" };
+    let enc_s = Style::default()
+        .fg(if state.encrypted { theme::GREEN } else { theme::DIM })
+        .bg(theme::BG);
+    write_str(buf, &bounds, value_x, row, enc_val, enc_s);
     row += 2;
 
     // ── Field 0: NAME (editable) ──
