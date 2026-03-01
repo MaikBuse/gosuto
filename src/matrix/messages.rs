@@ -32,48 +32,82 @@ pub async fn fetch_messages(
 
     for event in &response.chunk {
         let timeline_event = event.raw().deserialize();
-        if let Ok(matrix_sdk::ruma::events::AnySyncTimelineEvent::MessageLike(
-            matrix_sdk::ruma::events::AnySyncMessageLikeEvent::RoomMessage(msg_event),
-        )) = timeline_event
-        {
-            let (sender, event_id, timestamp, content) = match msg_event {
-                matrix_sdk::ruma::events::room::message::SyncRoomMessageEvent::Original(orig) => {
-                    let millis: i64 = orig.origin_server_ts.0.into();
-                    let ts = chrono::DateTime::from_timestamp(
-                        millis / 1000,
-                        ((millis % 1000) * 1_000_000) as u32,
-                    )
-                    .unwrap_or_default()
-                    .with_timezone(&chrono::Local);
-                    (
-                        orig.sender.to_string(),
-                        orig.event_id.to_string(),
-                        ts,
-                        orig.content,
-                    )
-                }
-                _ => continue,
-            };
+        match timeline_event {
+            Ok(matrix_sdk::ruma::events::AnySyncTimelineEvent::MessageLike(
+                matrix_sdk::ruma::events::AnySyncMessageLikeEvent::RoomMessage(msg_event),
+            )) => {
+                let (sender, event_id, timestamp, content) = match msg_event {
+                    matrix_sdk::ruma::events::room::message::SyncRoomMessageEvent::Original(
+                        orig,
+                    ) => {
+                        let millis: i64 = orig.origin_server_ts.0.into();
+                        let ts = chrono::DateTime::from_timestamp(
+                            millis / 1000,
+                            ((millis % 1000) * 1_000_000) as u32,
+                        )
+                        .unwrap_or_default()
+                        .with_timezone(&chrono::Local);
+                        (
+                            orig.sender.to_string(),
+                            orig.event_id.to_string(),
+                            ts,
+                            orig.content,
+                        )
+                    }
+                    _ => continue,
+                };
 
-            let (body, is_emote, is_notice) = match &content.msgtype {
-                MessageType::Text(text) => (text.body.clone(), false, false),
-                MessageType::Emote(emote) => (emote.body.clone(), true, false),
-                MessageType::Notice(notice) => (notice.body.clone(), false, true),
-                _ => ("[unsupported message type]".to_string(), false, false),
-            };
+                let (body, is_emote, is_notice) = match &content.msgtype {
+                    MessageType::Text(text) => (text.body.clone(), false, false),
+                    MessageType::Emote(emote) => (emote.body.clone(), true, false),
+                    MessageType::Notice(notice) => (notice.body.clone(), false, true),
+                    _ => ("[unsupported message type]".to_string(), false, false),
+                };
 
-            messages.push(DisplayMessage {
-                event_id,
-                sender,
-                body,
-                timestamp,
-                is_emote,
-                is_notice,
-                pending: false,
-                verified: None,
-            });
-        } else {
-            skipped += 1;
+                messages.push(DisplayMessage {
+                    event_id,
+                    sender,
+                    body,
+                    timestamp,
+                    is_emote,
+                    is_notice,
+                    pending: false,
+                    verified: None,
+                });
+            }
+            Ok(matrix_sdk::ruma::events::AnySyncTimelineEvent::MessageLike(
+                matrix_sdk::ruma::events::AnySyncMessageLikeEvent::RoomEncrypted(enc_event),
+            )) => {
+                let (sender, event_id, timestamp) = match enc_event {
+                    matrix_sdk::ruma::events::room::encrypted::SyncRoomEncryptedEvent::Original(
+                        orig,
+                    ) => {
+                        let millis: i64 = orig.origin_server_ts.0.into();
+                        let ts = chrono::DateTime::from_timestamp(
+                            millis / 1000,
+                            ((millis % 1000) * 1_000_000) as u32,
+                        )
+                        .unwrap_or_default()
+                        .with_timezone(&chrono::Local);
+                        (orig.sender.to_string(), orig.event_id.to_string(), ts)
+                    }
+                    _ => continue,
+                };
+
+                messages.push(DisplayMessage {
+                    event_id,
+                    sender,
+                    body: "[Unable to decrypt]".to_string(),
+                    timestamp,
+                    is_emote: false,
+                    is_notice: false,
+                    pending: false,
+                    verified: None,
+                });
+            }
+            _ => {
+                skipped += 1;
+            }
         }
     }
 

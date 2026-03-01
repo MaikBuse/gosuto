@@ -162,6 +162,7 @@ pub struct App {
     pub config: GosutoConfig,
     // Pending actions for main loop to process
     pub pending_logout: bool,
+    pub pending_refetch: bool,
     pending_send: Option<(String, String)>, // (room_id, body)
     pending_join: Option<String>,           // room_id_or_alias
     pending_leave: Option<String>,          // room_id
@@ -228,6 +229,7 @@ impl App {
             event_tx,
             config,
             pending_logout: false,
+            pending_refetch: false,
             pending_send: None,
             pending_join: None,
             pending_leave: None,
@@ -607,6 +609,7 @@ impl App {
                     modal.stage = crate::state::VerificationStage::Completed;
                 }
                 self.self_verified = true;
+                self.pending_refetch = true;
                 self.user_config.verified = true;
             }
             AppEvent::VerificationCancelled { reason } => {
@@ -646,6 +649,7 @@ impl App {
                 if let Some(ref mut modal) = self.recovery_modal {
                     modal.stage = crate::state::RecoveryStage::Enabled;
                 }
+                self.pending_refetch = true;
             }
             AppEvent::RecoveryError(err) => {
                 if let Some(ref mut modal) = self.recovery_modal {

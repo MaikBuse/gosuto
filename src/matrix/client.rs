@@ -8,6 +8,7 @@ use tracing::{debug, info, warn};
 fn encryption_settings() -> EncryptionSettings {
     EncryptionSettings {
         auto_enable_cross_signing: true,
+        auto_enable_backups: true,
         ..Default::default()
     }
 }

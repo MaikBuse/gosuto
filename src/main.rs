@@ -240,6 +240,31 @@ async fn main() -> Result<()> {
                             }
                         }
 
+                        // Re-fetch messages after verification/recovery
+                        if app.pending_refetch {
+                            app.pending_refetch = false;
+                            if let Some(ref room_id) = app.messages.current_room_id.clone() {
+                                app.messages.messages.clear();
+                                app.messages.loading = true;
+                                let client_holder = matrix_client.clone();
+                                let tx = event_tx.clone();
+                                let rid = room_id.clone();
+                                let sync_token = app.sync_token.clone();
+                                tokio::spawn(async move {
+                                    let client = { client_holder.lock().await.clone() };
+                                    if let Some(client) = client
+                                        && let Err(e) = matrix::messages::fetch_messages(&client, &rid, &tx, sync_token).await
+                                    {
+                                        error!("Failed to re-fetch messages for {}: {:?}", rid, e);
+                                        let _ = tx.send(AppEvent::FetchError {
+                                            room_id: rid,
+                                            error: e.to_string(),
+                                        });
+                                    }
+                                });
+                            }
+                        }
+
                         // Handle message sending
                         if let Some((room_id, body)) = app.take_pending_send() {
                             let client_holder = matrix_client.clone();
