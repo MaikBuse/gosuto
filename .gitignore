@@ -1,2 +1,8 @@
 /target
-/log
+
+# Markdown files (except key docs)
+*.md
+!CHANGELOG.md
+!LICENCE.md
+!README.md
+!docs/**/*.md

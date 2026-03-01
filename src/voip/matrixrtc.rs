@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use matrix_sdk::Client;
 use matrix_sdk::ruma::{OwnedDeviceId, OwnedRoomId};
 use serde::{Deserialize, Serialize};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 
 pub struct LiveKitCredentials {
     pub server_url: String,
@@ -205,10 +205,12 @@ pub async fn get_livekit_credentials(
         .text()
         .await
         .context("Failed to read JWT service response body")?;
+    let sfu_preview: serde_json::Value = serde_json::from_str(&raw_body).unwrap_or_default();
     debug!(
-        "SFU response (via {}): {}",
+        "SFU response (via {}): url present={}, jwt length={}",
         endpoint_used,
-        &raw_body[..raw_body.len().min(2000)]
+        sfu_preview.get("url").is_some(),
+        sfu_preview.get("jwt").and_then(|v| v.as_str()).map_or(0, |s| s.len()),
     );
     let sfu_resp: SfuResponse =
         serde_json::from_str(&raw_body).context("Invalid JWT service response JSON")?;
@@ -317,7 +319,35 @@ pub async fn ensure_call_member_permissions(client: &Client, room_id: &OwnedRoom
         .await
         .context("Failed to update power levels for call events")?;
 
-    warn!("Updated room power levels to allow m.call.member events");
+    info!("Updated room power levels to allow m.call.member events");
+    Ok(())
+}
+
+/// Send an m.call.notify room message event to make other clients ring.
+/// Per MSC4075, this notifies room members that a call has started.
+pub async fn send_call_notify(client: &Client, room_id: &OwnedRoomId) -> Result<()> {
+    let room = client.get_room(room_id).context("Room not found")?;
+
+    let content = serde_json::json!({
+        "call_id": "",
+        "application": "m.call",
+        "notify_type": "ring",
+        "m.mentions": {
+            "room": true
+        }
+    });
+
+    // Try stable event type first, fall back to unstable prefix
+    let result = room.send_raw("m.call.notify", content.clone()).await;
+
+    if let Err(stable_err) = result {
+        debug!("m.call.notify failed ({stable_err:#}), trying unstable prefix");
+        room.send_raw("org.matrix.msc4075.call.notify", content)
+            .await
+            .context("Failed to send call notification event")?;
+    }
+
+    info!("Sent call notification (m.call.notify) for room {}", room_id);
     Ok(())
 }
 

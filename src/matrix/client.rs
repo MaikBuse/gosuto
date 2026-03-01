@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 use matrix_sdk::{Client, config::SyncSettings};
-use tracing::info;
+use tracing::{debug, info, warn};
 
 use crate::config;
 use crate::event::{AppEvent, EventSender};
@@ -18,10 +18,10 @@ pub async fn try_restore_session(
     }
 
     let stored = session::load_session(&session_path)?;
-    info!("Restoring session for {}", stored.user_id);
+    debug!("Restoring session for {}", stored.user_id);
 
     let store_path = config::store_path_for_homeserver(&stored.homeserver)?;
-    info!("Using per-server store at {}", store_path.display());
+    debug!("Using per-server store at {}", store_path.display());
     let mut builder = Client::builder()
         .homeserver_url(&stored.homeserver)
         .sqlite_store(&store_path, None);
@@ -88,12 +88,12 @@ pub async fn login(
 
     // Fresh login — clear any stale store data (crypto keys from old devices)
     if store_path.exists() {
-        info!("Clearing stale store at {}", store_path.display());
+        debug!("Clearing stale store at {}", store_path.display());
         std::fs::remove_dir_all(&store_path)?;
         std::fs::create_dir_all(&store_path)?;
     }
 
-    info!("Using per-server store at {}", store_path.display());
+    debug!("Using per-server store at {}", store_path.display());
 
     let client = {
         // Try with server discovery first
@@ -121,7 +121,7 @@ pub async fn login(
         }
     };
 
-    info!(
+    debug!(
         "Resolved homeserver URL: {} (input was: {})",
         client.homeserver(),
         homeserver
@@ -199,7 +199,7 @@ pub async fn register(
 
     // Fresh registration — clear any stale store data
     if store_path.exists() {
-        info!("Clearing stale store at {}", store_path.display());
+        debug!("Clearing stale store at {}", store_path.display());
         std::fs::remove_dir_all(&store_path)?;
         std::fs::create_dir_all(&store_path)?;
     }
@@ -416,9 +416,9 @@ pub async fn logout(client: &Client) -> Result<()> {
 
     // Clean up only this server's store
     let store_path = config::store_path_for_homeserver_unchecked(client.homeserver().as_str())?;
-    info!("Removing per-server store at {}", store_path.display());
+    debug!("Removing per-server store at {}", store_path.display());
     if let Err(e) = std::fs::remove_dir_all(&store_path) {
-        info!("Could not remove store: {}", e);
+        warn!("Could not remove store: {}", e);
     }
 
     Ok(())

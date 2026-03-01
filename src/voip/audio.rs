@@ -11,7 +11,7 @@ use livekit::webrtc::audio_source::native::NativeAudioSource;
 use livekit::webrtc::audio_stream::native::NativeAudioStream;
 use livekit::webrtc::prelude::AudioFrame;
 use tokio::sync::mpsc;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::config::AudioConfig;
 use crate::event::{AppEvent, EventSender};
@@ -248,7 +248,7 @@ impl AudioPipeline {
     ) -> Result<cpal::Stream> {
         let device = resolve_input_device(audio_config)?;
 
-        info!("Using input device: {:?}", device.description());
+        debug!("Using input device: {:?}", device.description());
 
         let config = cpal::StreamConfig {
             channels: 1,
@@ -338,7 +338,7 @@ impl AudioPipeline {
     ) -> Result<(cpal::Stream, tokio::task::JoinHandle<()>)> {
         let device = resolve_output_device(audio_config)?;
 
-        info!("Using output device: {:?}", device.description());
+        debug!("Using output device: {:?}", device.description());
 
         let config = cpal::StreamConfig {
             channels: 1,

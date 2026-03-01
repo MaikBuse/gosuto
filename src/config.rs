@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use anyhow::Result;
-use tracing::info;
+use tracing::{info, warn};
 
 pub const APP_NAME: &str = "gosuto";
 pub const TICK_RATE_MS: u64 = 250;
@@ -105,7 +105,7 @@ pub fn load_config() -> GosutoConfig {
                 config
             }
             Err(e) => {
-                info!("Failed to parse config at {}: {}", path.display(), e);
+                warn!("Failed to parse config at {}: {}", path.display(), e);
                 GosutoConfig::default()
             }
         },
@@ -114,13 +114,13 @@ pub fn load_config() -> GosutoConfig {
             if let Some(parent) = path.parent()
                 && let Err(e) = std::fs::create_dir_all(parent)
             {
-                info!("Could not create config dir {}: {}", parent.display(), e);
+                warn!("Could not create config dir {}: {}", parent.display(), e);
                 return config;
             }
             match toml::to_string_pretty(&config) {
                 Ok(contents) => {
                     if let Err(e) = std::fs::write(&path, &contents) {
-                        info!(
+                        warn!(
                             "Could not write default config to {}: {}",
                             path.display(),
                             e
@@ -130,7 +130,7 @@ pub fn load_config() -> GosutoConfig {
                     }
                 }
                 Err(e) => {
-                    info!("Could not serialize default config: {}", e);
+                    warn!("Could not serialize default config: {}", e);
                 }
             }
             config
@@ -149,10 +149,10 @@ pub fn save_config(config: &GosutoConfig) {
     match toml::to_string_pretty(config) {
         Ok(contents) => {
             if let Err(e) = std::fs::write(&path, &contents) {
-                info!("Could not write config to {}: {}", path.display(), e);
+                warn!("Could not write config to {}: {}", path.display(), e);
             }
         }
-        Err(e) => info!("Could not serialize config: {}", e),
+        Err(e) => warn!("Could not serialize config: {}", e),
     }
 }
 
@@ -192,9 +192,30 @@ pub fn store_path_for_homeserver_unchecked(homeserver: &str) -> Result<PathBuf> 
 }
 
 pub fn log_path() -> Result<PathBuf> {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("log");
+    let path = data_dir()?.join("logs");
     std::fs::create_dir_all(&path)?;
     Ok(path)
+}
+
+/// Delete log files older than `max_days`. Best-effort — errors are silently ignored.
+pub fn cleanup_old_logs(path: &std::path::Path, max_days: u64) {
+    let cutoff = std::time::SystemTime::now()
+        - std::time::Duration::from_secs(max_days * 24 * 60 * 60);
+    let entries = match std::fs::read_dir(path) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    for entry in entries.flatten() {
+        let Ok(meta) = entry.metadata() else {
+            continue;
+        };
+        if meta.is_file()
+            && let Ok(modified) = meta.modified()
+            && modified < cutoff
+        {
+            let _ = std::fs::remove_file(entry.path());
+        }
+    }
 }
 
 #[cfg(test)]

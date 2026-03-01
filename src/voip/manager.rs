@@ -5,7 +5,7 @@ use base64::Engine;
 use matrix_sdk::Client;
 use matrix_sdk::ruma::{OwnedDeviceId, OwnedRoomId};
 use tokio::sync::{Mutex, mpsc};
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::config::AudioConfig;
 use crate::event::{AppEvent, EventSender};
@@ -181,6 +181,11 @@ impl CallManager {
                 .event_tx
                 .send(AppEvent::CallError(format!("Signaling error: {:#}", e)));
             return;
+        }
+
+        // 3b. Send m.call.notify so other clients ring (MSC4075)
+        if let Err(e) = matrixrtc::send_call_notify(&client, &room_id).await {
+            warn!("Failed to send call notification (ringing may not work on other clients): {:#}", e);
         }
 
         // 4. Get LiveKit credentials (JWT) — SFU can now see the call member event
@@ -371,7 +376,7 @@ impl CallManager {
 fn log_jwt_claims(token: &str) {
     let parts: Vec<&str> = token.split('.').collect();
     if parts.len() != 3 {
-        warn!("JWT: malformed token ({} parts)", parts.len());
+        debug!("JWT: malformed token ({} parts)", parts.len());
         return;
     }
 
@@ -382,7 +387,7 @@ fn log_jwt_claims(token: &str) {
             match base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(parts[1]) {
                 Ok(bytes) => bytes,
                 Err(e) => {
-                    warn!("JWT: failed to decode payload: {}", e);
+                    debug!("JWT: failed to decode payload: {}", e);
                     return;
                 }
             }
@@ -392,7 +397,7 @@ fn log_jwt_claims(token: &str) {
     let claims: serde_json::Value = match serde_json::from_slice(&payload) {
         Ok(v) => v,
         Err(e) => {
-            warn!("JWT: failed to parse payload JSON: {}", e);
+            debug!("JWT: failed to parse payload JSON: {}", e);
             return;
         }
     };
@@ -432,15 +437,15 @@ fn log_jwt_claims(token: &str) {
         }
     });
 
-    warn!(
+    debug!(
         "JWT grant: iss={}, roomJoin={}, canPublish={}, canSubscribe={}",
         iss, room_join, can_publish, can_subscribe
     );
-    warn!(
+    debug!(
         "JWT claims: video.room={}, sub={}, expired={}",
         room, sub, expired
     );
     if let Some(v) = video {
-        warn!("JWT full video grant: {}", v);
+        debug!("JWT full video grant: {}", v);
     }
 }

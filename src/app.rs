@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use tracing::info;
+use tracing::error;
 
 use crate::config::GosutoConfig;
 use crate::event::{AppEvent, EventSender};
@@ -992,7 +992,7 @@ impl App {
             if let Err(e) =
                 AudioPipeline::start_mic_test(device_name.as_deref(), volume, tx, running)
             {
-                info!("Mic test error: {}", e);
+                error!("Mic test error: {}", e);
             }
         });
     }

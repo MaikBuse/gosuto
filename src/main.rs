@@ -25,7 +25,7 @@ use event::AppEvent;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Set up file-based logging if WALRUST_LOG is set
+    // Set up file-based logging (controlled by GOSUTO_LOG env var)
     let log_path = config::log_path()?;
     let file_appender = tracing_appender::rolling::daily(&log_path, "gosuto.log");
     let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
@@ -34,10 +34,11 @@ async fn main() -> Result<()> {
         .with(fmt::layer().with_writer(non_blocking).with_ansi(false))
         .with(
             EnvFilter::try_from_env("GOSUTO_LOG")
-                .unwrap_or_else(|_| EnvFilter::new("error,gosuto::voip=warn")),
+                .unwrap_or_else(|_| EnvFilter::new("info,matrix_sdk=warn,hyper=warn")),
         )
         .init();
 
+    config::cleanup_old_logs(&log_path, 7);
     info!("Starting gōsuto");
 
     // Create event channel
