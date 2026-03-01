@@ -16,7 +16,17 @@ pub fn render(state: &RecoveryModalState, frame: &mut Frame) {
     }
 
     let popup_w = POPUP_WIDTH.min(area.width.saturating_sub(4));
-    let popup_h = POPUP_HEIGHT.min(area.height.saturating_sub(4));
+    let base_h = POPUP_HEIGHT.min(area.height.saturating_sub(4));
+
+    // Dynamic height for Failed stage: account for wrapped error lines
+    let popup_h = if let RecoveryStage::Failed(ref err) = state.stage {
+        let inner_w = (popup_w.saturating_sub(6)) as usize;
+        let lines = wrap_text(err, inner_w);
+        let extra = lines.len().saturating_sub(1) as u16;
+        (base_h + extra).min(area.height.saturating_sub(4))
+    } else {
+        base_h
+    };
     let popup = centered_rect(popup_w, popup_h, area);
     let buf = frame.buffer_mut();
     let bounds = *buf.area();
@@ -174,6 +184,55 @@ pub fn render(state: &RecoveryModalState, frame: &mut Frame) {
                 Style::default().fg(theme::DIM).bg(theme::BG),
             );
         }
+        RecoveryStage::Incomplete => {
+            let msg1 = "Recovery exists but key is";
+            let x1 = left + (inner_w.saturating_sub(msg1.len())) as u16 / 2;
+            let y = popup.y + popup.height / 2 - 2;
+            write_str(
+                buf,
+                &bounds,
+                x1,
+                y,
+                msg1,
+                Style::default().fg(theme::TEXT).bg(theme::BG),
+            );
+
+            let msg2 = "not available on this device";
+            let x2 = left + (inner_w.saturating_sub(msg2.len())) as u16 / 2;
+            write_str(
+                buf,
+                &bounds,
+                x2,
+                y + 1,
+                msg2,
+                Style::default().fg(theme::TEXT).bg(theme::BG),
+            );
+
+            let msg3 = "Press r to reset the key";
+            let x3 = left + (inner_w.saturating_sub(msg3.len())) as u16 / 2;
+            write_str(
+                buf,
+                &bounds,
+                x3,
+                y + 3,
+                msg3,
+                Style::default()
+                    .fg(theme::GREEN)
+                    .bg(theme::BG)
+                    .add_modifier(Modifier::BOLD),
+            );
+
+            let hint = "r reset \u{00b7} Esc close";
+            let hx = left + (inner_w.saturating_sub(hint.len())) as u16 / 2;
+            write_str(
+                buf,
+                &bounds,
+                hx,
+                popup.y + popup.height - 2,
+                hint,
+                Style::default().fg(theme::DIM).bg(theme::BG),
+            );
+        }
         RecoveryStage::Enabled => {
             let msg = "Recovery is enabled \u{2713}";
             let x = left + (inner_w.saturating_sub(msg.len())) as u16 / 2;
@@ -220,7 +279,7 @@ pub fn render(state: &RecoveryModalState, frame: &mut Frame) {
         RecoveryStage::Failed(err) => {
             let label = "Error:";
             let lx = left + (inner_w.saturating_sub(label.len())) as u16 / 2;
-            let y = popup.y + popup.height / 2 - 1;
+            let y = popup.y + 3;
             write_str(
                 buf,
                 &bounds,
@@ -233,16 +292,19 @@ pub fn render(state: &RecoveryModalState, frame: &mut Frame) {
                     .add_modifier(Modifier::BOLD),
             );
 
-            let err_display = truncate_str(err, inner_w);
-            let ex = left + (inner_w.saturating_sub(err_display.len())) as u16 / 2;
-            write_str(
-                buf,
-                &bounds,
-                ex,
-                y + 2,
-                &err_display,
-                Style::default().fg(theme::DIM).bg(theme::BG),
-            );
+            let lines = wrap_text(err, inner_w);
+            let max_lines = 4usize;
+            for (i, line) in lines.iter().take(max_lines).enumerate() {
+                let ex = left + (inner_w.saturating_sub(line.len())) as u16 / 2;
+                write_str(
+                    buf,
+                    &bounds,
+                    ex,
+                    y + 2 + i as u16,
+                    line,
+                    Style::default().fg(theme::DIM).bg(theme::BG),
+                );
+            }
 
             let hint = "Esc close";
             let hx = left + (inner_w.saturating_sub(hint.len())) as u16 / 2;
@@ -259,6 +321,42 @@ pub fn render(state: &RecoveryModalState, frame: &mut Frame) {
 }
 
 // ── helpers ──────────────────────────────────────────
+
+fn wrap_text(s: &str, max_width: usize) -> Vec<String> {
+    if max_width == 0 {
+        return vec![s.to_string()];
+    }
+    let mut lines = Vec::new();
+    let mut current = String::new();
+    for word in s.split_whitespace() {
+        if current.is_empty() {
+            if word.len() > max_width {
+                // Force-break long words
+                let mut remaining = word;
+                while remaining.len() > max_width {
+                    lines.push(remaining[..max_width].to_string());
+                    remaining = &remaining[max_width..];
+                }
+                current = remaining.to_string();
+            } else {
+                current = word.to_string();
+            }
+        } else if current.len() + 1 + word.len() <= max_width {
+            current.push(' ');
+            current.push_str(word);
+        } else {
+            lines.push(current);
+            current = word.to_string();
+        }
+    }
+    if !current.is_empty() {
+        lines.push(current);
+    }
+    if lines.is_empty() {
+        lines.push(String::new());
+    }
+    lines
+}
 
 fn truncate_str(s: &str, max: usize) -> String {
     if s.len() > max {

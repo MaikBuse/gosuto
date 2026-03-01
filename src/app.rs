@@ -521,6 +521,8 @@ impl App {
             AppEvent::RecoveryState(state_str) => {
                 let stage = if state_str.contains("Enabled") {
                     crate::state::RecoveryStage::Enabled
+                } else if state_str.contains("Incomplete") {
+                    crate::state::RecoveryStage::Incomplete
                 } else {
                     crate::state::RecoveryStage::Setup
                 };
@@ -535,7 +537,11 @@ impl App {
             }
             AppEvent::RecoveryError(err) => {
                 if let Some(ref mut modal) = self.recovery_modal {
-                    modal.stage = crate::state::RecoveryStage::Failed(err);
+                    if err.contains("backup already exists") {
+                        modal.stage = crate::state::RecoveryStage::Incomplete;
+                    } else {
+                        modal.stage = crate::state::RecoveryStage::Failed(err);
+                    }
                 }
             }
         }
@@ -1006,6 +1012,18 @@ impl App {
             }
             Some(crate::state::RecoveryStage::ShowKey(_)) => match key.code {
                 KeyCode::Enter | KeyCode::Esc => {
+                    self.recovery_modal = None;
+                }
+                _ => {}
+            },
+            Some(crate::state::RecoveryStage::Incomplete) => match key.code {
+                KeyCode::Char('r') => {
+                    if let Some(ref mut modal) = self.recovery_modal {
+                        modal.stage = crate::state::RecoveryStage::Resetting;
+                    }
+                    self.pending_recovery_reset = true;
+                }
+                KeyCode::Esc => {
                     self.recovery_modal = None;
                 }
                 _ => {}

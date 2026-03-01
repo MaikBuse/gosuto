@@ -32,6 +32,7 @@ pub struct RecoveryModalState {
 pub enum RecoveryStage {
     Checking,
     Setup,
+    Incomplete,
     Creating,
     ShowKey(String),
     Enabled,
