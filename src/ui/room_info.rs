@@ -243,11 +243,7 @@ pub fn render(state: &RoomInfoState, frame: &mut Frame) {
         } else {
             theme::TEXT
         };
-        let enc_marker = if enc_selected {
-            '\u{25C8}'
-        } else {
-            '\u{25C7}'
-        };
+        let enc_marker = if enc_selected { '\u{25C8}' } else { '\u{25C7}' };
 
         let enc_marker_s = Style::default().fg(enc_marker_color).bg(theme::BG);
         let enc_label_s = Style::default()

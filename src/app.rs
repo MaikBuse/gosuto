@@ -480,9 +480,7 @@ impl App {
                         self.room_info.name_buffer.clear();
                     }
                     // If encryption was just enabled, reflect it
-                    if self.room_info.encryption_selection == "yes"
-                        && !self.room_info.encrypted
-                    {
+                    if self.room_info.encryption_selection == "yes" && !self.room_info.encrypted {
                         self.room_info.encrypted = true;
                     }
                     self.room_info.saving = false;
