@@ -527,6 +527,9 @@ impl App {
                         }
                         Some(DisplayRow::Room { .. }) => {
                             self.room_list_anim.trigger_flash(self.room_list.selected);
+                            self.effects
+                                .emp_pulse
+                                .trigger_burst(self.room_list.selected as u16);
                             if let Some(room) = self.room_list.selected_room() {
                                 let room_id = room.id.clone();
                                 self.messages.set_room(Some(room_id));
@@ -539,6 +542,9 @@ impl App {
                 } else if self.vim.focus == FocusPanel::Members
                     && let Some(member) = self.members_list.selected_member()
                 {
+                    self.effects
+                        .members_emp_pulse
+                        .trigger_burst(self.members_list.selected as u16);
                     self.pending_dm = Some(member.user_id.clone());
                 }
             }

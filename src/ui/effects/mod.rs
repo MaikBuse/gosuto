@@ -1,3 +1,4 @@
+pub mod emp_pulse;
 pub mod glitch;
 pub mod matrix_rain;
 pub mod text_reveal;
@@ -9,6 +10,7 @@ use ratatui::layout::Rect;
 use ratatui::style::Color;
 
 use super::theme;
+use emp_pulse::EmpPulse;
 use glitch::GlitchEffect;
 use matrix_rain::MatrixRain;
 
@@ -62,6 +64,8 @@ pub struct EffectsState {
     matrix_rain: MatrixRain,
     pub glitch_enabled: bool,
     glitch: GlitchEffect,
+    pub emp_pulse: EmpPulse,
+    pub members_emp_pulse: EmpPulse,
 }
 
 impl EffectsState {
@@ -71,6 +75,8 @@ impl EffectsState {
             matrix_rain: MatrixRain::new(),
             glitch_enabled,
             glitch: GlitchEffect::new(),
+            emp_pulse: EmpPulse::new(),
+            members_emp_pulse: EmpPulse::new(),
         }
     }
 
@@ -89,6 +95,40 @@ impl EffectsState {
         if self.glitch_enabled {
             self.glitch.tick(dt_ms, area.height);
         }
+    }
+
+    pub fn tick_emp(&mut self, dt_ms: u64, area: Rect, focused: bool) {
+        self.emp_pulse.tick(dt_ms, area, focused);
+    }
+
+    pub fn tick_members_emp(&mut self, dt_ms: u64, area: Rect, focused: bool) {
+        self.members_emp_pulse.tick(dt_ms, area, focused);
+    }
+
+    pub fn render_emp_buffer(
+        &self,
+        area: Rect,
+        scroll_offset: usize,
+    ) -> Option<Buffer> {
+        if !self.enabled {
+            return None;
+        }
+        let mut buf = Buffer::empty(area);
+        self.emp_pulse.render(&mut buf, area, scroll_offset);
+        Some(buf)
+    }
+
+    pub fn render_members_emp_buffer(
+        &self,
+        area: Rect,
+        scroll_offset: usize,
+    ) -> Option<Buffer> {
+        if !self.enabled {
+            return None;
+        }
+        let mut buf = Buffer::empty(area);
+        self.members_emp_pulse.render(&mut buf, area, scroll_offset);
+        Some(buf)
     }
 
     pub fn render_to_buffer(&self, area: Rect) -> Option<Buffer> {

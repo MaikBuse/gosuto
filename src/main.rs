@@ -520,6 +520,30 @@ async fn main() -> Result<()> {
             let term_size = tui.size()?;
             let term_area = ratatui::layout::Rect::new(0, 0, term_size.width, term_size.height);
             app.effects.tick(dt, term_area);
+
+            // Tick EMP effect with approximate room pane area
+            let room_focused =
+                app.vim.focus == crate::input::FocusPanel::RoomList;
+            let room_area = ratatui::layout::Rect::new(
+                term_area.x,
+                term_area.y,
+                24, // matches layout::compute_layout Constraint::Length(24)
+                term_area.height.saturating_sub(1),
+            );
+            app.effects.tick_emp(dt, room_area, room_focused);
+
+            // Tick EMP effect for members pane
+            let members_focused =
+                app.vim.focus == crate::input::FocusPanel::Members;
+            let members_area = ratatui::layout::Rect::new(
+                term_area.width.saturating_sub(20),
+                term_area.y,
+                20, // matches layout::compute_layout Constraint::Length(20)
+                term_area.height.saturating_sub(1),
+            );
+            app.effects
+                .tick_members_emp(dt, members_area, members_focused);
+
             app.room_list_anim.tick(dt);
             app.chat_title_reveal.tick(dt);
             app.members_title_reveal.tick(dt);

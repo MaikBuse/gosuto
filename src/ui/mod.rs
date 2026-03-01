@@ -37,12 +37,26 @@ pub fn render(app: &App, frame: &mut Frame) {
     status_bar::render(app, frame, layout.status_bar);
 
     // Composite effects behind UI in content panels only (before overlays)
-    if app.effects.enabled
-        && let Some(effect_buf) = app.effects.render_to_buffer(frame.area())
-    {
-        effects::composite(frame.buffer_mut(), &effect_buf, layout.room_list);
-        effects::composite(frame.buffer_mut(), &effect_buf, layout.chat_area);
-        effects::composite(frame.buffer_mut(), &effect_buf, layout.members_list);
+    if app.effects.enabled {
+        // Room list: EMP pulse effect
+        let scroll_off = room_list::scroll_offset(app, layout.room_list);
+        if let Some(emp_buf) = app.effects.render_emp_buffer(layout.room_list, scroll_off) {
+            effects::composite(frame.buffer_mut(), &emp_buf, layout.room_list);
+        }
+
+        // Members list: EMP pulse effect
+        let members_scroll_off = members::scroll_offset(app, layout.members_list);
+        if let Some(emp_buf) =
+            app.effects
+                .render_members_emp_buffer(layout.members_list, members_scroll_off)
+        {
+            effects::composite(frame.buffer_mut(), &emp_buf, layout.members_list);
+        }
+
+        // Chat: matrix rain (room list + members use EMP instead)
+        if let Some(effect_buf) = app.effects.render_to_buffer(frame.area()) {
+            effects::composite(frame.buffer_mut(), &effect_buf, layout.chat_area);
+        }
     }
 
     // Glitch post-processing: displace content bands with chromatic aberration
