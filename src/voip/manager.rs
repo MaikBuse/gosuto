@@ -435,10 +435,7 @@ impl CallManager {
                                 warn!("No encryption key for {}", participant_identity)
                             }
                             Err(e) => {
-                                warn!(
-                                    "Failed to fetch key for {}: {:#}",
-                                    participant_identity, e
-                                )
+                                warn!("Failed to fetch key for {}: {:#}", participant_identity, e)
                             }
                         }
                     }

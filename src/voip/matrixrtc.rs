@@ -480,7 +480,10 @@ pub async fn fetch_participant_key(
     let resp = match client.send(request).await {
         Ok(r) => r,
         Err(e) => {
-            debug!("No encryption key state event for {}:{}: {}", user_id, device_id, e);
+            debug!(
+                "No encryption key state event for {}:{}: {}",
+                user_id, device_id, e
+            );
             return Ok(None);
         }
     };
@@ -490,7 +493,10 @@ pub async fn fetch_participant_key(
     let key_entries = match content.get("keys").and_then(|v| v.as_array()) {
         Some(arr) if !arr.is_empty() => arr,
         _ => {
-            debug!("No keys array in encryption key event for {}:{}", user_id, device_id);
+            debug!(
+                "No keys array in encryption key event for {}:{}",
+                user_id, device_id
+            );
             return Ok(None);
         }
     };
@@ -505,14 +511,20 @@ pub async fn fetch_participant_key(
         let key_bytes = match base64::engine::general_purpose::STANDARD.decode(encoded) {
             Ok(b) => b,
             Err(e) => {
-                warn!("Failed to decode encryption key from {}:{}: {}", user_id, device_id, e);
+                warn!(
+                    "Failed to decode encryption key from {}:{}: {}",
+                    user_id, device_id, e
+                );
                 continue;
             }
         };
 
         info!(
             "Fetched encryption key: user_id={}, device_id={}, index={}, key_len={}",
-            user_id, device_id, index, key_bytes.len()
+            user_id,
+            device_id,
+            index,
+            key_bytes.len()
         );
 
         return Ok(Some(ParticipantKey {

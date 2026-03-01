@@ -579,8 +579,7 @@ impl AudioPipeline {
                             let available = buf.len().min(data.len());
                             if available > 0 {
                                 for (i, sample) in buf.drain(..available).enumerate() {
-                                    data[i] =
-                                        $from_f32((sample * output_volume).clamp(-1.0, 1.0));
+                                    data[i] = $from_f32((sample * output_volume).clamp(-1.0, 1.0));
                                 }
                             }
                             data[available..].fill($zero);

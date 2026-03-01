@@ -78,7 +78,11 @@ pub fn render(state: &RoomInfoState, frame: &mut Frame) {
     write_str(buf, &bounds, label_x, row, "ENCRYPTED", label_s);
     let enc_val = if state.encrypted { "yes" } else { "no" };
     let enc_s = Style::default()
-        .fg(if state.encrypted { theme::GREEN } else { theme::DIM })
+        .fg(if state.encrypted {
+            theme::GREEN
+        } else {
+            theme::DIM
+        })
         .bg(theme::BG);
     write_str(buf, &bounds, value_x, row, enc_val, enc_s);
     row += 2;
