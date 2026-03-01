@@ -158,6 +158,7 @@ pub struct App {
     pub pending_recovery: bool,
     pub pending_recovery_create: bool,
     pub pending_recovery_reset: bool,
+    pub pending_recovery_recover: Option<String>,
     clipboard: Option<arboard::Clipboard>,
 }
 
@@ -209,6 +210,7 @@ impl App {
             pending_recovery: false,
             pending_recovery_create: false,
             pending_recovery_reset: false,
+            pending_recovery_recover: None,
             clipboard: arboard::Clipboard::new().ok(),
         }
     }
@@ -536,6 +538,11 @@ impl App {
                 if let Some(ref mut modal) = self.recovery_modal {
                     modal.stage = crate::state::RecoveryStage::ShowKey(key);
                     modal.copied = false;
+                }
+            }
+            AppEvent::RecoveryRecovered => {
+                if let Some(ref mut modal) = self.recovery_modal {
+                    modal.stage = crate::state::RecoveryStage::Enabled;
                 }
             }
             AppEvent::RecoveryError(err) => {
@@ -1010,7 +1017,9 @@ impl App {
                 }
                 _ => {}
             },
-            Some(crate::state::RecoveryStage::Creating) | Some(crate::state::RecoveryStage::Resetting) => {
+            Some(crate::state::RecoveryStage::Creating)
+            | Some(crate::state::RecoveryStage::Resetting)
+            | Some(crate::state::RecoveryStage::Recovering) => {
                 // In progress — no keys accepted
             }
             Some(crate::state::RecoveryStage::ShowKey(_)) => match key.code {
@@ -1034,10 +1043,45 @@ impl App {
                 _ => {}
             },
             Some(crate::state::RecoveryStage::Incomplete) => match key.code {
+                KeyCode::Char('e') => {
+                    if let Some(ref mut modal) = self.recovery_modal {
+                        modal.key_buffer.clear();
+                        modal.stage = crate::state::RecoveryStage::EnterKey;
+                    }
+                }
                 KeyCode::Char('r') => {
                     if let Some(ref mut modal) = self.recovery_modal {
                         modal.confirm_buffer.clear();
                         modal.stage = crate::state::RecoveryStage::ConfirmReset;
+                    }
+                }
+                KeyCode::Esc => {
+                    self.recovery_modal = None;
+                }
+                _ => {}
+            },
+            Some(crate::state::RecoveryStage::EnterKey) => match key.code {
+                KeyCode::Backspace => {
+                    if let Some(ref mut modal) = self.recovery_modal {
+                        modal.key_buffer.pop();
+                    }
+                }
+                KeyCode::Char(c) => {
+                    if let Some(ref mut modal) = self.recovery_modal {
+                        modal.key_buffer.push(c);
+                    }
+                }
+                KeyCode::Enter => {
+                    let key_input = self
+                        .recovery_modal
+                        .as_ref()
+                        .map(|m| m.key_buffer.clone())
+                        .unwrap_or_default();
+                    if !key_input.is_empty() {
+                        if let Some(ref mut modal) = self.recovery_modal {
+                            modal.stage = crate::state::RecoveryStage::Recovering;
+                        }
+                        self.pending_recovery_recover = Some(key_input);
                     }
                 }
                 KeyCode::Esc => {

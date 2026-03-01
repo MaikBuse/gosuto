@@ -119,6 +119,7 @@ pub enum AppEvent {
     RecoveryState(String),
     RecoveryKeyReady(String),
     RecoveryError(String),
+    RecoveryRecovered,
 }
 
 pub type EventSender = mpsc::UnboundedSender<AppEvent>;

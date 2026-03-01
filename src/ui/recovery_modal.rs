@@ -30,7 +30,7 @@ pub fn render(state: &RecoveryModalState, frame: &mut Frame) {
             let inner_w = (popup_w.saturating_sub(6)) as usize;
             let lines = wrap_text(key, inner_w);
             let extra = lines.len().saturating_sub(1) as u16;
-            (base_h + extra).min(area.height.saturating_sub(4))
+            (base_h + extra + 1).min(area.height.saturating_sub(4))
         }
         _ => base_h,
     };
@@ -170,11 +170,12 @@ pub fn render(state: &RecoveryModalState, frame: &mut Frame) {
 
             let warn = "Save this key somewhere safe!";
             let wx = left + (inner_w.saturating_sub(warn.len())) as u16 / 2;
+            let warn_y = y + 2 + key_lines.len() as u16 + 1;
             write_str(
                 buf,
                 &bounds,
                 wx,
-                y + 2 + key_lines.len() as u16 + 1,
+                warn_y,
                 warn,
                 Style::default()
                     .fg(theme::RED)
@@ -182,7 +183,23 @@ pub fn render(state: &RecoveryModalState, frame: &mut Frame) {
                     .add_modifier(Modifier::BOLD),
             );
 
-            let hint = "Enter/Esc close";
+            if state.copied {
+                let copied = "Copied!";
+                let cx = left + (inner_w.saturating_sub(copied.len())) as u16 / 2;
+                write_str(
+                    buf,
+                    &bounds,
+                    cx,
+                    warn_y + 1,
+                    copied,
+                    Style::default()
+                        .fg(theme::GREEN)
+                        .bg(theme::BG)
+                        .add_modifier(Modifier::BOLD),
+                );
+            }
+
+            let hint = "c copy \u{00b7} Enter/Esc close";
             let hx = left + (inner_w.saturating_sub(hint.len())) as u16 / 2;
             write_str(
                 buf,
@@ -217,7 +234,7 @@ pub fn render(state: &RecoveryModalState, frame: &mut Frame) {
                 Style::default().fg(theme::TEXT).bg(theme::BG),
             );
 
-            let msg3 = "Press r to reset the key";
+            let msg3 = "Enter key to restore, or reset";
             let x3 = left + (inner_w.saturating_sub(msg3.len())) as u16 / 2;
             write_str(
                 buf,
@@ -231,7 +248,7 @@ pub fn render(state: &RecoveryModalState, frame: &mut Frame) {
                     .add_modifier(Modifier::BOLD),
             );
 
-            let hint = "r reset \u{00b7} Esc close";
+            let hint = "e enter key \u{00b7} r reset \u{00b7} Esc close";
             let hx = left + (inner_w.saturating_sub(hint.len())) as u16 / 2;
             write_str(
                 buf,
@@ -346,6 +363,84 @@ pub fn render(state: &RecoveryModalState, frame: &mut Frame) {
                 popup.y + popup.height - 2,
                 hint,
                 Style::default().fg(theme::DIM).bg(theme::BG),
+            );
+        }
+        RecoveryStage::EnterKey => {
+            let label = "Enter recovery key";
+            let lx = left + (inner_w.saturating_sub(label.len())) as u16 / 2;
+            let y = popup.y + popup.height / 2 - 2;
+            write_str(
+                buf,
+                &bounds,
+                lx,
+                y,
+                label,
+                Style::default()
+                    .fg(theme::CYAN)
+                    .bg(theme::BG)
+                    .add_modifier(Modifier::BOLD),
+            );
+
+            let prompt = "Paste or type your key:";
+            let xp = left + (inner_w.saturating_sub(prompt.len())) as u16 / 2;
+            write_str(
+                buf,
+                &bounds,
+                xp,
+                y + 2,
+                prompt,
+                Style::default().fg(theme::DIM).bg(theme::BG),
+            );
+
+            // Render key_buffer with blinking cursor, truncated to fit
+            let max_display = inner_w.saturating_sub(1);
+            let display: String = if state.key_buffer.len() > max_display {
+                state.key_buffer[state.key_buffer.len() - max_display..].to_string()
+            } else {
+                state.key_buffer.clone()
+            };
+            let total_w = display.len() + 1;
+            let bx = left + (inner_w.saturating_sub(total_w)) as u16 / 2;
+            write_str(
+                buf,
+                &bounds,
+                bx,
+                y + 3,
+                &display,
+                Style::default().fg(theme::GREEN).bg(theme::BG),
+            );
+            let cursor_x = bx + display.chars().count() as u16;
+            let cursor_s = Style::default()
+                .fg(theme::GREEN)
+                .bg(theme::BG)
+                .add_modifier(Modifier::SLOW_BLINK);
+            set_cell(buf, &bounds, cursor_x, y + 3, '_', cursor_s);
+
+            let hint = "Enter confirm \u{00b7} Esc cancel";
+            let hx = left + (inner_w.saturating_sub(hint.len())) as u16 / 2;
+            write_str(
+                buf,
+                &bounds,
+                hx,
+                popup.y + popup.height - 2,
+                hint,
+                Style::default().fg(theme::DIM).bg(theme::BG),
+            );
+        }
+        RecoveryStage::Recovering => {
+            let msg = "Recovering...";
+            let x = left + (inner_w.saturating_sub(msg.len())) as u16 / 2;
+            let y = popup.y + popup.height / 2;
+            write_str(
+                buf,
+                &bounds,
+                x,
+                y,
+                msg,
+                Style::default()
+                    .fg(theme::CYAN)
+                    .bg(theme::BG)
+                    .add_modifier(Modifier::SLOW_BLINK),
             );
         }
         RecoveryStage::Resetting => {

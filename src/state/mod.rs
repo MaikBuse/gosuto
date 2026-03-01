@@ -27,6 +27,8 @@ pub enum VerificationStage {
 pub struct RecoveryModalState {
     pub stage: RecoveryStage,
     pub confirm_buffer: String,
+    pub key_buffer: String,
+    pub copied: bool,
 }
 
 #[derive(Debug)]
@@ -34,6 +36,8 @@ pub enum RecoveryStage {
     Checking,
     Setup,
     Incomplete,
+    EnterKey,
+    Recovering,
     Creating,
     ShowKey(String),
     Enabled,

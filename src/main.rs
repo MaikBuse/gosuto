@@ -464,6 +464,8 @@ async fn main() -> Result<()> {
                             app.recovery_modal = Some(crate::state::RecoveryModalState {
                                 stage: crate::state::RecoveryStage::Checking,
                                 confirm_buffer: String::new(),
+                                key_buffer: String::new(),
+                                copied: false,
                             });
                             let client = matrix_client.clone();
                             let tx = event_tx.clone();
@@ -521,6 +523,31 @@ async fn main() -> Result<()> {
                                     {
                                         Ok(key) => {
                                             let _ = tx.send(AppEvent::RecoveryKeyReady(key));
+                                        }
+                                        Err(e) => {
+                                            let _ =
+                                                tx.send(AppEvent::RecoveryError(e.to_string()));
+                                        }
+                                    }
+                                }
+                            });
+                        }
+
+                        // Handle recovery key import
+                        if let Some(recovery_key) = app.pending_recovery_recover.take() {
+                            let client = matrix_client.clone();
+                            let tx = event_tx.clone();
+                            tokio::spawn(async move {
+                                let client = client.lock().await.clone();
+                                if let Some(client) = client {
+                                    match client
+                                        .encryption()
+                                        .recovery()
+                                        .recover(&recovery_key)
+                                        .await
+                                    {
+                                        Ok(()) => {
+                                            let _ = tx.send(AppEvent::RecoveryRecovered);
                                         }
                                         Err(e) => {
                                             let _ =
