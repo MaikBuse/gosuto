@@ -116,10 +116,13 @@ fn can_device_support_input_rate(device: &cpal::Device, rate: u32) -> bool {
 }
 
 /// Resolve the output stream config, preferring 48kHz if the device supports it.
-/// Returns (StreamConfig, device_channels, actual_sample_rate).
-fn resolve_output_stream_config(device: &cpal::Device) -> Result<(cpal::StreamConfig, u16, u32)> {
+/// Returns (StreamConfig, device_channels, actual_sample_rate, sample_format).
+fn resolve_output_stream_config(
+    device: &cpal::Device,
+) -> Result<(cpal::StreamConfig, u16, u32, cpal::SampleFormat)> {
     let default_config = device.default_output_config()?;
     let device_channels = default_config.channels();
+    let sample_format = default_config.sample_format();
 
     let sample_rate = if can_device_support_output_rate(device, SAMPLE_RATE) {
         SAMPLE_RATE
@@ -134,18 +137,21 @@ fn resolve_output_stream_config(device: &cpal::Device) -> Result<(cpal::StreamCo
     };
 
     info!(
-        "Output device config: channels={}, sample_rate={}",
-        device_channels, sample_rate
+        "Output device config: channels={}, sample_rate={}, format={:?}",
+        device_channels, sample_rate, sample_format
     );
 
-    Ok((config, device_channels, sample_rate))
+    Ok((config, device_channels, sample_rate, sample_format))
 }
 
 /// Resolve the input stream config, preferring 48kHz if the device supports it.
-/// Returns (StreamConfig, device_channels, actual_sample_rate).
-fn resolve_input_stream_config(device: &cpal::Device) -> Result<(cpal::StreamConfig, u16, u32)> {
+/// Returns (StreamConfig, device_channels, actual_sample_rate, sample_format).
+fn resolve_input_stream_config(
+    device: &cpal::Device,
+) -> Result<(cpal::StreamConfig, u16, u32, cpal::SampleFormat)> {
     let default_config = device.default_input_config()?;
     let device_channels = default_config.channels();
+    let sample_format = default_config.sample_format();
 
     let sample_rate = if can_device_support_input_rate(device, SAMPLE_RATE) {
         SAMPLE_RATE
@@ -160,11 +166,11 @@ fn resolve_input_stream_config(device: &cpal::Device) -> Result<(cpal::StreamCon
     };
 
     info!(
-        "Input device config: channels={}, sample_rate={}",
-        device_channels, sample_rate
+        "Input device config: channels={}, sample_rate={}, format={:?}",
+        device_channels, sample_rate, sample_format
     );
 
-    Ok((config, device_channels, sample_rate))
+    Ok((config, device_channels, sample_rate, sample_format))
 }
 
 /// Create a sinc resampler for high-quality sample rate conversion.
@@ -328,43 +334,58 @@ impl AudioPipeline {
                 .ok_or_else(|| anyhow::anyhow!("No microphone found"))?
         };
 
-        let (config, device_channels, _device_rate) = resolve_input_stream_config(&device)?;
+        let (config, device_channels, _device_rate, sample_format) =
+            resolve_input_stream_config(&device)?;
 
         let running_flag = running.clone();
         let vol = volume;
 
-        let stream = device.build_input_stream(
-            &config,
-            move |data: &[f32], _: &cpal::InputCallbackInfo| {
-                if !running_flag.load(Ordering::Relaxed) {
-                    return;
-                }
+        macro_rules! build_mic_stream {
+            ($T:ty, $convert:expr) => {
+                device.build_input_stream(
+                    &config,
+                    {
+                        let running = running_flag.clone();
+                        let level_tx = level_tx.clone();
+                        move |data: &[$T], _: &cpal::InputCallbackInfo| {
+                            if !running.load(Ordering::Relaxed) {
+                                return;
+                            }
+                            let f32_data: Vec<f32> = data.iter().map($convert).collect();
+                            let mono_data: Vec<f32>;
+                            let samples: &[f32] = if device_channels > 1 {
+                                mono_data = downmix_to_mono(&f32_data, device_channels);
+                                &mono_data
+                            } else {
+                                &f32_data
+                            };
+                            let sum_sq: f32 = samples
+                                .iter()
+                                .map(|&s| {
+                                    let v = s * vol;
+                                    v * v
+                                })
+                                .sum();
+                            let rms = (sum_sq / samples.len().max(1) as f32).sqrt();
+                            let _ = level_tx.send(AppEvent::MicLevel(rms.clamp(0.0, 1.0)));
+                        }
+                    },
+                    |err: cpal::StreamError| error!("Mic test stream error: {err}"),
+                    None,
+                )?
+            };
+        }
 
-                // Downmix to mono if device is multi-channel
-                let mono_data: Vec<f32>;
-                let samples: &[f32] = if device_channels > 1 {
-                    mono_data = downmix_to_mono(data, device_channels);
-                    &mono_data
-                } else {
-                    data
-                };
-
-                // Compute RMS
-                let sum_sq: f32 = samples
-                    .iter()
-                    .map(|&s| {
-                        let v = s * vol;
-                        v * v
-                    })
-                    .sum();
-                let rms = (sum_sq / samples.len().max(1) as f32).sqrt();
-                let _ = level_tx.send(AppEvent::MicLevel(rms.clamp(0.0, 1.0)));
-            },
-            move |err| {
-                error!("Mic test stream error: {}", err);
-            },
-            None,
-        )?;
+        let stream = match sample_format {
+            cpal::SampleFormat::F32 => build_mic_stream!(f32, |&s: &f32| s),
+            cpal::SampleFormat::I16 => {
+                build_mic_stream!(i16, |&s: &i16| s as f32 / i16::MAX as f32)
+            }
+            cpal::SampleFormat::I32 => {
+                build_mic_stream!(i32, |&s: &i32| s as f32 / i32::MAX as f32)
+            }
+            format => anyhow::bail!("Unsupported input sample format: {format:?}"),
+        };
 
         stream.play()?;
         info!("Mic test started");
@@ -392,7 +413,8 @@ impl AudioPipeline {
 
         debug!("Using input device: {:?}", device.description());
 
-        let (config, device_channels, device_rate) = resolve_input_stream_config(&device)?;
+        let (config, device_channels, device_rate, sample_format) =
+            resolve_input_stream_config(&device)?;
 
         let running_flag = running.clone();
         let input_volume = audio_config.input_volume;
@@ -402,22 +424,40 @@ impl AudioPipeline {
         // Channel for raw audio from cpal callback → processing task
         let (raw_tx, mut raw_rx) = mpsc::unbounded_channel::<Vec<f32>>();
 
-        let stream = device.build_input_stream(
-            &config,
-            move |data: &[f32], _: &cpal::InputCallbackInfo| {
-                if !running_flag.load(Ordering::Relaxed) {
-                    return;
-                }
-                if !transmitting.load(Ordering::Relaxed) {
-                    return;
-                }
-                let _ = raw_tx.send(data.to_vec());
-            },
-            move |err| {
-                error!("Audio input stream error: {}", err);
-            },
-            None,
-        )?;
+        macro_rules! build_capture {
+            ($T:ty, $convert:expr) => {
+                device.build_input_stream(
+                    &config,
+                    {
+                        let running = running_flag.clone();
+                        let transmitting = transmitting.clone();
+                        let raw_tx = raw_tx.clone();
+                        move |data: &[$T], _: &cpal::InputCallbackInfo| {
+                            if !running.load(Ordering::Relaxed)
+                                || !transmitting.load(Ordering::Relaxed)
+                            {
+                                return;
+                            }
+                            let f32_data: Vec<f32> = data.iter().map($convert).collect();
+                            let _ = raw_tx.send(f32_data);
+                        }
+                    },
+                    |err: cpal::StreamError| error!("Audio input stream error: {err}"),
+                    None,
+                )?
+            };
+        }
+
+        let stream = match sample_format {
+            cpal::SampleFormat::F32 => build_capture!(f32, |&s: &f32| s),
+            cpal::SampleFormat::I16 => {
+                build_capture!(i16, |&s: &i16| s as f32 / i16::MAX as f32)
+            }
+            cpal::SampleFormat::I32 => {
+                build_capture!(i32, |&s: &i32| s as f32 / i32::MAX as f32)
+            }
+            format => anyhow::bail!("Unsupported input sample format: {format:?}"),
+        };
 
         stream.play()?;
         info!("Audio capture started");
@@ -504,7 +544,8 @@ impl AudioPipeline {
 
         debug!("Using output device: {:?}", device.description());
 
-        let (config, device_channels, device_rate) = resolve_output_stream_config(&device)?;
+        let (config, device_channels, device_rate, sample_format) =
+            resolve_output_stream_config(&device)?;
 
         let output_volume = audio_config.output_volume;
 
@@ -516,36 +557,51 @@ impl AudioPipeline {
         let playback_buf_clone = playback_buffer.clone();
         let running_flag = running.clone();
 
-        let stream = device.build_output_stream(
-            &config,
-            move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-                if !running_flag.load(Ordering::Relaxed) {
-                    data.fill(0.0);
-                    return;
-                }
+        macro_rules! build_output {
+            ($T:ty, $zero:expr, $from_f32:expr) => {
+                device.build_output_stream(
+                    &config,
+                    {
+                        let running = running_flag.clone();
+                        let audio_rx = audio_rx.clone();
+                        let playback_buf = playback_buf_clone.clone();
+                        move |data: &mut [$T], _: &cpal::OutputCallbackInfo| {
+                            if !running.load(Ordering::Relaxed) {
+                                data.fill($zero);
+                                return;
+                            }
+                            let mut rx = audio_rx.lock().unwrap();
+                            while let Ok(samples) = rx.try_recv() {
+                                playback_buf.lock().unwrap().extend(samples);
+                            }
+                            drop(rx);
+                            let mut buf = playback_buf.lock().unwrap();
+                            let available = buf.len().min(data.len());
+                            if available > 0 {
+                                for (i, sample) in buf.drain(..available).enumerate() {
+                                    data[i] =
+                                        $from_f32((sample * output_volume).clamp(-1.0, 1.0));
+                                }
+                            }
+                            data[available..].fill($zero);
+                        }
+                    },
+                    |err: cpal::StreamError| error!("Audio output stream error: {err}"),
+                    None,
+                )?
+            };
+        }
 
-                // Drain any new decoded samples into the buffer
-                let mut rx = audio_rx.lock().unwrap();
-                while let Ok(samples) = rx.try_recv() {
-                    playback_buf_clone.lock().unwrap().extend(samples);
-                }
-                drop(rx);
-
-                let mut buf = playback_buf_clone.lock().unwrap();
-                let available = buf.len().min(data.len());
-                if available > 0 {
-                    for (i, sample) in buf.drain(..available).enumerate() {
-                        data[i] = (sample * output_volume).clamp(-1.0, 1.0);
-                    }
-                }
-                // Fill remaining with silence
-                data[available..].fill(0.0);
-            },
-            move |err| {
-                error!("Audio output stream error: {}", err);
-            },
-            None,
-        )?;
+        let stream = match sample_format {
+            cpal::SampleFormat::F32 => build_output!(f32, 0.0f32, |s: f32| s),
+            cpal::SampleFormat::I16 => {
+                build_output!(i16, 0i16, |s: f32| (s * i16::MAX as f32) as i16)
+            }
+            cpal::SampleFormat::I32 => {
+                build_output!(i32, 0i32, |s: f32| (s * i32::MAX as f32) as i32)
+            }
+            format => anyhow::bail!("Unsupported output sample format: {format:?}"),
+        };
 
         stream.play()?;
         info!("Audio playback started");
