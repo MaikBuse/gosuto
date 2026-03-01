@@ -769,15 +769,23 @@ impl App {
                 if let Some(room_id) = self.messages.current_room_id.clone() {
                     if let AuthState::LoggedIn { ref user_id, .. } = self.auth {
                         // Only trust the members list if it's loaded for the current room
-                        let members_loaded = self.members_list.current_room_id.as_deref() == Some(&room_id);
-                        let others = members_loaded && self.members_list.members.iter()
-                            .any(|m| m.user_id != *user_id);
+                        let members_loaded =
+                            self.members_list.current_room_id.as_deref() == Some(&room_id);
+                        let others = members_loaded
+                            && self
+                                .members_list
+                                .members
+                                .iter()
+                                .any(|m| m.user_id != *user_id);
                         if members_loaded && !others {
                             self.last_error = Some("Cannot call yourself".to_string());
                             return;
                         }
                     }
-                    let room_name = self.room_list.rooms.iter()
+                    let room_name = self
+                        .room_list
+                        .rooms
+                        .iter()
                         .find(|r| r.id == room_id)
                         .map(|r| r.name.clone());
                     self.call_info = Some(CallInfo::new_outgoing(room_id.clone(), room_name));
@@ -939,10 +947,7 @@ impl App {
             return;
         }
 
-        let stage = self
-            .verification_modal
-            .as_ref()
-            .map(|m| &m.stage);
+        let stage = self.verification_modal.as_ref().map(|m| &m.stage);
 
         match stage {
             Some(crate::state::VerificationStage::EmojiConfirmation) => {
@@ -969,15 +974,13 @@ impl App {
                 }
             }
             Some(crate::state::VerificationStage::Completed)
-            | Some(crate::state::VerificationStage::Failed(_)) => {
-                match key.code {
-                    KeyCode::Enter | KeyCode::Esc => {
-                        self.verification_modal = None;
-                        self.verify_confirm_tx = None;
-                    }
-                    _ => {}
+            | Some(crate::state::VerificationStage::Failed(_)) => match key.code {
+                KeyCode::Enter | KeyCode::Esc => {
+                    self.verification_modal = None;
+                    self.verify_confirm_tx = None;
                 }
-            }
+                _ => {}
+            },
             Some(crate::state::VerificationStage::WaitingForOtherDevice) => {
                 if key.code == KeyCode::Esc {
                     self.verify_confirm_tx = None;
@@ -1028,12 +1031,11 @@ impl App {
                         self.recovery_modal.as_ref().map(|m| &m.stage)
                     {
                         let key_clone = key_str.clone();
-                        if let Some(clipboard) = self.clipboard.as_mut() {
-                            if clipboard.set_text(key_clone).is_ok() {
-                                if let Some(ref mut modal) = self.recovery_modal {
-                                    modal.copied = true;
-                                }
-                            }
+                        if let Some(clipboard) = self.clipboard.as_mut()
+                            && clipboard.set_text(key_clone).is_ok()
+                            && let Some(ref mut modal) = self.recovery_modal
+                        {
+                            modal.copied = true;
                         }
                     }
                 }
@@ -1067,12 +1069,11 @@ impl App {
                     }
                 }
                 KeyCode::Char('v') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                    if let Some(ref mut modal) = self.recovery_modal {
-                        if let Some(clipboard) = self.clipboard.as_mut() {
-                            if let Ok(text) = clipboard.get_text() {
-                                modal.key_buffer.push_str(text.trim());
-                            }
-                        }
+                    if let Some(ref mut modal) = self.recovery_modal
+                        && let Some(clipboard) = self.clipboard.as_mut()
+                        && let Ok(text) = clipboard.get_text()
+                    {
+                        modal.key_buffer.push_str(text.trim());
                     }
                 }
                 KeyCode::Char(c)
