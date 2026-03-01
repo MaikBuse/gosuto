@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Enforce Conventional Commits format on commit messages.
+# https://www.conventionalcommits.org/
+
+commit_msg=$(head -1 "$1")
+
+pattern='^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\(.+\))?(!)?: .+'
+
+if ! echo "$commit_msg" | grep -qE "$pattern"; then
+  echo "ERROR: Commit message does not follow Conventional Commits format."
+  echo ""
+  echo "  Expected: <type>[optional scope]: <description>"
+  echo "  Got:      $commit_msg"
+  echo ""
+  echo "  Valid types: feat fix docs style refactor perf test build ci chore revert"
+  echo ""
+  exit 1
+fi
