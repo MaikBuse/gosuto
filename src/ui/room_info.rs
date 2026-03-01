@@ -7,7 +7,7 @@ use crate::app::{HISTORY_VISIBILITY_OPTIONS, RoomInfoState};
 use crate::ui::theme;
 
 const POPUP_WIDTH: u16 = 54;
-const POPUP_HEIGHT: u16 = 17;
+const POPUP_HEIGHT: u16 = 18;
 
 pub fn render(state: &RoomInfoState, frame: &mut Frame) {
     let area = frame.area();
@@ -74,18 +74,7 @@ pub fn render(state: &RoomInfoState, frame: &mut Frame) {
     write_str(buf, &bounds, value_x, row, &topic_display, value_s);
     row += 1;
 
-    // Encrypted (read-only)
-    write_str(buf, &bounds, label_x, row, "ENCRYPTED", label_s);
-    let enc_val = if state.encrypted { "yes" } else { "no" };
-    let enc_s = Style::default()
-        .fg(if state.encrypted {
-            theme::GREEN
-        } else {
-            theme::DIM
-        })
-        .bg(theme::BG);
-    write_str(buf, &bounds, value_x, row, enc_val, enc_s);
-    row += 2;
+    row += 1;
 
     // ── Field 0: NAME (editable) ──
     let name_selected = state.selected_field == 0;
@@ -228,6 +217,96 @@ pub fn render(state: &RoomInfoState, frame: &mut Frame) {
         Style::default().bg(theme::BG),
     );
     set_cell(buf, &bounds, end_x + 1, row, '\u{25B8}', arrow_s);
+    row += 1;
+
+    // ── Field 2: ENCRYPTED (editable when unencrypted, read-only when encrypted) ──
+    if state.encrypted {
+        // Read-only: show "yes" in green, no marker, not selectable
+        write_str(buf, &bounds, label_x, row, "ENCRYPTED", label_s);
+        write_str(
+            buf,
+            &bounds,
+            value_x,
+            row,
+            "yes",
+            Style::default().fg(theme::GREEN).bg(theme::BG),
+        );
+    } else {
+        let enc_selected = state.selected_field == 2;
+        let enc_marker_color = if enc_selected {
+            theme::CYAN
+        } else {
+            theme::DIM
+        };
+        let enc_label_color = if enc_selected {
+            theme::CYAN
+        } else {
+            theme::TEXT
+        };
+        let enc_marker = if enc_selected {
+            '\u{25C8}'
+        } else {
+            '\u{25C7}'
+        };
+
+        let enc_marker_s = Style::default().fg(enc_marker_color).bg(theme::BG);
+        let enc_label_s = Style::default()
+            .fg(enc_label_color)
+            .bg(theme::BG)
+            .add_modifier(if enc_selected {
+                Modifier::BOLD
+            } else {
+                Modifier::empty()
+            });
+
+        set_cell(buf, &bounds, left, row, enc_marker, enc_marker_s);
+        set_cell(
+            buf,
+            &bounds,
+            left + 1,
+            row,
+            ' ',
+            Style::default().bg(theme::BG),
+        );
+        write_str(buf, &bounds, label_x, row, "ENCRYPTED", enc_label_s);
+
+        let enc_arrow_color = if enc_selected {
+            theme::CYAN
+        } else {
+            theme::DIM
+        };
+        let enc_val_color = if enc_selected {
+            theme::TEXT
+        } else {
+            theme::DIM
+        };
+        let enc_arrow_s = Style::default().fg(enc_arrow_color).bg(theme::BG);
+        let enc_val_s = Style::default().fg(enc_val_color).bg(theme::BG);
+
+        set_cell(buf, &bounds, value_x, row, '\u{25C2}', enc_arrow_s);
+        set_cell(
+            buf,
+            &bounds,
+            value_x + 1,
+            row,
+            ' ',
+            Style::default().bg(theme::BG),
+        );
+
+        let enc_display = &state.encryption_selection;
+        write_str(buf, &bounds, value_x + 2, row, enc_display, enc_val_s);
+
+        let enc_end_x = value_x + 2 + enc_display.chars().count() as u16;
+        set_cell(
+            buf,
+            &bounds,
+            enc_end_x,
+            row,
+            ' ',
+            Style::default().bg(theme::BG),
+        );
+        set_cell(buf, &bounds, enc_end_x + 1, row, '\u{25B8}', enc_arrow_s);
+    }
 
     // Show saving indicator
     if state.saving {
@@ -249,7 +328,11 @@ pub fn render(state: &RoomInfoState, frame: &mut Frame) {
 
     // Show valid options hint
     row = popup.y + popup.height.saturating_sub(4);
-    let opts: String = HISTORY_VISIBILITY_OPTIONS.join(" | ");
+    let opts: String = if state.selected_field == 2 && !state.encrypted {
+        "no | yes".to_string()
+    } else {
+        HISTORY_VISIBILITY_OPTIONS.join(" | ")
+    };
     let opts_x = left + (inner_w.saturating_sub(opts.len())) as u16 / 2;
     write_str(
         buf,

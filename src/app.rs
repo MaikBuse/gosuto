@@ -25,6 +25,7 @@ pub struct RoomInfoState {
     pub topic: Option<String>,
     pub history_visibility: String,
     pub encrypted: bool,
+    pub encryption_selection: String,
     pub selected_field: usize,
     pub loading: bool,
     pub saving: bool,
@@ -41,6 +42,7 @@ impl RoomInfoState {
             topic: None,
             history_visibility: "shared".to_string(),
             encrypted: false,
+            encryption_selection: "no".to_string(),
             selected_field: 0,
             loading: false,
             saving: false,
@@ -130,6 +132,7 @@ pub struct App {
     pub pending_room_info: bool,
     pub pending_set_visibility: Option<(String, String)>, // (room_id, visibility)
     pub pending_set_room_name: Option<(String, String)>,  // (room_id, new_name)
+    pub pending_enable_encryption: Option<String>,        // room_id
     // VoIP
     pub call_info: Option<CallInfo>,
     pub call_cmd_tx: Option<CallCommandSender>,
@@ -189,6 +192,7 @@ impl App {
             pending_room_info: false,
             pending_set_visibility: None,
             pending_set_room_name: None,
+            pending_enable_encryption: None,
             call_info: None,
             call_cmd_tx: None,
             incoming_call_room: None,
@@ -462,6 +466,8 @@ impl App {
                     self.room_info.name = name;
                     self.room_info.topic = topic;
                     self.room_info.history_visibility = history_visibility;
+                    self.room_info.encryption_selection =
+                        if encrypted { "yes" } else { "no" }.to_string();
                     self.room_info.encrypted = encrypted;
                     self.room_info.loading = false;
                 }
@@ -472,6 +478,12 @@ impl App {
                     if !self.room_info.name_buffer.is_empty() {
                         self.room_info.name = Some(self.room_info.name_buffer.clone());
                         self.room_info.name_buffer.clear();
+                    }
+                    // If encryption was just enabled, reflect it
+                    if self.room_info.encryption_selection == "yes"
+                        && !self.room_info.encrypted
+                    {
+                        self.room_info.encrypted = true;
                     }
                     self.room_info.saving = false;
                 }
@@ -867,6 +879,7 @@ impl App {
                         topic: None,
                         history_visibility: String::new(),
                         encrypted: false,
+                        encryption_selection: "no".to_string(),
                         selected_field: 0,
                         loading: true,
                         saving: false,
@@ -1209,7 +1222,8 @@ impl App {
                 self.room_info.open = false;
             }
             KeyCode::Char('j') | KeyCode::Down => {
-                if self.room_info.selected_field < 1 {
+                let max_field = if self.room_info.encrypted { 1 } else { 2 };
+                if self.room_info.selected_field < max_field {
                     self.room_info.selected_field += 1;
                 }
             }
@@ -1239,6 +1253,14 @@ impl App {
                         self.room_info.saving = true;
                         self.pending_set_visibility = Some((room_id, vis));
                     }
+                    2 => {
+                        // Enable encryption (only reachable when not already encrypted)
+                        if self.room_info.encryption_selection == "yes" {
+                            let room_id = self.room_info.room_id.clone();
+                            self.room_info.saving = true;
+                            self.pending_enable_encryption = Some(room_id);
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -1261,6 +1283,14 @@ impl App {
                 (current_idx + len - 1) % len
             };
             self.room_info.history_visibility = opts[new_idx].to_string();
+        } else if self.room_info.selected_field == 2 {
+            // Toggle encryption selection between "no" and "yes"
+            let _ = dir; // direction doesn't matter for a binary toggle
+            self.room_info.encryption_selection = if self.room_info.encryption_selection == "no" {
+                "yes".to_string()
+            } else {
+                "no".to_string()
+            };
         }
     }
 

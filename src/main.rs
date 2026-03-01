@@ -440,6 +440,18 @@ async fn main() -> Result<()> {
                             });
                         }
 
+                        // Handle encryption enable
+                        if let Some(room_id) = app.pending_enable_encryption.take() {
+                            let client_holder = matrix_client.clone();
+                            let tx = event_tx.clone();
+                            tokio::spawn(async move {
+                                let client = { client_holder.lock().await.clone() };
+                                if let Some(client) = client {
+                                    matrix::rooms::enable_encryption(&client, &room_id, &tx).await;
+                                }
+                            });
+                        }
+
                         // Handle outgoing verification (:verify command)
                         if let Some(target) = app.take_pending_verify() {
                             let client_holder = matrix_client.clone();
