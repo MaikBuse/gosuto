@@ -429,10 +429,10 @@ fn render_border(buf: &mut Buffer, bounds: &Rect, area: Rect, color: Color) {
 
 fn history_visibility_description(value: &str) -> &'static str {
     match value {
-        "shared" => "All members can see the full history",
-        "invited" => "Members see history from when invited",
-        "joined" => "Members see history from when they joined",
-        "world_readable" => "Anyone can read the full history",
+        "shared" => "All members see full history",
+        "invited" => "See history from when invited",
+        "joined" => "See history from when joined",
+        "world_readable" => "Anyone can read full history",
         _ => "",
     }
 }
