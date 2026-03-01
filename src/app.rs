@@ -533,7 +533,6 @@ impl App {
                             if let Some(room) = self.room_list.selected_room() {
                                 let room_id = room.id.clone();
                                 self.messages.set_room(Some(room_id));
-                                self.vim.focus = FocusPanel::Messages;
                                 self.chat_title_reveal.trigger();
                             }
                         }
@@ -586,6 +585,7 @@ impl App {
             }
             InputResult::SendMessage(msg) => {
                 self.send_message(msg);
+                self.vim.enter_normal();
             }
             InputResult::Command(action) => self.handle_command(action),
             InputResult::Search(query) => {
