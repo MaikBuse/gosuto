@@ -31,6 +31,9 @@ pub struct RoomInfoState {
     pub saving: bool,
     pub editing_name: bool,
     pub name_buffer: String,
+    pub editing_topic: bool,
+    pub topic_buffer: String,
+    pub topic_save_pending: bool,
 }
 
 impl RoomInfoState {
@@ -48,6 +51,9 @@ impl RoomInfoState {
             saving: false,
             editing_name: false,
             name_buffer: String::new(),
+            editing_topic: false,
+            topic_buffer: String::new(),
+            topic_save_pending: false,
         }
     }
 }
@@ -164,6 +170,7 @@ pub struct App {
     pub pending_room_info: bool,
     pub pending_set_visibility: Option<(String, String)>, // (room_id, visibility)
     pub pending_set_room_name: Option<(String, String)>,  // (room_id, new_name)
+    pub pending_set_room_topic: Option<(String, String)>, // (room_id, new_topic)
     pub pending_enable_encryption: Option<String>,        // room_id
     // VoIP
     pub call_info: Option<CallInfo>,
@@ -229,6 +236,7 @@ impl App {
             pending_room_info: false,
             pending_set_visibility: None,
             pending_set_room_name: None,
+            pending_set_room_topic: None,
             pending_enable_encryption: None,
             call_info: None,
             call_cmd_tx: None,
@@ -521,6 +529,16 @@ impl App {
                     if !self.room_info.name_buffer.is_empty() {
                         self.room_info.name = Some(self.room_info.name_buffer.clone());
                         self.room_info.name_buffer.clear();
+                    }
+                    // If we just saved a topic, update it in state
+                    if self.room_info.topic_save_pending {
+                        if self.room_info.topic_buffer.is_empty() {
+                            self.room_info.topic = None;
+                        } else {
+                            self.room_info.topic = Some(self.room_info.topic_buffer.clone());
+                        }
+                        self.room_info.topic_buffer.clear();
+                        self.room_info.topic_save_pending = false;
                     }
                     // If encryption was just enabled, reflect it
                     if self.room_info.encryption_selection == "yes" && !self.room_info.encrypted {
@@ -976,6 +994,9 @@ impl App {
                         saving: false,
                         editing_name: false,
                         name_buffer: String::new(),
+                        editing_topic: false,
+                        topic_buffer: String::new(),
+                        topic_save_pending: false,
                     };
                     self.pending_room_info = true;
                 } else {
@@ -1308,12 +1329,38 @@ impl App {
             return;
         }
 
+        // Inline topic editing mode
+        if self.room_info.editing_topic {
+            match key.code {
+                KeyCode::Esc => {
+                    self.room_info.editing_topic = false;
+                    self.room_info.topic_buffer.clear();
+                }
+                KeyCode::Enter => {
+                    let new_topic = self.room_info.topic_buffer.clone();
+                    let room_id = self.room_info.room_id.clone();
+                    self.room_info.saving = true;
+                    self.room_info.editing_topic = false;
+                    self.room_info.topic_save_pending = true;
+                    self.pending_set_room_topic = Some((room_id, new_topic));
+                }
+                KeyCode::Backspace => {
+                    self.room_info.topic_buffer.pop();
+                }
+                KeyCode::Char(c) => {
+                    self.room_info.topic_buffer.push(c);
+                }
+                _ => {}
+            }
+            return;
+        }
+
         match key.code {
             KeyCode::Esc => {
                 self.room_info.open = false;
             }
             KeyCode::Char('j') | KeyCode::Down => {
-                let max_field = if self.room_info.encrypted { 1 } else { 2 };
+                let max_field = if self.room_info.encrypted { 2 } else { 3 };
                 if self.room_info.selected_field < max_field {
                     self.room_info.selected_field += 1;
                 }
@@ -1338,13 +1385,19 @@ impl App {
                             self.room_info.name.clone().unwrap_or_default();
                     }
                     1 => {
+                        // Enter topic editing mode
+                        self.room_info.editing_topic = true;
+                        self.room_info.topic_buffer =
+                            self.room_info.topic.clone().unwrap_or_default();
+                    }
+                    2 => {
                         // Save current history visibility
                         let room_id = self.room_info.room_id.clone();
                         let vis = self.room_info.history_visibility.clone();
                         self.room_info.saving = true;
                         self.pending_set_visibility = Some((room_id, vis));
                     }
-                    2 => {
+                    3 => {
                         // Enable encryption (only reachable when not already encrypted)
                         if self.room_info.encryption_selection == "yes" {
                             let room_id = self.room_info.room_id.clone();
@@ -1360,7 +1413,7 @@ impl App {
     }
 
     fn cycle_room_info_field(&mut self, dir: i32) {
-        if self.room_info.selected_field == 1 {
+        if self.room_info.selected_field == 2 {
             // Cycle history visibility
             let opts = HISTORY_VISIBILITY_OPTIONS;
             let current_idx = opts
@@ -1374,7 +1427,7 @@ impl App {
                 (current_idx + len - 1) % len
             };
             self.room_info.history_visibility = opts[new_idx].to_string();
-        } else if self.room_info.selected_field == 2 {
+        } else if self.room_info.selected_field == 3 {
             // Toggle encryption selection between "no" and "yes"
             let _ = dir; // direction doesn't matter for a binary toggle
             self.room_info.encryption_selection = if self.room_info.encryption_selection == "no" {

@@ -7,7 +7,7 @@ use crate::app::{HISTORY_VISIBILITY_OPTIONS, RoomInfoState};
 use crate::ui::theme;
 
 const POPUP_WIDTH: u16 = 54;
-const POPUP_HEIGHT: u16 = 19;
+const POPUP_HEIGHT: u16 = 20;
 
 pub fn render(state: &RoomInfoState, frame: &mut Frame) {
     let area = frame.area();
@@ -65,13 +65,6 @@ pub fn render(state: &RoomInfoState, frame: &mut Frame) {
     write_str(buf, &bounds, label_x, row, "ROOM ID", label_s);
     let id_display = truncate_str(&state.room_id, (right - value_x) as usize);
     write_str(buf, &bounds, value_x, row, &id_display, value_s);
-    row += 1;
-
-    // Topic (read-only)
-    write_str(buf, &bounds, label_x, row, "TOPIC", label_s);
-    let topic = state.topic.as_deref().unwrap_or("\u{2014}");
-    let topic_display = truncate_str(topic, (right - value_x) as usize);
-    write_str(buf, &bounds, value_x, row, &topic_display, value_s);
     row += 1;
 
     row += 1;
@@ -141,8 +134,71 @@ pub fn render(state: &RoomInfoState, frame: &mut Frame) {
     }
     row += 1;
 
-    // ── Field 1: HISTORY (editable, cycle selector) ──
-    let hist_selected = state.selected_field == 1;
+    // ── Field 1: TOPIC (editable) ──
+    let topic_selected = state.selected_field == 1;
+    let topic_marker_color = if topic_selected {
+        theme::CYAN
+    } else {
+        theme::DIM
+    };
+    let topic_label_color = if topic_selected {
+        theme::CYAN
+    } else {
+        theme::TEXT
+    };
+    let topic_marker = if topic_selected {
+        '\u{25C8}'
+    } else {
+        '\u{25C7}'
+    };
+
+    let topic_marker_s = Style::default().fg(topic_marker_color).bg(theme::BG);
+    let topic_label_s = Style::default()
+        .fg(topic_label_color)
+        .bg(theme::BG)
+        .add_modifier(if topic_selected {
+            Modifier::BOLD
+        } else {
+            Modifier::empty()
+        });
+
+    set_cell(buf, &bounds, left, row, topic_marker, topic_marker_s);
+    set_cell(
+        buf,
+        &bounds,
+        left + 1,
+        row,
+        ' ',
+        Style::default().bg(theme::BG),
+    );
+    write_str(buf, &bounds, label_x, row, "TOPIC", topic_label_s);
+
+    let max_topic_w = (right - value_x) as usize;
+    if state.editing_topic {
+        let display = truncate_str(&state.topic_buffer, max_topic_w.saturating_sub(1));
+        let edit_s = Style::default().fg(theme::GREEN).bg(theme::BG);
+        write_str(buf, &bounds, value_x, row, &display, edit_s);
+        let cursor_x = value_x + display.chars().count() as u16;
+        let cursor_s = Style::default()
+            .fg(theme::GREEN)
+            .bg(theme::BG)
+            .add_modifier(Modifier::SLOW_BLINK);
+        set_cell(buf, &bounds, cursor_x, row, '_', cursor_s);
+    } else {
+        let topic = state.topic.as_deref().unwrap_or("\u{2014}");
+        let topic_display = truncate_str(topic, max_topic_w);
+        let topic_val_color = if topic_selected {
+            theme::TEXT
+        } else {
+            theme::DIM
+        };
+        let topic_val_s = Style::default().fg(topic_val_color).bg(theme::BG);
+        write_str(buf, &bounds, value_x, row, &topic_display, topic_val_s);
+    }
+    row += 1;
+
+    // ── Field 2: HISTORY (editable, cycle selector) ──
+    let hist_selected = state.selected_field == 2;
     let hist_marker_color = if hist_selected {
         theme::CYAN
     } else {
@@ -225,7 +281,7 @@ pub fn render(state: &RoomInfoState, frame: &mut Frame) {
     write_str(buf, &bounds, value_x, row, desc, desc_s);
     row += 1;
 
-    // ── Field 2: ENCRYPTED (editable when unencrypted, read-only when encrypted) ──
+    // ── Field 3: ENCRYPTED (editable when unencrypted, read-only when encrypted) ──
     if state.encrypted {
         // Read-only: show "yes" in green, no marker, not selectable
         write_str(buf, &bounds, label_x, row, "ENCRYPTED", label_s);
@@ -238,7 +294,7 @@ pub fn render(state: &RoomInfoState, frame: &mut Frame) {
             Style::default().fg(theme::GREEN).bg(theme::BG),
         );
     } else {
-        let enc_selected = state.selected_field == 2;
+        let enc_selected = state.selected_field == 3;
         let enc_marker_color = if enc_selected {
             theme::CYAN
         } else {
@@ -330,7 +386,7 @@ pub fn render(state: &RoomInfoState, frame: &mut Frame) {
 
     // Show valid options hint
     row = popup.y + popup.height.saturating_sub(4);
-    let opts: String = if state.selected_field == 2 && !state.encrypted {
+    let opts: String = if state.selected_field == 3 && !state.encrypted {
         "no | yes".to_string()
     } else {
         HISTORY_VISIBILITY_OPTIONS.join(" | ")

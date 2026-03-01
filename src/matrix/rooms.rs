@@ -207,6 +207,36 @@ pub async fn set_room_name(client: &Client, room_id: &str, name: &str, tx: &Even
     }
 }
 
+pub async fn set_room_topic(client: &Client, room_id: &str, topic: &str, tx: &EventSender) {
+    let room_id_parsed: Result<matrix_sdk::ruma::OwnedRoomId, _> = room_id.try_into();
+    let Ok(rid) = room_id_parsed else {
+        let _ = tx.send(AppEvent::RoomSettingError {
+            error: format!("Invalid room ID: {}", room_id),
+        });
+        return;
+    };
+
+    let Some(room) = client.get_room(&rid) else {
+        let _ = tx.send(AppEvent::RoomSettingError {
+            error: "Room not found".to_string(),
+        });
+        return;
+    };
+
+    match room.set_room_topic(topic).await {
+        Ok(_) => {
+            let _ = tx.send(AppEvent::RoomSettingUpdated {
+                room_id: room_id.to_string(),
+            });
+        }
+        Err(e) => {
+            let _ = tx.send(AppEvent::RoomSettingError {
+                error: format!("Failed to set room topic: {}", e),
+            });
+        }
+    }
+}
+
 pub async fn enable_encryption(client: &Client, room_id: &str, tx: &EventSender) {
     let room_id_parsed: Result<matrix_sdk::ruma::OwnedRoomId, _> = room_id.try_into();
     let Ok(rid) = room_id_parsed else {

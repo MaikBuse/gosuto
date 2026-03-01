@@ -453,6 +453,18 @@ async fn main() -> Result<()> {
                             });
                         }
 
+                        // Handle room topic update
+                        if let Some((room_id, topic)) = app.pending_set_room_topic.take() {
+                            let client_holder = matrix_client.clone();
+                            let tx = event_tx.clone();
+                            tokio::spawn(async move {
+                                let client = { client_holder.lock().await.clone() };
+                                if let Some(client) = client {
+                                    matrix::rooms::set_room_topic(&client, &room_id, &topic, &tx).await;
+                                }
+                            });
+                        }
+
                         // Handle room name update
                         if let Some((room_id, name)) = app.pending_set_room_name.take() {
                             let client_holder = matrix_client.clone();
