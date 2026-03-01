@@ -262,37 +262,23 @@ impl CallManager {
                 }
             };
 
-        // 5d. Read other participants' encryption keys and set them on the session
+        // 5d. Read other participants' encryption keys directly from server
         info!("Our LiveKit identity: {}", session.local_identity());
-        match matrixrtc::get_encryption_keys(&client, &room_id).await {
-            Ok(participant_keys) => {
-                let remote_identities = session.remote_participants();
-                for pk in participant_keys {
-                    let mut matched = false;
-                    for identity in &remote_identities {
-                        if identity.contains(&pk.user_id) && identity.contains(&pk.device_id) {
-                            info!(
-                                "Setting key for remote participant: identity={}, user_id={}, device_id={}",
-                                identity, pk.user_id, pk.device_id
-                            );
-                            session.set_participant_key(
-                                identity,
-                                pk.key_index,
-                                pk.key_bytes.clone(),
-                            );
-                            matched = true;
-                        }
-                    }
-                    if !matched {
-                        debug!(
-                            "No LiveKit participant matched for user_id={}, device_id={} (remote_identities={:?})",
-                            pk.user_id, pk.device_id, remote_identities
+        let remote_identities = session.remote_participants();
+        for identity in &remote_identities {
+            if let Some((user_id, device_id)) = matrixrtc::parse_livekit_identity(identity) {
+                match matrixrtc::fetch_participant_key(&client, &room_id, user_id, device_id).await
+                {
+                    Ok(Some(pk)) => {
+                        info!(
+                            "Setting key for remote participant: identity={}, user_id={}, device_id={}",
+                            identity, pk.user_id, pk.device_id
                         );
+                        session.set_participant_key(identity, pk.key_index, pk.key_bytes);
                     }
+                    Ok(None) => debug!("No encryption key yet for {}", identity),
+                    Err(e) => warn!("Failed to fetch key for {}: {:#}", identity, e),
                 }
-            }
-            Err(e) => {
-                warn!("Failed to read participant encryption keys: {:#}", e);
             }
         }
 
@@ -372,7 +358,37 @@ impl CallManager {
                 info!("Participant joined: {}", identity);
                 if let Some(ref mut call) = self.active_call {
                     if !call.participants.contains(&identity) {
-                        call.participants.push(identity);
+                        call.participants.push(identity.clone());
+                    }
+                    // Proactively fetch their encryption key
+                    let client = self.client.lock().await.clone();
+                    if let Some(ref client) = client
+                        && let Some((user_id, device_id)) =
+                            matrixrtc::parse_livekit_identity(&identity)
+                    {
+                        match matrixrtc::fetch_participant_key(
+                            client,
+                            &call.room_id,
+                            user_id,
+                            device_id,
+                        )
+                        .await
+                        {
+                            Ok(Some(pk)) => {
+                                call.livekit_session.set_participant_key(
+                                    &identity,
+                                    pk.key_index,
+                                    pk.key_bytes,
+                                );
+                            }
+                            Ok(None) => debug!(
+                                "No encryption key yet for {} (will retry on track subscribe)",
+                                identity
+                            ),
+                            Err(e) => {
+                                warn!("Failed to fetch key for {}: {:#}", identity, e)
+                            }
+                        }
                     }
                     let _ = self.event_tx.send(AppEvent::CallParticipantUpdate {
                         participants: call.participants.clone(),
@@ -394,33 +410,40 @@ impl CallManager {
             } => {
                 info!("Track subscribed from: {}", participant_identity);
                 if let Some(ref mut call) = self.active_call {
-                    // Refresh encryption keys for the new participant
+                    // Fetch encryption key for this specific participant directly from server
                     let client = self.client.lock().await.clone();
-                    if let Some(ref client) = client {
-                        match matrixrtc::get_encryption_keys(client, &call.room_id).await {
-                            Ok(keys) => {
-                                for pk in keys {
-                                    if participant_identity.contains(&pk.user_id)
-                                        && participant_identity.contains(&pk.device_id)
-                                    {
-                                        info!(
-                                            "Setting key for subscribed participant: identity={}, user_id={}, device_id={}",
-                                            participant_identity, pk.user_id, pk.device_id
-                                        );
-                                        call.livekit_session.set_participant_key(
-                                            &participant_identity,
-                                            pk.key_index,
-                                            pk.key_bytes,
-                                        );
-                                    }
-                                }
+                    if let Some(ref client) = client
+                        && let Some((user_id, device_id)) =
+                            matrixrtc::parse_livekit_identity(&participant_identity)
+                    {
+                        match matrixrtc::fetch_participant_key(
+                            client,
+                            &call.room_id,
+                            user_id,
+                            device_id,
+                        )
+                        .await
+                        {
+                            Ok(Some(pk)) => {
+                                call.livekit_session.set_participant_key(
+                                    &participant_identity,
+                                    pk.key_index,
+                                    pk.key_bytes,
+                                );
+                            }
+                            Ok(None) => {
+                                warn!("No encryption key for {}", participant_identity)
                             }
                             Err(e) => {
-                                warn!("Failed to refresh encryption keys: {:#}", e);
+                                warn!(
+                                    "Failed to fetch key for {}: {:#}",
+                                    participant_identity, e
+                                )
                             }
                         }
                     }
 
+                    // Start playback (audio will decrypt once key is set)
                     let audio_cfg = self.audio_config.lock().unwrap().clone();
                     if let Err(e) = call.audio.add_playback(track, &audio_cfg) {
                         error!(
