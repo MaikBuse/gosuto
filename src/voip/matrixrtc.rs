@@ -323,41 +323,63 @@ pub async fn ensure_call_member_permissions(client: &Client, room_id: &OwnedRoom
     Ok(())
 }
 
-/// Send an m.call.notify room message event to make other clients ring.
+/// Send an rtc.notification room message event to make other clients ring.
 /// Per MSC4075, this notifies room members that a call has started.
-pub async fn send_call_notify(client: &Client, room_id: &OwnedRoomId) -> Result<()> {
+pub async fn send_call_notify(
+    client: &Client,
+    room_id: &OwnedRoomId,
+    call_member_event_id: &str,
+) -> Result<()> {
     let room = client.get_room(room_id).context("Room not found")?;
 
+    let sender_ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+
     let content = serde_json::json!({
-        "call_id": "",
-        "application": "m.call",
-        "notify_type": "ring",
+        "notification_type": "ring",
+        "sender_ts": sender_ts,
+        "lifetime": 30000,
         "m.mentions": {
+            "user_ids": [],
             "room": true
-        }
+        },
+        "m.relates_to": {
+            "event_id": call_member_event_id,
+            "rel_type": "m.reference"
+        },
+        "m.call.intent": "audio"
     });
 
-    // Try stable event type first, fall back to unstable prefix
-    let result = room.send_raw("m.call.notify", content.clone()).await;
+    // Try unstable prefix first (Element X only recognizes this while MSC4075 is unstable),
+    // fall back to stable event type
+    let result = room
+        .send_raw("org.matrix.msc4075.rtc.notification", content.clone())
+        .await;
 
-    if let Err(stable_err) = result {
-        debug!("m.call.notify failed ({stable_err:#}), trying unstable prefix");
-        room.send_raw("org.matrix.msc4075.call.notify", content)
+    if let Err(unstable_err) = result {
+        debug!("org.matrix.msc4075.rtc.notification failed ({unstable_err:#}), trying stable type");
+        room.send_raw("m.rtc.notification", content)
             .await
             .context("Failed to send call notification event")?;
     }
 
-    info!("Sent call notification (m.call.notify) for room {}", room_id);
+    info!(
+        "Sent call notification (rtc.notification) for room {} (ref: {})",
+        room_id, call_member_event_id
+    );
     Ok(())
 }
 
 /// Publish an m.call.member state event to join the call in a room.
+/// Returns the event ID of the published state event (needed for call notifications).
 pub async fn publish_call_member(
     client: &Client,
     room_id: &OwnedRoomId,
     device_id: &OwnedDeviceId,
     focus: &LivekitFocus,
-) -> Result<()> {
+) -> Result<String> {
     let user_id = client.user_id().context("Not logged in")?;
     let room = client.get_room(room_id).context("Room not found")?;
 
@@ -382,18 +404,23 @@ pub async fn publish_call_member(
         .send_state_event_raw(&state_key, "m.call.member", content.clone())
         .await;
 
-    if let Err(stable_err) = result {
-        debug!("Stable m.call.member failed ({stable_err:#}), trying unstable type");
-        room.send_state_event_raw(&state_key, "org.matrix.msc3401.call.member", content)
-            .await
-            .context("Failed to publish m.call.member state event")?;
-    }
+    let event_id = match result {
+        Ok(resp) => resp.event_id.to_string(),
+        Err(stable_err) => {
+            debug!("Stable m.call.member failed ({stable_err:#}), trying unstable type");
+            let resp = room
+                .send_state_event_raw(&state_key, "org.matrix.msc3401.call.member", content)
+                .await
+                .context("Failed to publish m.call.member state event")?;
+            resp.event_id.to_string()
+        }
+    };
 
     info!(
-        "Published m.call.member for room {} (state_key: {})",
-        room_id, state_key
+        "Published m.call.member for room {} (state_key: {}, event_id: {})",
+        room_id, state_key, event_id
     );
-    Ok(())
+    Ok(event_id)
 }
 
 /// Remove the m.call.member state event (leave the call).

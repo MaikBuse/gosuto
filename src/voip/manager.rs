@@ -174,17 +174,22 @@ impl CallManager {
 
         // 3. Publish m.call.member state event (before requesting JWT —
         //    some SFU implementations expect the state event to exist)
-        if let Err(e) = matrixrtc::publish_call_member(&client, &room_id, &device_id, &focus).await
-        {
-            error!("Failed to publish m.call.member: {:#}", e);
-            let _ = self
-                .event_tx
-                .send(AppEvent::CallError(format!("Signaling error: {:#}", e)));
-            return;
-        }
+        let call_member_event_id =
+            match matrixrtc::publish_call_member(&client, &room_id, &device_id, &focus).await {
+                Ok(event_id) => event_id,
+                Err(e) => {
+                    error!("Failed to publish m.call.member: {:#}", e);
+                    let _ = self
+                        .event_tx
+                        .send(AppEvent::CallError(format!("Signaling error: {:#}", e)));
+                    return;
+                }
+            };
 
-        // 3b. Send m.call.notify so other clients ring (MSC4075)
-        if let Err(e) = matrixrtc::send_call_notify(&client, &room_id).await {
+        // 3b. Send rtc.notification so other clients ring (MSC4075)
+        if let Err(e) =
+            matrixrtc::send_call_notify(&client, &room_id, &call_member_event_id).await
+        {
             warn!("Failed to send call notification (ringing may not work on other clients): {:#}", e);
         }
 
