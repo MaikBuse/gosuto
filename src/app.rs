@@ -158,6 +158,7 @@ pub struct App {
     pub pending_recovery: bool,
     pub pending_recovery_create: bool,
     pub pending_recovery_reset: bool,
+    clipboard: Option<arboard::Clipboard>,
 }
 
 impl App {
@@ -208,6 +209,7 @@ impl App {
             pending_recovery: false,
             pending_recovery_create: false,
             pending_recovery_reset: false,
+            clipboard: arboard::Clipboard::new().ok(),
         }
     }
 
@@ -533,6 +535,7 @@ impl App {
             AppEvent::RecoveryKeyReady(key) => {
                 if let Some(ref mut modal) = self.recovery_modal {
                     modal.stage = crate::state::RecoveryStage::ShowKey(key);
+                    modal.copied = false;
                 }
             }
             AppEvent::RecoveryError(err) => {
@@ -1011,6 +1014,20 @@ impl App {
                 // In progress — no keys accepted
             }
             Some(crate::state::RecoveryStage::ShowKey(_)) => match key.code {
+                KeyCode::Char('c') => {
+                    if let Some(crate::state::RecoveryStage::ShowKey(key_str)) =
+                        self.recovery_modal.as_ref().map(|m| &m.stage)
+                    {
+                        let key_clone = key_str.clone();
+                        if let Some(clipboard) = self.clipboard.as_mut() {
+                            if clipboard.set_text(key_clone).is_ok() {
+                                if let Some(ref mut modal) = self.recovery_modal {
+                                    modal.copied = true;
+                                }
+                            }
+                        }
+                    }
+                }
                 KeyCode::Enter | KeyCode::Esc => {
                     self.recovery_modal = None;
                 }
