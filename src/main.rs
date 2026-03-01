@@ -402,6 +402,31 @@ async fn main() -> Result<()> {
                                 }
                             });
                         }
+                        // Handle user config fetch
+                        if app.pending_user_config {
+                            app.pending_user_config = false;
+                            let client_holder = matrix_client.clone();
+                            let tx = event_tx.clone();
+                            tokio::spawn(async move {
+                                let client = { client_holder.lock().await.clone() };
+                                if let Some(client) = client {
+                                    matrix::profile::fetch_user_config(&client, &tx).await;
+                                }
+                            });
+                        }
+
+                        // Handle display name update
+                        if let Some(name) = app.pending_set_display_name.take() {
+                            let client_holder = matrix_client.clone();
+                            let tx = event_tx.clone();
+                            tokio::spawn(async move {
+                                let client = { client_holder.lock().await.clone() };
+                                if let Some(client) = client {
+                                    matrix::profile::set_user_display_name(&client, &name, &tx).await;
+                                }
+                            });
+                        }
+
                         // Handle room info fetch
                         if app.pending_room_info {
                             app.pending_room_info = false;

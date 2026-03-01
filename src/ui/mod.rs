@@ -2,6 +2,7 @@ pub mod audio_settings;
 pub mod call_overlay;
 pub mod chat;
 pub mod completion_popup;
+pub mod configure;
 pub mod effects;
 pub mod input_bar;
 pub mod layout;
@@ -102,6 +103,11 @@ pub fn render(app: &App, frame: &mut Frame) {
     // Room info modal overlay
     if app.room_info.open {
         room_info::render(&app.room_info, frame);
+    }
+
+    // User config modal overlay
+    if app.user_config.open {
+        configure::render(&app.user_config, frame);
     }
 
     // Verification modal overlay

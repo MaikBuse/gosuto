@@ -109,6 +109,38 @@ impl AudioSettingsState {
     }
 }
 
+pub struct UserConfigState {
+    pub open: bool,
+    pub user_id: String,
+    pub device_id: String,
+    pub homeserver: String,
+    pub display_name: Option<String>,
+    pub display_name_buffer: String,
+    pub editing_display_name: bool,
+    pub verified: bool,
+    pub selected_field: usize, // 0=display name, 1=verified
+    pub loading: bool,
+    pub saving: bool,
+}
+
+impl UserConfigState {
+    pub fn new() -> Self {
+        Self {
+            open: false,
+            user_id: String::new(),
+            device_id: String::new(),
+            homeserver: String::new(),
+            display_name: None,
+            display_name_buffer: String::new(),
+            editing_display_name: false,
+            verified: false,
+            selected_field: 0,
+            loading: false,
+            saving: false,
+        }
+    }
+}
+
 #[allow(dead_code)]
 pub struct App {
     pub running: bool,
@@ -150,6 +182,10 @@ pub struct App {
     pub members_title_reveal: TextReveal,
     // Room info
     pub room_info: RoomInfoState,
+    // User config
+    pub user_config: UserConfigState,
+    pub pending_user_config: bool,
+    pub pending_set_display_name: Option<String>,
     // Audio settings
     pub audio_settings: AudioSettingsState,
     pub ptt_transmitting: Arc<AtomicBool>,
@@ -206,6 +242,9 @@ impl App {
             chat_title_reveal: TextReveal::new(0xC0DE_CAFE_0001),
             members_title_reveal: TextReveal::new(0xC0DE_CAFE_0002),
             room_info: RoomInfoState::new(),
+            user_config: UserConfigState::new(),
+            pending_user_config: false,
+            pending_set_display_name: None,
             audio_settings: AudioSettingsState::new(),
             ptt_transmitting: Arc::new(AtomicBool::new(true)), // default: always transmit (no PTT)
             sync_token: None,
@@ -235,6 +274,8 @@ impl App {
                     self.handle_verify_modal_key(key);
                 } else if self.recovery_modal.is_some() {
                     self.handle_recovery_modal_key(key);
+                } else if self.user_config.open {
+                    self.handle_user_config_key(key);
                 } else if self.room_info.open {
                     self.handle_room_info_key(key);
                 } else if self.audio_settings.open {
@@ -488,6 +529,31 @@ impl App {
             }
             AppEvent::RoomSettingError { error } => {
                 self.room_info.saving = false;
+                self.last_error = Some(error);
+            }
+            // User config events
+            AppEvent::UserConfigLoaded {
+                display_name,
+                verified,
+            } => {
+                if self.user_config.open {
+                    self.user_config.display_name = display_name;
+                    self.user_config.verified = verified;
+                    self.user_config.loading = false;
+                }
+            }
+            AppEvent::UserConfigUpdated => {
+                if self.user_config.open {
+                    if !self.user_config.display_name_buffer.is_empty() {
+                        self.user_config.display_name =
+                            Some(self.user_config.display_name_buffer.clone());
+                        self.user_config.display_name_buffer.clear();
+                    }
+                    self.user_config.saving = false;
+                }
+            }
+            AppEvent::UserConfigError(error) => {
+                self.user_config.saving = false;
                 self.last_error = Some(error);
             }
             AppEvent::CallError(err) => {
@@ -867,6 +933,29 @@ impl App {
             }
             CommandAction::Recovery => {
                 self.pending_recovery = true;
+            }
+            CommandAction::Configure => {
+                if let AuthState::LoggedIn {
+                    ref user_id,
+                    ref device_id,
+                    ref homeserver,
+                } = self.auth
+                {
+                    self.user_config = UserConfigState {
+                        open: true,
+                        user_id: user_id.clone(),
+                        device_id: device_id.clone(),
+                        homeserver: homeserver.clone(),
+                        display_name: None,
+                        display_name_buffer: String::new(),
+                        editing_display_name: false,
+                        verified: false,
+                        selected_field: 0,
+                        loading: true,
+                        saving: false,
+                    };
+                    self.pending_user_config = true;
+                }
             }
             CommandAction::RoomInfo => {
                 if let Some(room_id) = self.messages.current_room_id.clone() {
@@ -1289,6 +1378,85 @@ impl App {
             } else {
                 "no".to_string()
             };
+        }
+    }
+
+    // ── User Config ─────────────────────────────────────
+
+    fn handle_user_config_key(&mut self, key: KeyEvent) {
+        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
+            self.user_config.open = false;
+            self.running = false;
+            return;
+        }
+
+        if self.user_config.loading || self.user_config.saving {
+            if key.code == KeyCode::Esc {
+                self.user_config.open = false;
+            }
+            return;
+        }
+
+        // Inline display name editing mode
+        if self.user_config.editing_display_name {
+            match key.code {
+                KeyCode::Esc => {
+                    self.user_config.editing_display_name = false;
+                    self.user_config.display_name_buffer.clear();
+                }
+                KeyCode::Enter => {
+                    let new_name = self.user_config.display_name_buffer.clone();
+                    if !new_name.is_empty() {
+                        self.user_config.saving = true;
+                        self.user_config.editing_display_name = false;
+                        self.pending_set_display_name = Some(new_name);
+                    } else {
+                        self.user_config.editing_display_name = false;
+                        self.user_config.display_name_buffer.clear();
+                    }
+                }
+                KeyCode::Backspace => {
+                    self.user_config.display_name_buffer.pop();
+                }
+                KeyCode::Char(c) => {
+                    self.user_config.display_name_buffer.push(c);
+                }
+                _ => {}
+            }
+            return;
+        }
+
+        match key.code {
+            KeyCode::Esc => {
+                self.user_config.open = false;
+            }
+            KeyCode::Char('j') | KeyCode::Down => {
+                if self.user_config.selected_field < 1 {
+                    self.user_config.selected_field += 1;
+                }
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                if self.user_config.selected_field > 0 {
+                    self.user_config.selected_field -= 1;
+                }
+            }
+            KeyCode::Enter => {
+                match self.user_config.selected_field {
+                    0 => {
+                        // Enter display name editing mode
+                        self.user_config.editing_display_name = true;
+                        self.user_config.display_name_buffer =
+                            self.user_config.display_name.clone().unwrap_or_default();
+                    }
+                    1 => {
+                        // Trigger self-verification and close modal
+                        self.pending_verify = Some(None);
+                        self.user_config.open = false;
+                    }
+                    _ => {}
+                }
+            }
+            _ => {}
         }
     }
 

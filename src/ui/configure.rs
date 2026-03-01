@@ -3,13 +3,13 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 
-use crate::app::{HISTORY_VISIBILITY_OPTIONS, RoomInfoState};
+use crate::app::UserConfigState;
 use crate::ui::theme;
 
 const POPUP_WIDTH: u16 = 54;
 const POPUP_HEIGHT: u16 = 18;
 
-pub fn render(state: &RoomInfoState, frame: &mut Frame) {
+pub fn render(state: &UserConfigState, frame: &mut Frame) {
     let area = frame.area();
     if area.width < 30 || area.height < 12 {
         return;
@@ -57,26 +57,31 @@ pub fn render(state: &RoomInfoState, frame: &mut Frame) {
     let label_s = Style::default().fg(theme::DIM).bg(theme::BG);
     let value_s = Style::default().fg(theme::TEXT).bg(theme::BG);
     let label_x = left + 2;
-    let value_x = left + 15;
+    let value_x = left + 17;
 
     let mut row = popup.y + 2;
 
-    // Room ID (read-only)
-    write_str(buf, &bounds, label_x, row, "ROOM ID", label_s);
-    let id_display = truncate_str(&state.room_id, (right - value_x) as usize);
+    // USER ID (read-only)
+    write_str(buf, &bounds, label_x, row, "USER ID", label_s);
+    let id_display = truncate_str(&state.user_id, (right - value_x) as usize);
     write_str(buf, &bounds, value_x, row, &id_display, value_s);
     row += 1;
 
-    // Topic (read-only)
-    write_str(buf, &bounds, label_x, row, "TOPIC", label_s);
-    let topic = state.topic.as_deref().unwrap_or("\u{2014}");
-    let topic_display = truncate_str(topic, (right - value_x) as usize);
-    write_str(buf, &bounds, value_x, row, &topic_display, value_s);
+    // DEVICE ID (read-only)
+    write_str(buf, &bounds, label_x, row, "DEVICE ID", label_s);
+    let dev_display = truncate_str(&state.device_id, (right - value_x) as usize);
+    write_str(buf, &bounds, value_x, row, &dev_display, value_s);
+    row += 1;
+
+    // HOMESERVER (read-only)
+    write_str(buf, &bounds, label_x, row, "HOMESERVER", label_s);
+    let hs_display = truncate_str(&state.homeserver, (right - value_x) as usize);
+    write_str(buf, &bounds, value_x, row, &hs_display, value_s);
     row += 1;
 
     row += 1;
 
-    // ── Field 0: NAME (editable) ──
+    // ── Field 0: DISPLAY NAME (editable) ──
     let name_selected = state.selected_field == 0;
     let name_marker_color = if name_selected {
         theme::CYAN
@@ -113,12 +118,11 @@ pub fn render(state: &RoomInfoState, frame: &mut Frame) {
         ' ',
         Style::default().bg(theme::BG),
     );
-    write_str(buf, &bounds, label_x, row, "NAME", name_label_s);
+    write_str(buf, &bounds, label_x, row, "DISPLAY NAME", name_label_s);
 
     let max_name_w = (right - value_x) as usize;
-    if state.editing_name {
-        // Render editable name buffer with cursor
-        let display = truncate_str(&state.name_buffer, max_name_w.saturating_sub(1));
+    if state.editing_display_name {
+        let display = truncate_str(&state.display_name_buffer, max_name_w.saturating_sub(1));
         let edit_s = Style::default().fg(theme::GREEN).bg(theme::BG);
         write_str(buf, &bounds, value_x, row, &display, edit_s);
         // Cursor underscore
@@ -129,7 +133,7 @@ pub fn render(state: &RoomInfoState, frame: &mut Frame) {
             .add_modifier(Modifier::SLOW_BLINK);
         set_cell(buf, &bounds, cursor_x, row, '_', cursor_s);
     } else {
-        let name = state.name.as_deref().unwrap_or("\u{2014}");
+        let name = state.display_name.as_deref().unwrap_or("\u{2014}");
         let name_display = truncate_str(name, max_name_w);
         let name_val_color = if name_selected {
             theme::TEXT
@@ -141,35 +145,35 @@ pub fn render(state: &RoomInfoState, frame: &mut Frame) {
     }
     row += 1;
 
-    // ── Field 1: HISTORY (editable, cycle selector) ──
-    let hist_selected = state.selected_field == 1;
-    let hist_marker_color = if hist_selected {
+    // ── Field 1: VERIFIED (actionable) ──
+    let ver_selected = state.selected_field == 1;
+    let ver_marker_color = if ver_selected {
         theme::CYAN
     } else {
         theme::DIM
     };
-    let hist_label_color = if hist_selected {
+    let ver_label_color = if ver_selected {
         theme::CYAN
     } else {
         theme::TEXT
     };
-    let hist_marker = if hist_selected {
+    let ver_marker = if ver_selected {
         '\u{25C8}'
     } else {
         '\u{25C7}'
     };
 
-    let hist_marker_s = Style::default().fg(hist_marker_color).bg(theme::BG);
-    let hist_label_s = Style::default()
-        .fg(hist_label_color)
+    let ver_marker_s = Style::default().fg(ver_marker_color).bg(theme::BG);
+    let ver_label_s = Style::default()
+        .fg(ver_label_color)
         .bg(theme::BG)
-        .add_modifier(if hist_selected {
+        .add_modifier(if ver_selected {
             Modifier::BOLD
         } else {
             Modifier::empty()
         });
 
-    set_cell(buf, &bounds, left, row, hist_marker, hist_marker_s);
+    set_cell(buf, &bounds, left, row, ver_marker, ver_marker_s);
     set_cell(
         buf,
         &bounds,
@@ -178,130 +182,34 @@ pub fn render(state: &RoomInfoState, frame: &mut Frame) {
         ' ',
         Style::default().bg(theme::BG),
     );
-    write_str(buf, &bounds, label_x, row, "HISTORY", hist_label_s);
+    write_str(buf, &bounds, label_x, row, "VERIFIED", ver_label_s);
 
-    // Render selector with arrows
-    let arrow_color = if hist_selected {
-        theme::CYAN
+    let (ver_text, ver_color) = if state.verified {
+        ("yes", theme::GREEN)
     } else {
-        theme::DIM
+        ("no", Color::Rgb(200, 60, 60))
     };
-    let vis_val_color = if hist_selected {
-        theme::TEXT
-    } else {
-        theme::DIM
-    };
-    let arrow_s = Style::default().fg(arrow_color).bg(theme::BG);
-    let vis_s = Style::default().fg(vis_val_color).bg(theme::BG);
-
-    set_cell(buf, &bounds, value_x, row, '\u{25C2}', arrow_s);
-    set_cell(
+    write_str(
         buf,
         &bounds,
-        value_x + 1,
+        value_x,
         row,
-        ' ',
-        Style::default().bg(theme::BG),
+        ver_text,
+        Style::default().fg(ver_color).bg(theme::BG),
     );
 
-    let vis_display = &state.history_visibility;
-    write_str(buf, &bounds, value_x + 2, row, vis_display, vis_s);
-
-    let end_x = value_x + 2 + vis_display.chars().count() as u16;
-    set_cell(
-        buf,
-        &bounds,
-        end_x,
-        row,
-        ' ',
-        Style::default().bg(theme::BG),
-    );
-    set_cell(buf, &bounds, end_x + 1, row, '\u{25B8}', arrow_s);
-    row += 1;
-
-    // ── Field 2: ENCRYPTED (editable when unencrypted, read-only when encrypted) ──
-    if state.encrypted {
-        // Read-only: show "yes" in green, no marker, not selectable
-        write_str(buf, &bounds, label_x, row, "ENCRYPTED", label_s);
+    // Show "Enter to verify" hint when selected and not verified
+    if ver_selected && !state.verified {
+        let hint = "(Enter to verify)";
+        let hx = value_x + ver_text.len() as u16 + 2;
         write_str(
             buf,
             &bounds,
-            value_x,
+            hx,
             row,
-            "yes",
-            Style::default().fg(theme::GREEN).bg(theme::BG),
+            hint,
+            Style::default().fg(theme::DIM).bg(theme::BG),
         );
-    } else {
-        let enc_selected = state.selected_field == 2;
-        let enc_marker_color = if enc_selected {
-            theme::CYAN
-        } else {
-            theme::DIM
-        };
-        let enc_label_color = if enc_selected {
-            theme::CYAN
-        } else {
-            theme::TEXT
-        };
-        let enc_marker = if enc_selected { '\u{25C8}' } else { '\u{25C7}' };
-
-        let enc_marker_s = Style::default().fg(enc_marker_color).bg(theme::BG);
-        let enc_label_s = Style::default()
-            .fg(enc_label_color)
-            .bg(theme::BG)
-            .add_modifier(if enc_selected {
-                Modifier::BOLD
-            } else {
-                Modifier::empty()
-            });
-
-        set_cell(buf, &bounds, left, row, enc_marker, enc_marker_s);
-        set_cell(
-            buf,
-            &bounds,
-            left + 1,
-            row,
-            ' ',
-            Style::default().bg(theme::BG),
-        );
-        write_str(buf, &bounds, label_x, row, "ENCRYPTED", enc_label_s);
-
-        let enc_arrow_color = if enc_selected {
-            theme::CYAN
-        } else {
-            theme::DIM
-        };
-        let enc_val_color = if enc_selected {
-            theme::TEXT
-        } else {
-            theme::DIM
-        };
-        let enc_arrow_s = Style::default().fg(enc_arrow_color).bg(theme::BG);
-        let enc_val_s = Style::default().fg(enc_val_color).bg(theme::BG);
-
-        set_cell(buf, &bounds, value_x, row, '\u{25C2}', enc_arrow_s);
-        set_cell(
-            buf,
-            &bounds,
-            value_x + 1,
-            row,
-            ' ',
-            Style::default().bg(theme::BG),
-        );
-
-        let enc_display = &state.encryption_selection;
-        write_str(buf, &bounds, value_x + 2, row, enc_display, enc_val_s);
-
-        let enc_end_x = value_x + 2 + enc_display.chars().count() as u16;
-        set_cell(
-            buf,
-            &bounds,
-            enc_end_x,
-            row,
-            ' ',
-            Style::default().bg(theme::BG),
-        );
-        set_cell(buf, &bounds, enc_end_x + 1, row, '\u{25B8}', enc_arrow_s);
     }
 
     // Show saving indicator
@@ -321,23 +229,6 @@ pub fn render(state: &RoomInfoState, frame: &mut Frame) {
                 .add_modifier(Modifier::BOLD),
         );
     }
-
-    // Show valid options hint
-    row = popup.y + popup.height.saturating_sub(4);
-    let opts: String = if state.selected_field == 2 && !state.encrypted {
-        "no | yes".to_string()
-    } else {
-        HISTORY_VISIBILITY_OPTIONS.join(" | ")
-    };
-    let opts_x = left + (inner_w.saturating_sub(opts.len())) as u16 / 2;
-    write_str(
-        buf,
-        &bounds,
-        opts_x,
-        row,
-        &opts,
-        Style::default().fg(Color::Rgb(60, 60, 80)).bg(theme::BG),
-    );
 
     // Hints
     let hint_row = popup.y + popup.height.saturating_sub(2);
@@ -422,7 +313,7 @@ fn render_border(buf: &mut Buffer, bounds: &Rect, area: Rect, color: Color) {
 }
 
 fn render_title(buf: &mut Buffer, bounds: &Rect, area: Rect, color: Color) {
-    let title = "ROOM EDIT";
+    let title = "CONFIGURE";
     let border_s = Style::default().fg(color).bg(theme::BG);
     let title_s = border_s.add_modifier(Modifier::BOLD);
 

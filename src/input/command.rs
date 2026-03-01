@@ -103,10 +103,17 @@ pub const COMMANDS: &[CommandDef] = &[
         takes_arg: true,
     },
     CommandDef {
-        name: "info",
+        name: "edit",
         aliases: &["roominfo"],
-        syntax: ":info",
-        description: "Show room info",
+        syntax: ":edit",
+        description: "Edit room settings",
+        takes_arg: false,
+    },
+    CommandDef {
+        name: "configure",
+        aliases: &["config", "profile"],
+        syntax: ":configure",
+        description: "Edit user profile",
         takes_arg: false,
     },
     CommandDef {
@@ -303,7 +310,8 @@ fn parse_command(input: &str) -> InputResult {
                 })
             }
         }
-        "info" | "roominfo" => InputResult::Command(CommandAction::RoomInfo),
+        "edit" | "roominfo" => InputResult::Command(CommandAction::RoomInfo),
+        "configure" | "config" | "profile" => InputResult::Command(CommandAction::Configure),
         "verify" => {
             let target = if arg.is_empty() {
                 None

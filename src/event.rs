@@ -96,6 +96,13 @@ pub enum AppEvent {
     RoomSettingError {
         error: String,
     },
+    // User config events
+    UserConfigLoaded {
+        display_name: Option<String>,
+        verified: bool,
+    },
+    UserConfigUpdated,
+    UserConfigError(String),
     // Audio settings events
     MicLevel(f32),
     KeyRelease(KeyEvent),

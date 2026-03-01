@@ -47,6 +47,7 @@ pub enum CommandAction {
         history_visibility: Option<String>,
     },
     RoomInfo,
+    Configure,
     Verify(Option<String>),
     Recovery,
 }
