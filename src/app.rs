@@ -1066,7 +1066,19 @@ impl App {
                         modal.key_buffer.pop();
                     }
                 }
-                KeyCode::Char(c) => {
+                KeyCode::Char('v') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    if let Some(ref mut modal) = self.recovery_modal {
+                        if let Some(clipboard) = self.clipboard.as_mut() {
+                            if let Ok(text) = clipboard.get_text() {
+                                modal.key_buffer.push_str(text.trim());
+                            }
+                        }
+                    }
+                }
+                KeyCode::Char(c)
+                    if !key.modifiers.contains(KeyModifiers::CONTROL)
+                        && !key.modifiers.contains(KeyModifiers::ALT) =>
+                {
                     if let Some(ref mut modal) = self.recovery_modal {
                         modal.key_buffer.push(c);
                     }
@@ -1075,7 +1087,7 @@ impl App {
                     let key_input = self
                         .recovery_modal
                         .as_ref()
-                        .map(|m| m.key_buffer.clone())
+                        .map(|m| m.key_buffer.trim().to_string())
                         .unwrap_or_default();
                     if !key_input.is_empty() {
                         if let Some(ref mut modal) = self.recovery_modal {

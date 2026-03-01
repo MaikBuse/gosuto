@@ -381,7 +381,7 @@ pub fn render(state: &RecoveryModalState, frame: &mut Frame) {
                     .add_modifier(Modifier::BOLD),
             );
 
-            let prompt = "Paste or type your key:";
+            let prompt = "Paste (Ctrl+V) or type your key:";
             let xp = left + (inner_w.saturating_sub(prompt.len())) as u16 / 2;
             write_str(
                 buf,
