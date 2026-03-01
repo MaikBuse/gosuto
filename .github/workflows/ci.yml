@@ -44,15 +44,15 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             target/
-          key: ci-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-debug-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ci-cargo-
+            ${{ runner.os }}-cargo-debug-
 
       - name: Check formatting
         run: cargo fmt --check
 
       - name: Clippy lints
-        run: cargo clippy -- -D warnings
+        run: cargo clippy --all-targets --all-features -- -D warnings
 
       - name: Type check
         run: cargo check
