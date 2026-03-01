@@ -187,10 +187,12 @@ impl CallManager {
             };
 
         // 3b. Send rtc.notification so other clients ring (MSC4075)
-        if let Err(e) =
-            matrixrtc::send_call_notify(&client, &room_id, &call_member_event_id).await
+        if let Err(e) = matrixrtc::send_call_notify(&client, &room_id, &call_member_event_id).await
         {
-            warn!("Failed to send call notification (ringing may not work on other clients): {:#}", e);
+            warn!(
+                "Failed to send call notification (ringing may not work on other clients): {:#}",
+                e
+            );
         }
 
         // 4. Get LiveKit credentials (JWT) — SFU can now see the call member event
@@ -219,59 +221,74 @@ impl CallManager {
         if let Err(e) = getrandom::getrandom(&mut encryption_key) {
             error!("Failed to generate encryption key: {}", e);
             let _ = matrixrtc::remove_call_member(&client, &room_id, &device_id).await;
-            let _ = self
-                .event_tx
-                .send(AppEvent::CallError("Failed to generate encryption key".to_string()));
+            let _ = self.event_tx.send(AppEvent::CallError(
+                "Failed to generate encryption key".to_string(),
+            ));
             return;
         }
 
         // 5b. Publish our encryption key to Matrix
         if let Err(e) =
-            matrixrtc::publish_encryption_keys(&client, &room_id, &device_id, &encryption_key)
-                .await
+            matrixrtc::publish_encryption_keys(&client, &room_id, &device_id, &encryption_key).await
         {
             error!("Failed to publish encryption key: {:#}", e);
             let _ = matrixrtc::remove_call_member(&client, &room_id, &device_id).await;
-            let _ = self
-                .event_tx
-                .send(AppEvent::CallError("Failed to publish encryption key".to_string()));
+            let _ = self.event_tx.send(AppEvent::CallError(
+                "Failed to publish encryption key".to_string(),
+            ));
             return;
         }
 
         // 5c. Connect to LiveKit with E2EE
         warn!("Connecting to LiveKit server: {}", creds.server_url);
         log_jwt_claims(&creds.token);
-        let session = match LiveKitSession::connect(
-            &creds.server_url,
-            &creds.token,
-            encryption_key,
-        )
-        .await
-        {
-            Ok(s) => s,
-            Err(e) => {
-                error!("Failed to connect to LiveKit: {:#}", e);
-                log_jwt_claims(&creds.token);
-                // Try to clean up state events
-                let _ = matrixrtc::remove_call_member(&client, &room_id, &device_id).await;
-                let _ =
-                    matrixrtc::remove_encryption_keys(&client, &room_id, &device_id).await;
-                let err_str = format!("{:#}", e);
-                let msg = if err_str.contains("401") || err_str.contains("nauthorized") {
-                    "LiveKit rejected credentials — check SFU server configuration".to_string()
-                } else {
-                    format!("LiveKit connection failed: {}", err_str)
-                };
-                let _ = self.event_tx.send(AppEvent::CallError(msg));
-                return;
-            }
-        };
+        let session =
+            match LiveKitSession::connect(&creds.server_url, &creds.token, encryption_key).await {
+                Ok(s) => s,
+                Err(e) => {
+                    error!("Failed to connect to LiveKit: {:#}", e);
+                    log_jwt_claims(&creds.token);
+                    // Try to clean up state events
+                    let _ = matrixrtc::remove_call_member(&client, &room_id, &device_id).await;
+                    let _ = matrixrtc::remove_encryption_keys(&client, &room_id, &device_id).await;
+                    let err_str = format!("{:#}", e);
+                    let msg = if err_str.contains("401") || err_str.contains("nauthorized") {
+                        "LiveKit rejected credentials — check SFU server configuration".to_string()
+                    } else {
+                        format!("LiveKit connection failed: {}", err_str)
+                    };
+                    let _ = self.event_tx.send(AppEvent::CallError(msg));
+                    return;
+                }
+            };
 
         // 5d. Read other participants' encryption keys and set them on the session
+        info!("Our LiveKit identity: {}", session.local_identity());
         match matrixrtc::get_encryption_keys(&client, &room_id).await {
             Ok(participant_keys) => {
+                let remote_identities = session.remote_participants();
                 for pk in participant_keys {
-                    session.set_participant_key(&pk.identity, pk.key_index, pk.key_bytes);
+                    let mut matched = false;
+                    for identity in &remote_identities {
+                        if identity.contains(&pk.user_id) && identity.contains(&pk.device_id) {
+                            info!(
+                                "Setting key for remote participant: identity={}, user_id={}, device_id={}",
+                                identity, pk.user_id, pk.device_id
+                            );
+                            session.set_participant_key(
+                                identity,
+                                pk.key_index,
+                                pk.key_bytes.clone(),
+                            );
+                            matched = true;
+                        }
+                    }
+                    if !matched {
+                        debug!(
+                            "No LiveKit participant matched for user_id={}, device_id={} (remote_identities={:?})",
+                            pk.user_id, pk.device_id, remote_identities
+                        );
+                    }
                 }
             }
             Err(e) => {
@@ -332,8 +349,7 @@ impl CallManager {
             {
                 let device_id = device_id.to_owned();
                 let _ = matrixrtc::remove_call_member(&client, &room_id, &device_id).await;
-                let _ =
-                    matrixrtc::remove_encryption_keys(&client, &room_id, &device_id).await;
+                let _ = matrixrtc::remove_encryption_keys(&client, &room_id, &device_id).await;
             }
         }
 
@@ -384,11 +400,19 @@ impl CallManager {
                         match matrixrtc::get_encryption_keys(client, &call.room_id).await {
                             Ok(keys) => {
                                 for pk in keys {
-                                    call.livekit_session.set_participant_key(
-                                        &pk.identity,
-                                        pk.key_index,
-                                        pk.key_bytes,
-                                    );
+                                    if participant_identity.contains(&pk.user_id)
+                                        && participant_identity.contains(&pk.device_id)
+                                    {
+                                        info!(
+                                            "Setting key for subscribed participant: identity={}, user_id={}, device_id={}",
+                                            participant_identity, pk.user_id, pk.device_id
+                                        );
+                                        call.livekit_session.set_participant_key(
+                                            &participant_identity,
+                                            pk.key_index,
+                                            pk.key_bytes,
+                                        );
+                                    }
                                 }
                             }
                             Err(e) => {

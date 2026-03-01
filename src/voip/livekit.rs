@@ -1,8 +1,8 @@
 use anyhow::{Context as _, Result};
-use livekit::options::TrackPublishOptions;
-use livekit::prelude::*;
 use livekit::e2ee::key_provider::{KeyProvider, KeyProviderOptions};
 use livekit::e2ee::{E2eeOptions, EncryptionType};
+use livekit::options::TrackPublishOptions;
+use livekit::prelude::*;
 use livekit::webrtc::audio_source::RtcAudioSource;
 use livekit::webrtc::audio_source::native::NativeAudioSource;
 use tokio::sync::mpsc;
@@ -42,19 +42,14 @@ pub struct LiveKitSession {
 }
 
 impl LiveKitSession {
-    pub async fn connect(
-        server_url: &str,
-        token: &str,
-        encryption_key: Vec<u8>,
-    ) -> Result<Self> {
+    pub async fn connect(server_url: &str, token: &str, encryption_key: Vec<u8>) -> Result<Self> {
         // Append access_token as query param — the Rust SDK only sends it
         // as an Authorization header, which reverse proxies may strip during
         // WebSocket upgrade. The query param ensures the token reaches LiveKit.
         let mut url = url::Url::parse(server_url).context("Invalid LiveKit server URL")?;
         url.query_pairs_mut().append_pair("access_token", token);
 
-        let key_provider =
-            KeyProvider::with_shared_key(KeyProviderOptions::default(), encryption_key);
+        let key_provider = KeyProvider::new(KeyProviderOptions::default());
 
         let mut options = RoomOptions::default();
         options.encryption = Some(E2eeOptions {
@@ -63,9 +58,14 @@ impl LiveKitSession {
         });
 
         let (room, mut room_events) = Room::connect(url.as_str(), token, options).await?;
+
+        // Set our own encryption key using our actual LiveKit identity
+        let local_identity = room.local_participant().identity();
+        key_provider.set_key(&local_identity, 0, encryption_key);
         info!(
-            "Connected to LiveKit room: {} (E2EE enabled, GCM)",
-            room.name()
+            "Connected to LiveKit room: {} (E2EE enabled, GCM, identity: {})",
+            room.name(),
+            local_identity
         );
 
         let (event_tx, event_rx) = mpsc::unbounded_channel();
@@ -149,7 +149,10 @@ impl LiveKitSession {
         self.event_rx.recv().await
     }
 
-    #[allow(dead_code)]
+    pub fn local_identity(&self) -> String {
+        self.room.local_participant().identity().to_string()
+    }
+
     pub fn remote_participants(&self) -> Vec<String> {
         self.room
             .remote_participants()

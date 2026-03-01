@@ -211,7 +211,10 @@ pub async fn get_livekit_credentials(
         "SFU response (via {}): url present={}, jwt length={}",
         endpoint_used,
         sfu_preview.get("url").is_some(),
-        sfu_preview.get("jwt").and_then(|v| v.as_str()).map_or(0, |s| s.len()),
+        sfu_preview
+            .get("jwt")
+            .and_then(|v| v.as_str())
+            .map_or(0, |s| s.len()),
     );
     let sfu_resp: SfuResponse =
         serde_json::from_str(&raw_body).context("Invalid JWT service response JSON")?;
@@ -407,17 +410,26 @@ pub async fn publish_call_member(
     });
 
     let pretty_json = serde_json::to_string_pretty(&content).unwrap_or_default();
-    debug!("Publishing m.call.member: state_key={}, content={}", state_key, pretty_json);
+    debug!(
+        "Publishing m.call.member: state_key={}, content={}",
+        state_key, pretty_json
+    );
 
     // Try unstable event type first (Element X watches for this), fall back to stable
     let result = room
-        .send_state_event_raw("org.matrix.msc3401.call.member", &state_key, content.clone())
+        .send_state_event_raw(
+            "org.matrix.msc3401.call.member",
+            &state_key,
+            content.clone(),
+        )
         .await;
 
     let event_id = match result {
         Ok(resp) => resp.event_id.to_string(),
         Err(unstable_err) => {
-            debug!("Unstable org.matrix.msc3401.call.member failed ({unstable_err:#}), trying stable type");
+            debug!(
+                "Unstable org.matrix.msc3401.call.member failed ({unstable_err:#}), trying stable type"
+            );
             let resp = room
                 .send_state_event_raw("m.call.member", &state_key, content)
                 .await
@@ -437,7 +449,8 @@ pub async fn publish_call_member(
 
 #[derive(Debug, Clone)]
 pub struct ParticipantKey {
-    pub identity: String,
+    pub user_id: String,
+    pub device_id: String,
     pub key_index: i32,
     pub key_bytes: Vec<u8>,
 }
@@ -542,39 +555,34 @@ pub async fn get_encryption_keys(
             None => continue,
         };
 
-        // The LiveKit participant identity follows Element X convention: "{user_id}:{device_id}"
-        let identity = format!("{}:{}", sender, event_device_id);
-
         for entry in key_entries {
-            let index = entry
-                .get("index")
-                .and_then(|v| v.as_i64())
-                .unwrap_or(0) as i32;
+            let index = entry.get("index").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
             let encoded = match entry.get("key").and_then(|v| v.as_str()) {
                 Some(k) => k,
                 None => continue,
             };
-            let key_bytes =
-                match base64::engine::general_purpose::STANDARD.decode(encoded) {
-                    Ok(b) => b,
-                    Err(e) => {
-                        debug!(
-                            "Failed to decode encryption key from {}: {}",
-                            identity, e
-                        );
-                        continue;
-                    }
-                };
+            let key_bytes = match base64::engine::general_purpose::STANDARD.decode(encoded) {
+                Ok(b) => b,
+                Err(e) => {
+                    debug!(
+                        "Failed to decode encryption key from {}:{}: {}",
+                        sender, event_device_id, e
+                    );
+                    continue;
+                }
+            };
 
             debug!(
-                "Found encryption key: identity={}, index={}, key_len={}",
-                identity,
+                "Found encryption key: user_id={}, device_id={}, index={}, key_len={}",
+                sender,
+                event_device_id,
                 index,
                 key_bytes.len()
             );
 
             keys.push(ParticipantKey {
-                identity: identity.clone(),
+                user_id: sender.to_string(),
+                device_id: event_device_id.to_string(),
                 key_index: index,
                 key_bytes,
             });
@@ -627,11 +635,17 @@ pub async fn remove_call_member(
 
     // Try unstable event type first (Element X watches for this), fall back to stable
     let result = room
-        .send_state_event_raw("org.matrix.msc3401.call.member", &state_key, content.clone())
+        .send_state_event_raw(
+            "org.matrix.msc3401.call.member",
+            &state_key,
+            content.clone(),
+        )
         .await;
 
     if let Err(unstable_err) = result {
-        debug!("Unstable org.matrix.msc3401.call.member failed ({unstable_err:#}), trying stable type");
+        debug!(
+            "Unstable org.matrix.msc3401.call.member failed ({unstable_err:#}), trying stable type"
+        );
         room.send_state_event_raw("m.call.member", &state_key, content)
             .await
             .context("Failed to remove m.call.member state event")?;
