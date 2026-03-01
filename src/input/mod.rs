@@ -48,4 +48,5 @@ pub enum CommandAction {
     },
     RoomInfo,
     Verify(Option<String>),
+    Recovery,
 }

@@ -153,6 +153,11 @@ pub struct App {
     pub verification_modal: Option<crate::state::VerificationModalState>,
     pub pending_verify: Option<Option<String>>,
     pub verify_confirm_tx: Option<tokio::sync::oneshot::Sender<bool>>,
+    // Recovery
+    pub recovery_modal: Option<crate::state::RecoveryModalState>,
+    pub pending_recovery: bool,
+    pub pending_recovery_create: bool,
+    pub pending_recovery_reset: bool,
 }
 
 impl App {
@@ -199,6 +204,10 @@ impl App {
             verification_modal: None,
             pending_verify: None,
             verify_confirm_tx: None,
+            recovery_modal: None,
+            pending_recovery: false,
+            pending_recovery_create: false,
+            pending_recovery_reset: false,
         }
     }
 
@@ -214,6 +223,8 @@ impl App {
                     self.handle_login_key(key);
                 } else if self.verification_modal.is_some() {
                     self.handle_verify_modal_key(key);
+                } else if self.recovery_modal.is_some() {
+                    self.handle_recovery_modal_key(key);
                 } else if self.room_info.open {
                     self.handle_room_info_key(key);
                 } else if self.audio_settings.open {
@@ -506,6 +517,27 @@ impl App {
                     self.last_error = Some(err);
                 }
             }
+            // Recovery events
+            AppEvent::RecoveryState(state_str) => {
+                let stage = if state_str.contains("Enabled") {
+                    crate::state::RecoveryStage::Enabled
+                } else {
+                    crate::state::RecoveryStage::Setup
+                };
+                if let Some(ref mut modal) = self.recovery_modal {
+                    modal.stage = stage;
+                }
+            }
+            AppEvent::RecoveryKeyReady(key) => {
+                if let Some(ref mut modal) = self.recovery_modal {
+                    modal.stage = crate::state::RecoveryStage::ShowKey(key);
+                }
+            }
+            AppEvent::RecoveryError(err) => {
+                if let Some(ref mut modal) = self.recovery_modal {
+                    modal.stage = crate::state::RecoveryStage::Failed(err);
+                }
+            }
         }
     }
 
@@ -795,6 +827,9 @@ impl App {
             CommandAction::Verify(target) => {
                 self.pending_verify = Some(target);
             }
+            CommandAction::Recovery => {
+                self.pending_recovery = true;
+            }
             CommandAction::RoomInfo => {
                 if let Some(room_id) = self.messages.current_room_id.clone() {
                     self.room_info = RoomInfoState {
@@ -933,6 +968,66 @@ impl App {
                     self.verification_modal = None;
                 }
             }
+            None => {}
+        }
+    }
+
+    // ── Recovery Modal ─────────────────────────────────
+
+    fn handle_recovery_modal_key(&mut self, key: KeyEvent) {
+        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
+            self.recovery_modal = None;
+            self.running = false;
+            return;
+        }
+
+        let stage = self.recovery_modal.as_ref().map(|m| &m.stage);
+
+        match stage {
+            Some(crate::state::RecoveryStage::Checking) => {
+                if key.code == KeyCode::Esc {
+                    self.recovery_modal = None;
+                }
+            }
+            Some(crate::state::RecoveryStage::Setup) => match key.code {
+                KeyCode::Enter => {
+                    if let Some(ref mut modal) = self.recovery_modal {
+                        modal.stage = crate::state::RecoveryStage::Creating;
+                    }
+                    self.pending_recovery_create = true;
+                }
+                KeyCode::Esc => {
+                    self.recovery_modal = None;
+                }
+                _ => {}
+            },
+            Some(crate::state::RecoveryStage::Creating) | Some(crate::state::RecoveryStage::Resetting) => {
+                // In progress — no keys accepted
+            }
+            Some(crate::state::RecoveryStage::ShowKey(_)) => match key.code {
+                KeyCode::Enter | KeyCode::Esc => {
+                    self.recovery_modal = None;
+                }
+                _ => {}
+            },
+            Some(crate::state::RecoveryStage::Enabled) => match key.code {
+                KeyCode::Char('r') => {
+                    if let Some(ref mut modal) = self.recovery_modal {
+                        modal.stage = crate::state::RecoveryStage::Resetting;
+                    }
+                    self.pending_recovery_reset = true;
+                }
+                KeyCode::Esc => {
+                    self.recovery_modal = None;
+                }
+                _ => {}
+            },
+            Some(crate::state::RecoveryStage::Failed(_)) => match key.code {
+                KeyCode::Enter | KeyCode::Esc => {
+                    self.recovery_modal = None;
+                }
+                _ => {}
+            },
             None => {}
         }
     }

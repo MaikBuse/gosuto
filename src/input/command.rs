@@ -116,6 +116,13 @@ pub const COMMANDS: &[CommandDef] = &[
         description: "Verify device (self or user)",
         takes_arg: true,
     },
+    CommandDef {
+        name: "recovery",
+        aliases: &["backup"],
+        syntax: ":recovery",
+        description: "Manage recovery key",
+        takes_arg: false,
+    },
 ];
 
 pub fn filtered_commands(prefix: &str) -> Vec<&'static CommandDef> {
@@ -305,6 +312,7 @@ fn parse_command(input: &str) -> InputResult {
             };
             InputResult::Command(CommandAction::Verify(target))
         }
+        "recovery" | "backup" => InputResult::Command(CommandAction::Recovery),
         _ => InputResult::None,
     }
 }

@@ -115,6 +115,10 @@ pub enum AppEvent {
         reason: String,
     },
     VerificationError(String),
+    // Recovery events
+    RecoveryState(String),
+    RecoveryKeyReady(String),
+    RecoveryError(String),
 }
 
 pub type EventSender = mpsc::UnboundedSender<AppEvent>;

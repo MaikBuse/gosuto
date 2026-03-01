@@ -11,6 +11,7 @@ pub mod room_info;
 pub mod room_list;
 pub mod status_bar;
 pub mod theme;
+pub mod recovery_modal;
 pub mod verify_modal;
 
 use ratatui::Frame;
@@ -106,5 +107,10 @@ pub fn render(app: &App, frame: &mut Frame) {
     // Verification modal overlay
     if let Some(ref verify_state) = app.verification_modal {
         verify_modal::render(verify_state, frame);
+    }
+
+    // Recovery modal overlay
+    if let Some(ref recovery_state) = app.recovery_modal {
+        recovery_modal::render(recovery_state, frame);
     }
 }

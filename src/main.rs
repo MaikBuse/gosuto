@@ -458,6 +458,78 @@ async fn main() -> Result<()> {
                             });
                         }
 
+                        // Handle recovery state check
+                        if app.pending_recovery {
+                            app.pending_recovery = false;
+                            app.recovery_modal = Some(crate::state::RecoveryModalState {
+                                stage: crate::state::RecoveryStage::Checking,
+                            });
+                            let client = matrix_client.clone();
+                            let tx = event_tx.clone();
+                            tokio::spawn(async move {
+                                let client = client.lock().await.clone();
+                                if let Some(client) = client {
+                                    let recovery = client.encryption().recovery();
+                                    let state = recovery.state();
+                                    let state_str = format!("{:?}", state);
+                                    let _ = tx.send(AppEvent::RecoveryState(state_str));
+                                }
+                            });
+                        }
+
+                        // Handle recovery key creation
+                        if app.pending_recovery_create {
+                            app.pending_recovery_create = false;
+                            let client = matrix_client.clone();
+                            let tx = event_tx.clone();
+                            tokio::spawn(async move {
+                                let client = client.lock().await.clone();
+                                if let Some(client) = client {
+                                    match client
+                                        .encryption()
+                                        .recovery()
+                                        .enable()
+                                        .wait_for_backups_to_upload()
+                                        .await
+                                    {
+                                        Ok(key) => {
+                                            let _ = tx.send(AppEvent::RecoveryKeyReady(key));
+                                        }
+                                        Err(e) => {
+                                            let _ =
+                                                tx.send(AppEvent::RecoveryError(e.to_string()));
+                                        }
+                                    }
+                                }
+                            });
+                        }
+
+                        // Handle recovery key reset
+                        if app.pending_recovery_reset {
+                            app.pending_recovery_reset = false;
+                            let client = matrix_client.clone();
+                            let tx = event_tx.clone();
+                            tokio::spawn(async move {
+                                let client = client.lock().await.clone();
+                                if let Some(client) = client {
+                                    match client
+                                        .encryption()
+                                        .recovery()
+                                        .reset_key()
+                                        .await
+                                    {
+                                        Ok(key) => {
+                                            let _ = tx.send(AppEvent::RecoveryKeyReady(key));
+                                        }
+                                        Err(e) => {
+                                            let _ =
+                                                tx.send(AppEvent::RecoveryError(e.to_string()));
+                                        }
+                                    }
+                                }
+                            });
+                        }
+
                         // Handle incoming verification requests
                         {
                             let mut iv_guard = incoming_verification.lock().await;

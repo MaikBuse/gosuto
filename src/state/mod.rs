@@ -22,3 +22,19 @@ pub enum VerificationStage {
     Completed,
     Failed(String),
 }
+
+#[derive(Debug)]
+pub struct RecoveryModalState {
+    pub stage: RecoveryStage,
+}
+
+#[derive(Debug)]
+pub enum RecoveryStage {
+    Checking,
+    Setup,
+    Creating,
+    ShowKey(String),
+    Enabled,
+    Resetting,
+    Failed(String),
+}
