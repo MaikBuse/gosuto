@@ -18,14 +18,21 @@ pub fn render(state: &RecoveryModalState, frame: &mut Frame) {
     let popup_w = POPUP_WIDTH.min(area.width.saturating_sub(4));
     let base_h = POPUP_HEIGHT.min(area.height.saturating_sub(4));
 
-    // Dynamic height for Failed stage: account for wrapped error lines
-    let popup_h = if let RecoveryStage::Failed(ref err) = state.stage {
-        let inner_w = (popup_w.saturating_sub(6)) as usize;
-        let lines = wrap_text(err, inner_w);
-        let extra = lines.len().saturating_sub(1) as u16;
-        (base_h + extra).min(area.height.saturating_sub(4))
-    } else {
-        base_h
+    // Dynamic height: account for wrapped lines in Failed and ShowKey stages
+    let popup_h = match &state.stage {
+        RecoveryStage::Failed(err) => {
+            let inner_w = (popup_w.saturating_sub(6)) as usize;
+            let lines = wrap_text(err, inner_w);
+            let extra = lines.len().saturating_sub(1) as u16;
+            (base_h + extra).min(area.height.saturating_sub(4))
+        }
+        RecoveryStage::ShowKey(key) => {
+            let inner_w = (popup_w.saturating_sub(6)) as usize;
+            let lines = wrap_text(key, inner_w);
+            let extra = lines.len().saturating_sub(1) as u16;
+            (base_h + extra).min(area.height.saturating_sub(4))
+        }
+        _ => base_h,
     };
     let popup = centered_rect(popup_w, popup_h, area);
     let buf = frame.buffer_mut();
@@ -144,20 +151,22 @@ pub fn render(state: &RecoveryModalState, frame: &mut Frame) {
                 Style::default().fg(theme::TEXT).bg(theme::BG),
             );
 
-            // Display key in cyan/bold, centered
-            let key_display = truncate_str(key, inner_w);
-            let kx = left + (inner_w.saturating_sub(key_display.len())) as u16 / 2;
-            write_str(
-                buf,
-                &bounds,
-                kx,
-                y + 2,
-                &key_display,
-                Style::default()
-                    .fg(theme::CYAN)
-                    .bg(theme::BG)
-                    .add_modifier(Modifier::BOLD),
-            );
+            // Display key in cyan/bold, wrapped across lines
+            let key_lines = wrap_text(key, inner_w);
+            for (i, line) in key_lines.iter().enumerate() {
+                let kx = left + (inner_w.saturating_sub(line.len())) as u16 / 2;
+                write_str(
+                    buf,
+                    &bounds,
+                    kx,
+                    y + 2 + i as u16,
+                    line,
+                    Style::default()
+                        .fg(theme::CYAN)
+                        .bg(theme::BG)
+                        .add_modifier(Modifier::BOLD),
+                );
+            }
 
             let warn = "Save this key somewhere safe!";
             let wx = left + (inner_w.saturating_sub(warn.len())) as u16 / 2;
@@ -165,7 +174,7 @@ pub fn render(state: &RecoveryModalState, frame: &mut Frame) {
                 buf,
                 &bounds,
                 wx,
-                y + 4,
+                y + 2 + key_lines.len() as u16 + 1,
                 warn,
                 Style::default()
                     .fg(theme::RED)
@@ -250,6 +259,85 @@ pub fn render(state: &RecoveryModalState, frame: &mut Frame) {
             );
 
             let hint = "r reset \u{00b7} Esc close";
+            let hx = left + (inner_w.saturating_sub(hint.len())) as u16 / 2;
+            write_str(
+                buf,
+                &bounds,
+                hx,
+                popup.y + popup.height - 2,
+                hint,
+                Style::default().fg(theme::DIM).bg(theme::BG),
+            );
+        }
+        RecoveryStage::ConfirmReset => {
+            let msg = "Reset recovery key?";
+            let x = left + (inner_w.saturating_sub(msg.len())) as u16 / 2;
+            let y = popup.y + popup.height / 2 - 3;
+            write_str(
+                buf,
+                &bounds,
+                x,
+                y,
+                msg,
+                Style::default()
+                    .fg(theme::RED)
+                    .bg(theme::BG)
+                    .add_modifier(Modifier::BOLD),
+            );
+
+            let msg2 = "Old encrypted messages may become";
+            let x2 = left + (inner_w.saturating_sub(msg2.len())) as u16 / 2;
+            write_str(
+                buf,
+                &bounds,
+                x2,
+                y + 2,
+                msg2,
+                Style::default().fg(theme::TEXT).bg(theme::BG),
+            );
+
+            let msg3 = "unreadable without the current key";
+            let x3 = left + (inner_w.saturating_sub(msg3.len())) as u16 / 2;
+            write_str(
+                buf,
+                &bounds,
+                x3,
+                y + 3,
+                msg3,
+                Style::default().fg(theme::TEXT).bg(theme::BG),
+            );
+
+            let prompt = "Type \"yes\" to confirm:";
+            let xp = left + (inner_w.saturating_sub(prompt.len())) as u16 / 2;
+            write_str(
+                buf,
+                &bounds,
+                xp,
+                y + 5,
+                prompt,
+                Style::default().fg(theme::DIM).bg(theme::BG),
+            );
+
+            // Render typed buffer with blinking cursor
+            let display = &state.confirm_buffer;
+            let total_w = display.len() + 1; // buffer + cursor
+            let bx = left + (inner_w.saturating_sub(total_w)) as u16 / 2;
+            write_str(
+                buf,
+                &bounds,
+                bx,
+                y + 6,
+                display,
+                Style::default().fg(theme::GREEN).bg(theme::BG),
+            );
+            let cursor_x = bx + display.chars().count() as u16;
+            let cursor_s = Style::default()
+                .fg(theme::GREEN)
+                .bg(theme::BG)
+                .add_modifier(Modifier::SLOW_BLINK);
+            set_cell(buf, &bounds, cursor_x, y + 6, '_', cursor_s);
+
+            let hint = "Esc cancel";
             let hx = left + (inner_w.saturating_sub(hint.len())) as u16 / 2;
             write_str(
                 buf,
@@ -356,14 +444,6 @@ fn wrap_text(s: &str, max_width: usize) -> Vec<String> {
         lines.push(String::new());
     }
     lines
-}
-
-fn truncate_str(s: &str, max: usize) -> String {
-    if s.len() > max {
-        format!("{}…", &s[..max.saturating_sub(1)])
-    } else {
-        s.to_string()
-    }
 }
 
 fn centered_rect(w: u16, h: u16, area: Rect) -> Rect {

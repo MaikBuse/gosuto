@@ -1019,9 +1019,9 @@ impl App {
             Some(crate::state::RecoveryStage::Incomplete) => match key.code {
                 KeyCode::Char('r') => {
                     if let Some(ref mut modal) = self.recovery_modal {
-                        modal.stage = crate::state::RecoveryStage::Resetting;
+                        modal.confirm_buffer.clear();
+                        modal.stage = crate::state::RecoveryStage::ConfirmReset;
                     }
-                    self.pending_recovery_reset = true;
                 }
                 KeyCode::Esc => {
                     self.recovery_modal = None;
@@ -1031,9 +1031,38 @@ impl App {
             Some(crate::state::RecoveryStage::Enabled) => match key.code {
                 KeyCode::Char('r') => {
                     if let Some(ref mut modal) = self.recovery_modal {
-                        modal.stage = crate::state::RecoveryStage::Resetting;
+                        modal.confirm_buffer.clear();
+                        modal.stage = crate::state::RecoveryStage::ConfirmReset;
                     }
-                    self.pending_recovery_reset = true;
+                }
+                KeyCode::Esc => {
+                    self.recovery_modal = None;
+                }
+                _ => {}
+            },
+            Some(crate::state::RecoveryStage::ConfirmReset) => match key.code {
+                KeyCode::Backspace => {
+                    if let Some(ref mut modal) = self.recovery_modal {
+                        modal.confirm_buffer.pop();
+                    }
+                }
+                KeyCode::Char(c) => {
+                    if let Some(ref mut modal) = self.recovery_modal {
+                        modal.confirm_buffer.push(c);
+                    }
+                }
+                KeyCode::Enter => {
+                    let confirmed = self
+                        .recovery_modal
+                        .as_ref()
+                        .map(|m| m.confirm_buffer == "yes")
+                        .unwrap_or(false);
+                    if confirmed {
+                        if let Some(ref mut modal) = self.recovery_modal {
+                            modal.stage = crate::state::RecoveryStage::Resetting;
+                        }
+                        self.pending_recovery_reset = true;
+                    }
                 }
                 KeyCode::Esc => {
                     self.recovery_modal = None;

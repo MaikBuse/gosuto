@@ -463,6 +463,7 @@ async fn main() -> Result<()> {
                             app.pending_recovery = false;
                             app.recovery_modal = Some(crate::state::RecoveryModalState {
                                 stage: crate::state::RecoveryStage::Checking,
+                                confirm_buffer: String::new(),
                             });
                             let client = matrix_client.clone();
                             let tx = event_tx.clone();
