@@ -49,7 +49,6 @@ pub struct EmpPulse {
     micro_pulses: Vec<MicroPulse>,
     rng: Xorshift64,
     last_area: Rect,
-    focused: bool,
     ambient_timer: f32,
 }
 
@@ -62,14 +61,12 @@ impl EmpPulse {
             micro_pulses: Vec::new(),
             rng: Xorshift64::new(0xE1EC_7A0F_0015_E000),
             last_area: Rect::default(),
-            focused: false,
             ambient_timer: 0.0,
         }
     }
 
     /// Advance all animations by `dt_ms` milliseconds.
-    pub fn tick(&mut self, dt_ms: u64, area: Rect, focused: bool) {
-        self.focused = focused;
+    pub fn tick(&mut self, dt_ms: u64, area: Rect, _focused: bool) {
         let dt = dt_ms as f32;
 
         // Re-init field lines on resize
@@ -92,7 +89,7 @@ impl EmpPulse {
         self.sparks.retain(|s| s.remaining_ms > 0.0);
 
         // ── Field lines (ambient) ───────────────────────────────────────
-        let field_brightness_mult = if focused { 0.40 } else { 1.0 };
+        let field_brightness_mult = 1.0_f32;
         let height = area.height as f32;
 
         for fl in &mut self.field_lines {
@@ -103,14 +100,13 @@ impl EmpPulse {
                 fl.speed = self.rng.next_range(0.5, 1.5);
                 fl.brightness = self.rng.next_range(0.35, 0.75) * field_brightness_mult;
             }
-            fl.brightness = (fl.brightness / field_brightness_mult.max(0.01))
-                .clamp(0.35, 0.75)
+            fl.brightness = (fl.brightness / field_brightness_mult.max(0.01)).clamp(0.35, 0.75)
                 * field_brightness_mult;
         }
 
-        // ── Micro-pulses (ambient, only when unfocused) ─────────────────
+        // ── Micro-pulses (ambient) ─────────────────────────────────────
         self.ambient_timer += dt;
-        if !focused && height > 0.0 {
+        if height > 0.0 {
             let interval = self.rng.next_range(3000.0, 5000.0);
             if self.ambient_timer >= interval {
                 self.ambient_timer = 0.0;
@@ -125,7 +121,8 @@ impl EmpPulse {
         for mp in &mut self.micro_pulses {
             mp.elapsed_ms += dt;
         }
-        self.micro_pulses.retain(|mp| mp.elapsed_ms < mp.duration_ms);
+        self.micro_pulses
+            .retain(|mp| mp.elapsed_ms < mp.duration_ms);
     }
 
     /// Trigger a burst at the given absolute row index (within the room list).
@@ -262,8 +259,7 @@ impl EmpPulse {
             let radius = progress * max_radius;
 
             // Visual epicenter (absolute row → screen position)
-            let visual_epi =
-                sw.epicenter_row as i32 - scroll_offset as i32 + area.y as i32 + 1; // +1 for border
+            let visual_epi = sw.epicenter_row as i32 - scroll_offset as i32 + area.y as i32 + 1; // +1 for border
 
             // Draw wave rings at epicenter ± radius
             for sign in [-1.0_f32, 1.0] {
@@ -275,8 +271,8 @@ impl EmpPulse {
 
                 // Distance from epicenter determines character and color
                 let dist = (wy as f32 - visual_epi as f32).abs() / max_radius;
-                let char_idx = ((dist * (WAVE_CHARS.len() - 1) as f32) as usize)
-                    .min(WAVE_CHARS.len() - 1);
+                let char_idx =
+                    ((dist * (WAVE_CHARS.len() - 1) as f32) as usize).min(WAVE_CHARS.len() - 1);
                 let ch = WAVE_CHARS[char_idx];
 
                 // 2-zone color: cyan core → magenta fringe
@@ -325,8 +321,7 @@ impl EmpPulse {
     fn render_sparks(&self, buf: &mut Buffer, area: Rect, scroll_offset: usize) {
         for spark in &self.sparks {
             let x = area.x + spark.x;
-            let visual_y =
-                spark.y as i32 - scroll_offset as i32 + area.y as i32 + 1; // +1 for border
+            let visual_y = spark.y as i32 - scroll_offset as i32 + area.y as i32 + 1; // +1 for border
 
             if x >= area.x + area.width
                 || visual_y < area.y as i32
