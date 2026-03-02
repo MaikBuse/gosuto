@@ -643,6 +643,11 @@ async fn main() -> Result<()> {
                                     {
                                         Ok(()) => {
                                             let _ = tx.send(AppEvent::RecoveryRecovered);
+                                            let state =
+                                                client.encryption().recovery().state();
+                                            let _ = tx.send(AppEvent::RecoveryState(
+                                                format!("{:?}", state),
+                                            ));
                                         }
                                         Err(e) => {
                                             let _ =

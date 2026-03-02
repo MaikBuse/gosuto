@@ -240,6 +240,7 @@ pub struct App {
     pub pending_verify: Option<Option<String>>,
     pub verify_confirm_tx: Option<tokio::sync::oneshot::Sender<bool>>,
     pub self_verified: bool,
+    pub recovery_enabled: bool,
     // Which-key leader popup
     pub which_key: Option<Option<crate::ui::which_key::WhichKeyCategory>>,
     // Recovery
@@ -303,6 +304,7 @@ impl App {
             pending_verify: None,
             verify_confirm_tx: None,
             self_verified: false,
+            recovery_enabled: false,
             which_key: None,
             recovery_modal: None,
             pending_recovery: false,
@@ -403,6 +405,8 @@ impl App {
                 self.members_list = MemberListState::new();
                 self.login = LoginState::new();
                 self.sync_status = "disconnected".to_string();
+                self.self_verified = false;
+                self.recovery_enabled = false;
 
                 if self.pending_credential_clear {
                     self.pending_credential_clear = false;
@@ -695,7 +699,7 @@ impl App {
             }
             // Recovery events
             AppEvent::RecoveryState(state_str) => {
-                let stage = if state_str.contains("Enabled") {
+                let stage = if state_str.contains("Enabled") || self.recovery_enabled {
                     crate::state::RecoveryStage::Enabled
                 } else if state_str.contains("Incomplete") {
                     crate::state::RecoveryStage::Incomplete
@@ -711,11 +715,17 @@ impl App {
                     modal.stage = crate::state::RecoveryStage::ShowKey(key);
                     modal.copied = false;
                 }
+                self.recovery_enabled = true;
+                self.self_verified = true;
+                self.user_config.verified = true;
             }
             AppEvent::RecoveryRecovered => {
                 if let Some(ref mut modal) = self.recovery_modal {
                     modal.stage = crate::state::RecoveryStage::Enabled;
                 }
+                self.recovery_enabled = true;
+                self.self_verified = true;
+                self.user_config.verified = true;
                 self.pending_refetch = true;
             }
             AppEvent::RecoveryError(err) => {
@@ -1431,6 +1441,7 @@ impl App {
                             modal.stage = crate::state::RecoveryStage::Resetting;
                         }
                         self.pending_recovery_reset = true;
+                        self.recovery_enabled = false;
                     }
                 }
                 KeyCode::Esc => {
