@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.3.0](https://github.com/MaikBuse/gosuto/compare/v0.2.0...v0.3.0) (2026-03-02)
+
+
+### Features
+
+* add which-key leader popup, room list domain grouping, and call participants ([92bb578](https://github.com/MaikBuse/gosuto/commit/92bb578b0853b448d7cb796fa40e9b41f3056206))
+* make topic editable in room edit modal ([e9a6c7d](https://github.com/MaikBuse/gosuto/commit/e9a6c7d8282c8aa8d5cb94f9df33410ad959a881))
+* replace :create command with interactive create room modal ([60bcc15](https://github.com/MaikBuse/gosuto/commit/60bcc154b86a27575941385801ad70bbec61394e))
+
+
+### Bug Fixes
+
+* **ci:** bundle SQLite to fix Windows linking failure ([17ccb71](https://github.com/MaikBuse/gosuto/commit/17ccb719d912c56b24baf3a1d341471b1f237a8b))
+* resolve clippy warnings in which_key.rs ([81afc8c](https://github.com/MaikBuse/gosuto/commit/81afc8c534e899c392469fb8ea5040d361c6e50e))
+* show UTD placeholders and re-fetch messages after verification ([5ce0af8](https://github.com/MaikBuse/gosuto/commit/5ce0af86c886c5e76ce5a8287a85e990d8e20ed7))
+
+
+### Performance Improvements
+
+* **ci:** parallelize pipeline and improve caching ([2edda45](https://github.com/MaikBuse/gosuto/commit/2edda456d11d4a564c2e7fed4e139056cc8647e0))
+
 ## [0.2.0](https://github.com/MaikBuse/gosuto/compare/v0.1.1...v0.2.0) (2026-03-01)
 
 
