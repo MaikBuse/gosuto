@@ -26,6 +26,7 @@ pub enum InputResult {
     CallMember,
     AnswerCall,
     RejectCall,
+    ShowWhichKey,
 }
 
 #[derive(Debug, Clone)]
@@ -42,10 +43,7 @@ pub enum CommandAction {
     Rain,
     Glitch,
     AudioSettings,
-    CreateRoom {
-        name: String,
-        history_visibility: Option<String>,
-    },
+    CreateRoom,
     RoomInfo,
     Configure,
     Verify(Option<String>),

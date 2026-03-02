@@ -3,6 +3,7 @@ pub mod call_overlay;
 pub mod chat;
 pub mod completion_popup;
 pub mod configure;
+pub mod create_room;
 pub mod effects;
 pub mod input_bar;
 pub mod layout;
@@ -14,6 +15,7 @@ pub mod room_list;
 pub mod status_bar;
 pub mod theme;
 pub mod verify_modal;
+pub mod which_key;
 
 use ratatui::Frame;
 
@@ -105,6 +107,11 @@ pub fn render(app: &App, frame: &mut Frame) {
         room_info::render(&app.room_info, frame);
     }
 
+    // Create room modal overlay
+    if app.create_room.open {
+        create_room::render(&app.create_room, frame);
+    }
+
     // User config modal overlay
     if app.user_config.open {
         configure::render(&app.user_config, frame);
@@ -118,5 +125,10 @@ pub fn render(app: &App, frame: &mut Frame) {
     // Recovery modal overlay
     if let Some(ref recovery_state) = app.recovery_modal {
         recovery_modal::render(recovery_state, frame);
+    }
+
+    // Which-key leader popup
+    if let Some(ref wk) = app.which_key {
+        which_key::render(*wk, app, frame);
     }
 }

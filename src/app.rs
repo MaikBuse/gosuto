@@ -36,6 +36,41 @@ pub struct RoomInfoState {
     pub topic_save_pending: bool,
 }
 
+pub struct CreateRoomState {
+    pub open: bool,
+    pub selected_field: usize, // 0=name, 1=topic, 2=history, 3=encrypted, 4=create button
+    pub name_buffer: String,
+    pub editing_name: bool,
+    pub topic_buffer: String,
+    pub editing_topic: bool,
+    pub history_visibility: String,
+    pub encrypted: String, // "yes" (default) or "no"
+    pub creating: bool,
+}
+
+impl CreateRoomState {
+    pub fn new() -> Self {
+        Self {
+            open: false,
+            selected_field: 0,
+            name_buffer: String::new(),
+            editing_name: false,
+            topic_buffer: String::new(),
+            editing_topic: false,
+            history_visibility: "shared".to_string(),
+            encrypted: "yes".to_string(),
+            creating: false,
+        }
+    }
+}
+
+pub struct CreateRoomParams {
+    pub name: String,
+    pub topic: Option<String>,
+    pub history_visibility: String,
+    pub encrypted: bool,
+}
+
 impl RoomInfoState {
     pub fn new() -> Self {
         Self {
@@ -167,7 +202,7 @@ pub struct App {
     pending_join: Option<String>,           // room_id_or_alias
     pending_leave: Option<String>,          // room_id
     pending_dm: Option<String>,             // user_id
-    pending_create_room: Option<(String, String)>, // (room name, history_visibility)
+    pending_create_room: Option<CreateRoomParams>,
     pub pending_room_info: bool,
     pub pending_set_visibility: Option<(String, String)>, // (room_id, visibility)
     pub pending_set_room_name: Option<(String, String)>,  // (room_id, new_name)
@@ -190,6 +225,8 @@ pub struct App {
     pub members_title_reveal: TextReveal,
     // Room info
     pub room_info: RoomInfoState,
+    // Create room
+    pub create_room: CreateRoomState,
     // User config
     pub user_config: UserConfigState,
     pub pending_user_config: bool,
@@ -203,6 +240,8 @@ pub struct App {
     pub pending_verify: Option<Option<String>>,
     pub verify_confirm_tx: Option<tokio::sync::oneshot::Sender<bool>>,
     pub self_verified: bool,
+    // Which-key leader popup
+    pub which_key: Option<Option<crate::ui::which_key::WhichKeyCategory>>,
     // Recovery
     pub recovery_modal: Option<crate::state::RecoveryModalState>,
     pub pending_recovery: bool,
@@ -253,6 +292,7 @@ impl App {
             chat_title_reveal: TextReveal::new(0xC0DE_CAFE_0001),
             members_title_reveal: TextReveal::new(0xC0DE_CAFE_0002),
             room_info: RoomInfoState::new(),
+            create_room: CreateRoomState::new(),
             user_config: UserConfigState::new(),
             pending_user_config: false,
             pending_set_display_name: None,
@@ -263,6 +303,7 @@ impl App {
             pending_verify: None,
             verify_confirm_tx: None,
             self_verified: false,
+            which_key: None,
             recovery_modal: None,
             pending_recovery: false,
             pending_recovery_create: false,
@@ -290,8 +331,12 @@ impl App {
                     self.handle_user_config_key(key);
                 } else if self.room_info.open {
                     self.handle_room_info_key(key);
+                } else if self.create_room.open {
+                    self.handle_create_room_key(key);
                 } else if self.audio_settings.open {
                     self.handle_audio_settings_key(key);
+                } else if self.which_key.is_some() {
+                    self.handle_which_key(key);
                 } else {
                     // PTT: key press sets transmitting
                     if self.config.audio.push_to_talk
@@ -438,11 +483,16 @@ impl App {
                 self.chat_title_reveal.trigger();
             }
             AppEvent::RoomCreated { room_id } => {
+                self.create_room.open = false;
+                self.create_room.creating = false;
                 self.messages.set_room(Some(room_id));
                 self.vim.focus = FocusPanel::Messages;
                 self.chat_title_reveal.trigger();
             }
             AppEvent::SyncError(err) => {
+                if self.create_room.creating {
+                    self.create_room.creating = false;
+                }
                 self.last_error = Some(err);
             }
             AppEvent::SyncStatus(status) => {
@@ -453,7 +503,15 @@ impl App {
             }
             // VoIP events (MatrixRTC)
             AppEvent::CallMemberJoined { room_id, user_id } => {
-                // If we're already in a call, ignore
+                // Update room call members for sidebar display
+                self.room_list
+                    .room_call_members
+                    .entry(room_id.clone())
+                    .or_default()
+                    .insert(user_id.clone());
+                self.room_list.rebuild_display_rows();
+
+                // If we're already in a call, ignore ringing logic
                 if self.call_info.is_some() {
                     return;
                 }
@@ -479,6 +537,15 @@ impl App {
                 self.incoming_call_room_name = room_name;
             }
             AppEvent::CallMemberLeft { room_id, user_id } => {
+                // Update room call members for sidebar display
+                if let Some(members) = self.room_list.room_call_members.get_mut(&room_id) {
+                    members.remove(&user_id);
+                    if members.is_empty() {
+                        self.room_list.room_call_members.remove(&room_id);
+                    }
+                }
+                self.room_list.rebuild_display_rows();
+
                 // If it was the incoming caller, clear ringing state
                 if self.incoming_call_room.as_deref() == Some(&room_id)
                     && self.incoming_call_user.as_deref() == Some(&user_id)
@@ -813,6 +880,9 @@ impl App {
             InputResult::ClearSearch => {
                 self.room_list.set_filter(None);
             }
+            InputResult::ShowWhichKey => {
+                self.which_key = Some(None);
+            }
         }
     }
 
@@ -947,12 +1017,18 @@ impl App {
             CommandAction::AudioSettings => {
                 self.open_audio_settings();
             }
-            CommandAction::CreateRoom {
-                name,
-                history_visibility,
-            } => {
-                let vis = history_visibility.unwrap_or_else(|| "shared".to_string());
-                self.pending_create_room = Some((name, vis));
+            CommandAction::CreateRoom => {
+                self.create_room = CreateRoomState {
+                    open: true,
+                    selected_field: 0,
+                    name_buffer: String::new(),
+                    editing_name: true,
+                    topic_buffer: String::new(),
+                    editing_topic: false,
+                    history_visibility: "shared".to_string(),
+                    encrypted: "yes".to_string(),
+                    creating: false,
+                };
             }
             CommandAction::Verify(target) => {
                 self.pending_verify = Some(target);
@@ -1010,6 +1086,89 @@ impl App {
         }
     }
 
+    // ── Which-Key Leader Popup ────────────────────────
+
+    fn handle_which_key(&mut self, key: KeyEvent) {
+        use crate::ui::which_key::WhichKeyCategory;
+
+        match self.which_key {
+            Some(None) => {
+                // Root menu
+                match key.code {
+                    KeyCode::Char('r') => self.which_key = Some(Some(WhichKeyCategory::Room)),
+                    KeyCode::Char('c') => self.which_key = Some(Some(WhichKeyCategory::Call)),
+                    KeyCode::Char('s') => self.which_key = Some(Some(WhichKeyCategory::Security)),
+                    KeyCode::Char('e') => self.which_key = Some(Some(WhichKeyCategory::Effects)),
+                    KeyCode::Char('u') => self.which_key = Some(Some(WhichKeyCategory::User)),
+                    KeyCode::Char('q') => {
+                        self.which_key = None;
+                        self.running = false;
+                    }
+                    KeyCode::Char('l') => {
+                        self.which_key = None;
+                        self.pending_logout = true;
+                        self.pending_credential_clear = true;
+                    }
+                    _ => self.which_key = None,
+                }
+            }
+            Some(Some(cat)) => {
+                match key.code {
+                    KeyCode::Esc => self.which_key = None,
+                    KeyCode::Backspace => self.which_key = Some(None),
+                    KeyCode::Char(ch) => {
+                        self.which_key = None;
+                        self.dispatch_which_key_action(cat, ch);
+                    }
+                    _ => self.which_key = None,
+                }
+            }
+            None => {}
+        }
+    }
+
+    fn dispatch_which_key_action(
+        &mut self,
+        cat: crate::ui::which_key::WhichKeyCategory,
+        key: char,
+    ) {
+        use crate::input::CommandAction;
+        use crate::ui::which_key::WhichKeyCategory;
+
+        match cat {
+            WhichKeyCategory::Room => match key {
+                'j' => self.vim.enter_command_with("join "),
+                'l' => self.handle_command(CommandAction::Leave),
+                'c' => self.handle_command(CommandAction::CreateRoom),
+                'e' => self.handle_command(CommandAction::RoomInfo),
+                'd' => self.vim.enter_command_with("dm "),
+                _ => {}
+            },
+            WhichKeyCategory::Call => match key {
+                'c' => self.handle_command(CommandAction::Call),
+                'a' => self.handle_command(CommandAction::Answer),
+                'd' => self.handle_command(CommandAction::Reject),
+                'h' => self.handle_command(CommandAction::Hangup),
+                _ => {}
+            },
+            WhichKeyCategory::Security => match key {
+                'v' => self.handle_command(CommandAction::Verify(None)),
+                'r' => self.handle_command(CommandAction::Recovery),
+                _ => {}
+            },
+            WhichKeyCategory::Effects => match key {
+                'r' => self.handle_command(CommandAction::Rain),
+                'g' => self.handle_command(CommandAction::Glitch),
+                _ => {}
+            },
+            WhichKeyCategory::User => match key {
+                'p' => self.handle_command(CommandAction::Configure),
+                'a' => self.handle_command(CommandAction::AudioSettings),
+                _ => {}
+            },
+        }
+    }
+
     pub fn is_logging_in(&self) -> bool {
         matches!(self.auth, AuthState::LoggingIn | AuthState::AutoLoggingIn)
     }
@@ -1063,7 +1222,7 @@ impl App {
         self.pending_dm.take()
     }
 
-    pub fn take_pending_create_room(&mut self) -> Option<(String, String)> {
+    pub fn take_pending_create_room(&mut self) -> Option<CreateRoomParams> {
         self.pending_create_room.take()
     }
 
@@ -1435,6 +1594,145 @@ impl App {
             // Toggle encryption selection between "no" and "yes"
             let _ = dir; // direction doesn't matter for a binary toggle
             self.room_info.encryption_selection = if self.room_info.encryption_selection == "no" {
+                "yes".to_string()
+            } else {
+                "no".to_string()
+            };
+        }
+    }
+
+    // ── Create Room Modal ────────────────────────────────
+
+    fn handle_create_room_key(&mut self, key: KeyEvent) {
+        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
+            self.create_room.open = false;
+            self.running = false;
+            return;
+        }
+
+        if self.create_room.creating {
+            if key.code == KeyCode::Esc {
+                self.create_room.open = false;
+                self.create_room.creating = false;
+            }
+            return;
+        }
+
+        // Inline name editing mode
+        if self.create_room.editing_name {
+            match key.code {
+                KeyCode::Esc => {
+                    self.create_room.editing_name = false;
+                    self.create_room.name_buffer.clear();
+                }
+                KeyCode::Enter => {
+                    self.create_room.editing_name = false;
+                }
+                KeyCode::Backspace => {
+                    self.create_room.name_buffer.pop();
+                }
+                KeyCode::Char(c) => {
+                    self.create_room.name_buffer.push(c);
+                }
+                _ => {}
+            }
+            return;
+        }
+
+        // Inline topic editing mode
+        if self.create_room.editing_topic {
+            match key.code {
+                KeyCode::Esc => {
+                    self.create_room.editing_topic = false;
+                    self.create_room.topic_buffer.clear();
+                }
+                KeyCode::Enter => {
+                    self.create_room.editing_topic = false;
+                }
+                KeyCode::Backspace => {
+                    self.create_room.topic_buffer.pop();
+                }
+                KeyCode::Char(c) => {
+                    self.create_room.topic_buffer.push(c);
+                }
+                _ => {}
+            }
+            return;
+        }
+
+        match key.code {
+            KeyCode::Esc => {
+                self.create_room.open = false;
+            }
+            KeyCode::Char('j') | KeyCode::Down => {
+                if self.create_room.selected_field < 4 {
+                    self.create_room.selected_field += 1;
+                }
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                if self.create_room.selected_field > 0 {
+                    self.create_room.selected_field -= 1;
+                }
+            }
+            KeyCode::Char('h') | KeyCode::Left => {
+                self.cycle_create_room_field(-1);
+            }
+            KeyCode::Char('l') | KeyCode::Right => {
+                self.cycle_create_room_field(1);
+            }
+            KeyCode::Enter => {
+                match self.create_room.selected_field {
+                    0 => {
+                        self.create_room.editing_name = true;
+                    }
+                    1 => {
+                        self.create_room.editing_topic = true;
+                    }
+                    2 | 3 => {
+                        // h/l already handles cycling; Enter does nothing extra here
+                    }
+                    4 => {
+                        // CREATE button
+                        if self.create_room.name_buffer.trim().is_empty() {
+                            self.last_error = Some("Room name is required".to_string());
+                            return;
+                        }
+                        let topic = if self.create_room.topic_buffer.trim().is_empty() {
+                            None
+                        } else {
+                            Some(self.create_room.topic_buffer.clone())
+                        };
+                        self.pending_create_room = Some(CreateRoomParams {
+                            name: self.create_room.name_buffer.clone(),
+                            topic,
+                            history_visibility: self.create_room.history_visibility.clone(),
+                            encrypted: self.create_room.encrypted == "yes",
+                        });
+                        self.create_room.creating = true;
+                    }
+                    _ => {}
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn cycle_create_room_field(&mut self, dir: i32) {
+        if self.create_room.selected_field == 2 {
+            let opts = HISTORY_VISIBILITY_OPTIONS;
+            let current_idx = opts
+                .iter()
+                .position(|&v| v == self.create_room.history_visibility)
+                .unwrap_or(0);
+            let len = opts.len();
+            let new_idx = if dir > 0 {
+                (current_idx + 1) % len
+            } else {
+                (current_idx + len - 1) % len
+            };
+            self.create_room.history_visibility = opts[new_idx].to_string();
+        } else if self.create_room.selected_field == 3 {
+            self.create_room.encrypted = if self.create_room.encrypted == "no" {
                 "yes".to_string()
             } else {
                 "no".to_string()

@@ -98,9 +98,9 @@ pub const COMMANDS: &[CommandDef] = &[
     CommandDef {
         name: "create",
         aliases: &["new"],
-        syntax: ":create <name> [visibility]",
+        syntax: ":create",
         description: "Create a new room",
-        takes_arg: true,
+        takes_arg: false,
     },
     CommandDef {
         name: "edit",
@@ -294,22 +294,7 @@ fn parse_command(input: &str) -> InputResult {
         "rain" | "matrix" | "effects" => InputResult::Command(CommandAction::Rain),
         "glitch" => InputResult::Command(CommandAction::Glitch),
         "audio" | "sound" => InputResult::Command(CommandAction::AudioSettings),
-        "create" | "new" => {
-            if arg.is_empty() {
-                InputResult::None
-            } else {
-                let mut parts = arg.splitn(2, ' ');
-                let name = parts.next().unwrap().to_string();
-                let visibility = parts
-                    .next()
-                    .map(|s| s.trim().to_string())
-                    .filter(|s| !s.is_empty());
-                InputResult::Command(CommandAction::CreateRoom {
-                    name,
-                    history_visibility: visibility,
-                })
-            }
-        }
+        "create" | "new" => InputResult::Command(CommandAction::CreateRoom),
         "edit" | "roominfo" => InputResult::Command(CommandAction::RoomInfo),
         "configure" | "config" | "profile" => InputResult::Command(CommandAction::Configure),
         "verify" => {

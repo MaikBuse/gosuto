@@ -366,7 +366,7 @@ async fn main() -> Result<()> {
                         }
 
                         // Handle room creation
-                        if let Some((room_name, visibility)) = app.take_pending_create_room() {
+                        if let Some(params) = app.take_pending_create_room() {
                             let client_holder = matrix_client.clone();
                             let tx = event_tx.clone();
                             tokio::spawn(async move {
@@ -378,10 +378,18 @@ async fn main() -> Result<()> {
                                         HistoryVisibility, RoomHistoryVisibilityEventContent,
                                     };
                                     let mut request = CreateRoomRequest::new();
-                                    request.name = Some(room_name);
+                                    request.name = Some(params.name);
+
+                                    // Set topic as initial state if provided
+                                    if let Some(topic) = params.topic {
+                                        use matrix_sdk::ruma::events::room::topic::RoomTopicEventContent;
+                                        let topic_content = RoomTopicEventContent::new(topic);
+                                        let topic_event = InitialStateEvent::with_empty_state_key(topic_content);
+                                        request.initial_state.push(topic_event.to_raw_any());
+                                    }
 
                                     // Set history visibility as initial state
-                                    let vis = match visibility.as_str() {
+                                    let vis = match params.history_visibility.as_str() {
                                         "invited" => HistoryVisibility::Invited,
                                         "joined" => HistoryVisibility::Joined,
                                         "world_readable" => HistoryVisibility::WorldReadable,
@@ -391,10 +399,13 @@ async fn main() -> Result<()> {
                                     let initial_event = InitialStateEvent::with_empty_state_key(vis_content);
                                     request.initial_state.push(initial_event.to_raw_any());
 
-                                    use matrix_sdk::ruma::events::room::encryption::RoomEncryptionEventContent;
-                                    let enc = RoomEncryptionEventContent::with_recommended_defaults();
-                                    let enc_event = InitialStateEvent::with_empty_state_key(enc);
-                                    request.initial_state.push(enc_event.to_raw_any());
+                                    // Enable encryption if requested
+                                    if params.encrypted {
+                                        use matrix_sdk::ruma::events::room::encryption::RoomEncryptionEventContent;
+                                        let enc = RoomEncryptionEventContent::with_recommended_defaults();
+                                        let enc_event = InitialStateEvent::with_empty_state_key(enc);
+                                        request.initial_state.push(enc_event.to_raw_any());
+                                    }
 
                                     match client.create_room(request).await {
                                         Ok(response) => {
