@@ -103,21 +103,36 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
                 .add_modifier(ratatui::style::Modifier::BOLD),
         ));
 
-        if msg.pending {
-            spans.push(Span::styled(&msg.body, theme::dim_style()));
-            spans.push(Span::styled(" (sending...)", theme::dim_style()));
+        let body_style = if msg.pending {
+            theme::dim_style()
         } else if msg.is_emote {
-            spans.push(Span::styled(
-                &msg.body,
-                ratatui::style::Style::default().fg(sender_color),
-            ));
+            ratatui::style::Style::default().fg(sender_color)
         } else if msg.is_notice {
-            spans.push(Span::styled(&msg.body, theme::dim_style()));
+            theme::dim_style()
         } else {
-            spans.push(Span::styled(&msg.body, theme::text_style()));
-        }
+            theme::text_style()
+        };
 
+        let body_lines: Vec<&str> = msg.body.split('\n').collect();
+        // First line: attach to the prefix spans
+        if let Some(first) = body_lines.first() {
+            spans.push(Span::styled(first.to_string(), body_style));
+            if msg.pending {
+                spans.push(Span::styled(" (sending...)", theme::dim_style()));
+            }
+        }
         lines.push(Line::from(spans));
+
+        // Continuation lines: indent to align with body text
+        // Prefix width: "HH:MM " (6) + sender + " "
+        let indent_width = 6 + msg.sender.len() + 1;
+        let indent: String = " ".repeat(indent_width);
+        for cont_line in body_lines.iter().skip(1) {
+            lines.push(Line::from(vec![
+                Span::styled(indent.clone(), theme::dim_style()),
+                Span::styled(cont_line.to_string(), body_style),
+            ]));
+        }
     }
 
     // Compute total visual lines accounting for wrapping

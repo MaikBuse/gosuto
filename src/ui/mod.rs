@@ -34,7 +34,7 @@ pub fn render(app: &App, frame: &mut Frame) {
         return;
     }
 
-    let layout = layout::compute_layout(frame);
+    let layout = layout::compute_layout(frame, app.vim.input_line_count());
 
     room_list::render(app, frame, layout.room_list);
     chat::render(app, frame, layout.chat_area);

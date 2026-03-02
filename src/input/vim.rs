@@ -149,6 +149,20 @@ impl VimState {
         self.input_cursor = 0;
         std::mem::take(&mut self.input_buffer)
     }
+
+    pub fn input_line_count(&self) -> usize {
+        self.input_buffer.split('\n').count().max(1)
+    }
+
+    pub fn cursor_row_col(&self) -> (usize, usize) {
+        let before_cursor = &self.input_buffer[..self.input_cursor];
+        let row = before_cursor.matches('\n').count();
+        let col = match before_cursor.rfind('\n') {
+            Some(pos) => self.input_cursor - pos - 1,
+            None => self.input_cursor,
+        };
+        (row, col)
+    }
 }
 
 #[cfg(test)]
@@ -355,5 +369,87 @@ mod tests {
         assert_eq!(format!("{}", VimMode::Normal), "NORMAL");
         assert_eq!(format!("{}", VimMode::Insert), "INSERT");
         assert_eq!(format!("{}", VimMode::Command), "COMMAND");
+    }
+
+    // --- input_line_count ---
+
+    #[test]
+    fn input_line_count_empty() {
+        let vim = VimState::new();
+        assert_eq!(vim.input_line_count(), 1);
+    }
+
+    #[test]
+    fn input_line_count_single_line() {
+        let mut vim = VimState::new();
+        vim.insert_char('h');
+        vim.insert_char('i');
+        assert_eq!(vim.input_line_count(), 1);
+    }
+
+    #[test]
+    fn input_line_count_multi_line() {
+        let mut vim = VimState::new();
+        vim.insert_char('a');
+        vim.insert_char('\n');
+        vim.insert_char('b');
+        vim.insert_char('\n');
+        vim.insert_char('c');
+        assert_eq!(vim.input_line_count(), 3);
+    }
+
+    #[test]
+    fn input_line_count_trailing_newline() {
+        let mut vim = VimState::new();
+        vim.insert_char('a');
+        vim.insert_char('\n');
+        assert_eq!(vim.input_line_count(), 2);
+    }
+
+    // --- cursor_row_col ---
+
+    #[test]
+    fn cursor_row_col_empty() {
+        let vim = VimState::new();
+        assert_eq!(vim.cursor_row_col(), (0, 0));
+    }
+
+    #[test]
+    fn cursor_row_col_single_line() {
+        let mut vim = VimState::new();
+        vim.insert_char('h');
+        vim.insert_char('i');
+        assert_eq!(vim.cursor_row_col(), (0, 2));
+    }
+
+    #[test]
+    fn cursor_row_col_after_newline() {
+        let mut vim = VimState::new();
+        vim.insert_char('a');
+        vim.insert_char('\n');
+        assert_eq!(vim.cursor_row_col(), (1, 0));
+    }
+
+    #[test]
+    fn cursor_row_col_second_line() {
+        let mut vim = VimState::new();
+        vim.insert_char('a');
+        vim.insert_char('b');
+        vim.insert_char('\n');
+        vim.insert_char('c');
+        vim.insert_char('d');
+        vim.insert_char('e');
+        assert_eq!(vim.cursor_row_col(), (1, 3));
+    }
+
+    #[test]
+    fn cursor_row_col_third_line() {
+        let mut vim = VimState::new();
+        vim.insert_char('a');
+        vim.insert_char('\n');
+        vim.insert_char('b');
+        vim.insert_char('\n');
+        vim.insert_char('c');
+        assert_eq!(vim.cursor_row_col(), (2, 1));
     }
 }

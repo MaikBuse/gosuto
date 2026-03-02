@@ -144,7 +144,16 @@ pub async fn send_message(
         .get_room(&room_id_parsed)
         .ok_or_else(|| anyhow::anyhow!("Room not found: {}", room_id))?;
 
-    let content = RoomMessageEventContent::text_plain(body);
+    let content = if body.contains('\n') {
+        let html_body = body
+            .split('\n')
+            .map(escape_html)
+            .collect::<Vec<_>>()
+            .join("<br>");
+        RoomMessageEventContent::text_html(body, html_body)
+    } else {
+        RoomMessageEventContent::text_plain(body)
+    };
     match room.send(content).await {
         Ok(response) => {
             let _ = tx.send(AppEvent::MessageSent {
@@ -163,4 +172,35 @@ pub async fn send_message(
     }
 
     Ok(())
+}
+
+fn escape_html(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#39;")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn escape_html_plain() {
+        assert_eq!(escape_html("hello"), "hello");
+    }
+
+    #[test]
+    fn escape_html_special_chars() {
+        assert_eq!(
+            escape_html("<b>bold & \"quoted\" 'text'</b>"),
+            "&lt;b&gt;bold &amp; &quot;quoted&quot; &#39;text&#39;&lt;/b&gt;"
+        );
+    }
+
+    #[test]
+    fn escape_html_empty() {
+        assert_eq!(escape_html(""), "");
+    }
 }

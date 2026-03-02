@@ -11,7 +11,7 @@ pub struct AppLayout {
     pub status_bar: Rect,
 }
 
-pub fn compute_layout(frame: &Frame) -> AppLayout {
+pub fn compute_layout(frame: &Frame, input_lines: usize) -> AppLayout {
     let area = frame.area();
 
     // Main vertical split: content area + status bar
@@ -41,11 +41,12 @@ pub fn compute_layout(frame: &Frame) -> AppLayout {
     let members_list = horizontal[2];
 
     // Middle panel vertical split: chat | input bar
+    let input_height = (input_lines + 2).min(12) as u16; // +2 for borders, cap at 12
     let middle_vertical = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Min(3),    // chat messages
-            Constraint::Length(3), // input bar
+            Constraint::Min(3),              // chat messages
+            Constraint::Length(input_height), // input bar
         ])
         .split(middle_panel);
 

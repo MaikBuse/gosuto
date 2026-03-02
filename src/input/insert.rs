@@ -13,6 +13,10 @@ pub fn handle_insert(key: KeyEvent, vim: &mut VimState) -> InputResult {
             vim.enter_normal();
             InputResult::None
         }
+        KeyCode::Enter if key.modifiers.contains(KeyModifiers::ALT) => {
+            vim.insert_char('\n');
+            InputResult::None
+        }
         KeyCode::Enter => {
             let msg = vim.take_input();
             if msg.is_empty() {
@@ -99,5 +103,42 @@ mod tests {
         vim.enter_insert();
         let result = handle_insert(ctrl('c'), &mut vim);
         assert!(matches!(result, InputResult::Quit));
+    }
+
+    fn alt_enter() -> KeyEvent {
+        KeyEvent::new(KeyCode::Enter, KeyModifiers::ALT)
+    }
+
+    #[test]
+    fn alt_enter_inserts_newline() {
+        let mut vim = VimState::new();
+        vim.enter_insert();
+        vim.insert_char('h');
+        vim.insert_char('i');
+        let result = handle_insert(alt_enter(), &mut vim);
+        assert!(matches!(result, InputResult::None));
+        assert_eq!(vim.input_buffer, "hi\n");
+    }
+
+    #[test]
+    fn alt_enter_does_not_send() {
+        let mut vim = VimState::new();
+        vim.enter_insert();
+        vim.insert_char('a');
+        let result = handle_insert(alt_enter(), &mut vim);
+        assert!(matches!(result, InputResult::None));
+        // Buffer should still contain text (not sent)
+        assert_eq!(vim.input_buffer, "a\n");
+    }
+
+    #[test]
+    fn enter_sends_multiline_message() {
+        let mut vim = VimState::new();
+        vim.enter_insert();
+        vim.insert_char('a');
+        handle_insert(alt_enter(), &mut vim);
+        vim.insert_char('b');
+        let result = handle_insert(key(KeyCode::Enter), &mut vim);
+        assert!(matches!(result, InputResult::SendMessage(ref s) if s == "a\nb"));
     }
 }

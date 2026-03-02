@@ -56,25 +56,50 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
         VimMode::Normal => "> ",
     };
 
-    let paragraph = Paragraph::new(Line::from(vec![
-        Span::styled(prefix, ratatui::style::Style::default().fg(style)),
-        Span::styled(content, text_style),
-    ]))
-    .block(block);
+    let text_lines: Vec<Line> = if app.vim.mode == VimMode::Insert && !app.vim.input_buffer.is_empty() {
+        content
+            .split('\n')
+            .enumerate()
+            .map(|(i, line_str)| {
+                let line_prefix = if i == 0 { prefix } else { "  " };
+                Line::from(vec![
+                    Span::styled(line_prefix, ratatui::style::Style::default().fg(style)),
+                    Span::styled(line_str.to_string(), text_style),
+                ])
+            })
+            .collect()
+    } else {
+        vec![Line::from(vec![
+            Span::styled(prefix, ratatui::style::Style::default().fg(style)),
+            Span::styled(content, text_style),
+        ])]
+    };
+
+    let paragraph = Paragraph::new(text_lines).block(block);
 
     frame.render_widget(paragraph, area);
 
     // Show cursor in insert/command mode
     if app.vim.mode == VimMode::Insert || app.vim.mode == VimMode::Command || app.vim.searching {
-        let cursor_x = area.x
-            + 1 // border
-            + prefix.len() as u16
-            + match app.vim.mode {
-                VimMode::Insert => app.vim.input_cursor as u16,
-                VimMode::Command => app.vim.command_buffer.len() as u16 + 1,
-                VimMode::Normal => app.vim.search_query.len() as u16 + 1,
-            };
-        let cursor_y = area.y + 1; // border
+        let (cursor_x, cursor_y) = match app.vim.mode {
+            VimMode::Insert => {
+                let (row, col) = app.vim.cursor_row_col();
+                let line_prefix_len = if row == 0 { prefix.len() } else { 2 }; // "  " for continuation
+                let x = area.x + 1 + line_prefix_len as u16 + col as u16;
+                let y = area.y + 1 + row as u16;
+                (x, y)
+            }
+            VimMode::Command => {
+                let x = area.x + 1 + prefix.len() as u16 + app.vim.command_buffer.len() as u16 + 1;
+                let y = area.y + 1;
+                (x, y)
+            }
+            VimMode::Normal => {
+                let x = area.x + 1 + prefix.len() as u16 + app.vim.search_query.len() as u16 + 1;
+                let y = area.y + 1;
+                (x, y)
+            }
+        };
         frame.set_cursor_position((cursor_x, cursor_y));
     }
 }
