@@ -9,81 +9,17 @@
 
 **Gōsuto** (ゴースト) — _ghost_ — a cyberpunk terminal Matrix client with vim motions.
 
-## ═════════ the point
+## ═════════ why
 
-~3,400 lines of Rust. One static binary. No Electron, no browser, no bloat.
+I switched from Discord to Matrix and couldn't find a native terminal client that did voice calls with push-to-talk. Element is Electron — 800MB of RAM to sit idle. I spend most of my day in a terminal anyway. So I built what I actually wanted: a single Rust binary that handles chat, E2EE, and voice without a browser engine underneath.
 
-- Vim-first — Normal, Insert, Command modes. If you know vim, you know Gosuto.
-- Full E2EE via matrix-sdk with automatic room key forwarding
-- Async Tokio runtime, 50ms render cycle
-- Neon-on-black palette, matrix rain, glitch effects, text reveal animations
+## ═════════ what it does
 
-## ═════════ features
-
-### chat
-
-Browse and join rooms, spaces, and DMs. Send encrypted messages. Scroll history with `j`/`k`. Date separators between days.
-
-Power levels: `~` owner `&` admin `@` op `+` voice
-Room glyphs: `≡` spaces `#` rooms `@` DMs
-
-Room creation with configurable history visibility.
-
-### voip
-
-LiveKit-based voice calls. Configure audio devices with `:audio`. Start, answer, reject, hangup.
-
-### effects
-
-- **matrix rain** — cascading green characters across the terminal
-- **glitch** — randomized text corruption
-- **text reveal** — characters materialize on the login screen
-
-## ═════════ keybindings
-
-Three modes, color-coded in the status bar:
-
-```
- Normal  │ cyan    │ Esc from Insert/Command
- Insert  │ green   │ i
- Command │ magenta │ :
-```
-
-### normal mode
-
-```
- j / ↓       move down             h          focus left panel
- k / ↑       move up               l          focus right panel
- gg          jump to top            Tab        cycle panel focus
- G           jump to bottom         Enter      select item
- /           search / filter        i          insert mode
- :           command mode           q          quit
- c           call member            a          answer call
- r           reject call
-```
-
-### insert mode
-
-Type your message. `Enter` sends. `Esc` returns to Normal.
-
-## ═════════ commands
-
-```
- :quit, :q                     exit gosuto
- :join <room>                  join a room
- :leave                        leave current room
- :dm <user>                    direct message a user
- :create <name> [visibility]   create a room        (alias: :new)
- :info                         show room info       (alias: :roominfo)
- :call                         start a call
- :answer                       answer a call        (alias: :accept)
- :reject                       reject a call        (alias: :decline)
- :hangup                       end a call           (alias: :end)
- :audio                        audio config         (alias: :sound)
- :rain                         toggle matrix rain   (alias: :matrix, :effects)
- :glitch                       toggle glitch effect
- :logout                       log out
-```
+- Vim-first navigation — Normal, Insert, Command modes
+- Encrypted chat — rooms, spaces, DMs, full E2EE with automatic key forwarding
+- VoIP calls — LiveKit-based voice with push-to-talk support
+- Room management — create, join, leave, view member lists and power levels
+- Visual effects — matrix rain, glitch, text reveal animations (all togglable)
 
 ## ═════════ install
 
@@ -99,6 +35,10 @@ cargo build --release
 ```
 
 Run `gosuto` and log in with your Matrix homeserver, username, and password.
+
+## ═════════ finding your way around
+
+Gosuto has a which-key popup — press a key in normal mode and it shows you what's available. Command mode (`:`) has tab completion and suggestions. Between those two, you shouldn't need to memorize anything from a README.
 
 ## ═════════ config
 
