@@ -40,29 +40,89 @@ fn active_call(app: &App) -> bool {
 fn entries(cat: WhichKeyCategory) -> &'static [Entry] {
     match cat {
         WhichKeyCategory::Room => &[
-            Entry { key: 'j', label: "Join room", available: always },
-            Entry { key: 'l', label: "Leave room", available: room_selected },
-            Entry { key: 'c', label: "Create room", available: always },
-            Entry { key: 'e', label: "Edit room", available: room_selected },
-            Entry { key: 'd', label: "DM user", available: always },
+            Entry {
+                key: 'j',
+                label: "Join room",
+                available: always,
+            },
+            Entry {
+                key: 'l',
+                label: "Leave room",
+                available: room_selected,
+            },
+            Entry {
+                key: 'c',
+                label: "Create room",
+                available: always,
+            },
+            Entry {
+                key: 'e',
+                label: "Edit room",
+                available: room_selected,
+            },
+            Entry {
+                key: 'd',
+                label: "DM user",
+                available: always,
+            },
         ],
         WhichKeyCategory::Call => &[
-            Entry { key: 'c', label: "Start call", available: |app| room_selected(app) && no_active_call(app) },
-            Entry { key: 'a', label: "Answer", available: incoming_call },
-            Entry { key: 'd', label: "Decline", available: incoming_call },
-            Entry { key: 'h', label: "Hangup", available: active_call },
+            Entry {
+                key: 'c',
+                label: "Start call",
+                available: |app| room_selected(app) && no_active_call(app),
+            },
+            Entry {
+                key: 'a',
+                label: "Answer",
+                available: incoming_call,
+            },
+            Entry {
+                key: 'd',
+                label: "Decline",
+                available: incoming_call,
+            },
+            Entry {
+                key: 'h',
+                label: "Hangup",
+                available: active_call,
+            },
         ],
         WhichKeyCategory::Security => &[
-            Entry { key: 'v', label: "Verify", available: always },
-            Entry { key: 'r', label: "Recovery", available: always },
+            Entry {
+                key: 'v',
+                label: "Verify",
+                available: always,
+            },
+            Entry {
+                key: 'r',
+                label: "Recovery",
+                available: always,
+            },
         ],
         WhichKeyCategory::Effects => &[
-            Entry { key: 'r', label: "Rain toggle", available: always },
-            Entry { key: 'g', label: "Glitch toggle", available: always },
+            Entry {
+                key: 'r',
+                label: "Rain toggle",
+                available: always,
+            },
+            Entry {
+                key: 'g',
+                label: "Glitch toggle",
+                available: always,
+            },
         ],
         WhichKeyCategory::User => &[
-            Entry { key: 'p', label: "Profile", available: always },
-            Entry { key: 'a', label: "Audio", available: always },
+            Entry {
+                key: 'p',
+                label: "Profile",
+                available: always,
+            },
+            Entry {
+                key: 'a',
+                label: "Audio",
+                available: always,
+            },
         ],
     }
 }
@@ -114,22 +174,29 @@ fn render_root(frame: &mut Frame) {
 
     // Categories: two columns
     // Row 1: r Room, c Call
-    render_entry(buf, &bounds, left, y, 'r', "Room", key_style, label_style);
-    render_entry(buf, &bounds, col2, y, 'c', "Call", key_style, label_style);
+    set_cell(buf, &bounds, left, y, 'r', key_style);
+    write_str(buf, &bounds, left + 4, y, "Room", label_style);
+    set_cell(buf, &bounds, col2, y, 'c', key_style);
+    write_str(buf, &bounds, col2 + 4, y, "Call", label_style);
     y += 1;
 
     // Row 2: s Security, e Effects
-    render_entry(buf, &bounds, left, y, 's', "Security", key_style, label_style);
-    render_entry(buf, &bounds, col2, y, 'e', "Effects", key_style, label_style);
+    set_cell(buf, &bounds, left, y, 's', key_style);
+    write_str(buf, &bounds, left + 4, y, "Security", label_style);
+    set_cell(buf, &bounds, col2, y, 'e', key_style);
+    write_str(buf, &bounds, col2 + 4, y, "Effects", label_style);
     y += 1;
 
     // Row 3: u User
-    render_entry(buf, &bounds, left, y, 'u', "User", key_style, label_style);
+    set_cell(buf, &bounds, left, y, 'u', key_style);
+    write_str(buf, &bounds, left + 4, y, "User", label_style);
     y += 2;
 
     // Actions row: q Quit, l Logout
-    render_entry(buf, &bounds, left, y, 'q', "Quit", key_style, label_style);
-    render_entry(buf, &bounds, col2, y, 'l', "Logout", key_style, label_style);
+    set_cell(buf, &bounds, left, y, 'q', key_style);
+    write_str(buf, &bounds, left + 4, y, "Quit", label_style);
+    set_cell(buf, &bounds, col2, y, 'l', key_style);
+    write_str(buf, &bounds, col2 + 4, y, "Logout", label_style);
 
     // Hint
     let hint = "Esc close";
@@ -151,7 +218,7 @@ fn render_category(cat: WhichKeyCategory, app: &App, frame: &mut Frame) {
     }
 
     let items = entries(cat);
-    let rows = (items.len() as u16 + 1) / 2; // ceil div
+    let rows = (items.len() as u16).div_ceil(2);
     let popup_h: u16 = rows + 5; // border top + padding + rows + padding + hint + border bottom
     let popup = bottom_rect(popup_h, area);
     let popup_w = popup.width;
@@ -188,7 +255,8 @@ fn render_category(cat: WhichKeyCategory, app: &App, frame: &mut Frame) {
         } else {
             (dim_key_style, dim_label_style)
         };
-        render_entry(buf, &bounds, col, row, entry.key, entry.label, ks, ls);
+        set_cell(buf, &bounds, col, row, entry.key, ks);
+        write_str(buf, &bounds, col + 4, row, entry.label, ls);
     }
 
     // Hint
@@ -202,20 +270,6 @@ fn render_category(cat: WhichKeyCategory, app: &App, frame: &mut Frame) {
         hint,
         Style::default().fg(theme::DIM).bg(theme::BG),
     );
-}
-
-fn render_entry(
-    buf: &mut Buffer,
-    bounds: &Rect,
-    x: u16,
-    y: u16,
-    key: char,
-    label: &str,
-    key_style: Style,
-    label_style: Style,
-) {
-    set_cell(buf, bounds, x, y, key, key_style);
-    write_str(buf, bounds, x + 4, y, label, label_style);
 }
 
 // ── Helpers (same as recovery_modal) ──────────────────
