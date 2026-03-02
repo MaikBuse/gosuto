@@ -56,24 +56,25 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
         VimMode::Normal => "> ",
     };
 
-    let text_lines: Vec<Line> = if app.vim.mode == VimMode::Insert && !app.vim.input_buffer.is_empty() {
-        content
-            .split('\n')
-            .enumerate()
-            .map(|(i, line_str)| {
-                let line_prefix = if i == 0 { prefix } else { "  " };
-                Line::from(vec![
-                    Span::styled(line_prefix, ratatui::style::Style::default().fg(style)),
-                    Span::styled(line_str.to_string(), text_style),
-                ])
-            })
-            .collect()
-    } else {
-        vec![Line::from(vec![
-            Span::styled(prefix, ratatui::style::Style::default().fg(style)),
-            Span::styled(content, text_style),
-        ])]
-    };
+    let text_lines: Vec<Line> =
+        if app.vim.mode == VimMode::Insert && !app.vim.input_buffer.is_empty() {
+            content
+                .split('\n')
+                .enumerate()
+                .map(|(i, line_str)| {
+                    let line_prefix = if i == 0 { prefix } else { "  " };
+                    Line::from(vec![
+                        Span::styled(line_prefix, ratatui::style::Style::default().fg(style)),
+                        Span::styled(line_str.to_string(), text_style),
+                    ])
+                })
+                .collect()
+        } else {
+            vec![Line::from(vec![
+                Span::styled(prefix, ratatui::style::Style::default().fg(style)),
+                Span::styled(content, text_style),
+            ])]
+        };
 
     let paragraph = Paragraph::new(text_lines).block(block);
 

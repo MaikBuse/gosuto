@@ -47,7 +47,16 @@ pub fn render(state: &CreateRoomState, icons: &Icons, frame: &mut Frame) {
 
     // ── Field 0: NAME (editable) ──
     let name_selected = state.selected_field == 0;
-    render_field_label(buf, &bounds, left, label_x, row, "NAME", name_selected, icons);
+    render_field_label(
+        buf,
+        &bounds,
+        left,
+        label_x,
+        row,
+        "NAME",
+        name_selected,
+        icons,
+    );
 
     let max_name_w = (right - value_x) as usize;
     if state.editing_name {
@@ -79,7 +88,16 @@ pub fn render(state: &CreateRoomState, icons: &Icons, frame: &mut Frame) {
 
     // ── Field 1: TOPIC (editable) ──
     let topic_selected = state.selected_field == 1;
-    render_field_label(buf, &bounds, left, label_x, row, "TOPIC", topic_selected, icons);
+    render_field_label(
+        buf,
+        &bounds,
+        left,
+        label_x,
+        row,
+        "TOPIC",
+        topic_selected,
+        icons,
+    );
 
     let max_topic_w = (right - value_x) as usize;
     if state.editing_topic {
@@ -111,7 +129,16 @@ pub fn render(state: &CreateRoomState, icons: &Icons, frame: &mut Frame) {
 
     // ── Field 2: HISTORY (cycle selector) ──
     let hist_selected = state.selected_field == 2;
-    render_field_label(buf, &bounds, left, label_x, row, "HISTORY", hist_selected, icons);
+    render_field_label(
+        buf,
+        &bounds,
+        left,
+        label_x,
+        row,
+        "HISTORY",
+        hist_selected,
+        icons,
+    );
 
     let arrow_color = if hist_selected {
         theme::CYAN
@@ -159,7 +186,16 @@ pub fn render(state: &CreateRoomState, icons: &Icons, frame: &mut Frame) {
 
     // ── Field 3: ENCRYPTED (toggle) ──
     let enc_selected = state.selected_field == 3;
-    render_field_label(buf, &bounds, left, label_x, row, "ENCRYPTED", enc_selected, icons);
+    render_field_label(
+        buf,
+        &bounds,
+        left,
+        label_x,
+        row,
+        "ENCRYPTED",
+        enc_selected,
+        icons,
+    );
 
     let enc_arrow_color = if enc_selected {
         theme::CYAN
@@ -196,7 +232,14 @@ pub fn render(state: &CreateRoomState, icons: &Icons, frame: &mut Frame) {
         ' ',
         Style::default().bg(theme::BG),
     );
-    write_str(buf, &bounds, enc_end_x + 1, row, icons.arrow_right, enc_arrow_s);
+    write_str(
+        buf,
+        &bounds,
+        enc_end_x + 1,
+        row,
+        icons.arrow_right,
+        enc_arrow_s,
+    );
     row += 2;
 
     // ── Field 4: CREATE button ──
@@ -267,7 +310,11 @@ fn render_field_label(
 ) {
     let marker_color = if selected { theme::CYAN } else { theme::DIM };
     let label_color = if selected { theme::CYAN } else { theme::TEXT };
-    let marker = if selected { icons.selected } else { icons.unselected };
+    let marker = if selected {
+        icons.selected
+    } else {
+        icons.unselected
+    };
 
     let marker_s = Style::default().fg(marker_color).bg(theme::BG);
     let label_s = Style::default()

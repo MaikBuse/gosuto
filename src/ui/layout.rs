@@ -45,7 +45,7 @@ pub fn compute_layout(frame: &Frame, input_lines: usize) -> AppLayout {
     let middle_vertical = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Min(3),              // chat messages
+            Constraint::Min(3),               // chat messages
             Constraint::Length(input_height), // input bar
         ])
         .split(middle_panel);

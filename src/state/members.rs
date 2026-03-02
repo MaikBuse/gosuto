@@ -99,10 +99,7 @@ mod tests {
         let mut state = MemberListState::new();
         state.set_members(
             "!room:x",
-            vec![
-                member("@b:x", "bob", 0),
-                member("@a:x", "Alice", 0),
-            ],
+            vec![member("@b:x", "bob", 0), member("@a:x", "Alice", 0)],
         );
         assert_eq!(state.members[0].display_name, "Alice");
         assert_eq!(state.members[1].display_name, "bob");
@@ -111,7 +108,10 @@ mod tests {
     #[test]
     fn set_members_resets_selection() {
         let mut state = MemberListState::new();
-        state.set_members("!room:x", vec![member("@a:x", "A", 0), member("@b:x", "B", 0)]);
+        state.set_members(
+            "!room:x",
+            vec![member("@a:x", "A", 0), member("@b:x", "B", 0)],
+        );
         state.selected = 1;
         state.set_members("!room:x", vec![member("@c:x", "C", 0)]);
         assert_eq!(state.selected, 0);
@@ -139,7 +139,11 @@ mod tests {
         let mut state = MemberListState::new();
         state.set_members(
             "!r:x",
-            vec![member("@a:x", "A", 0), member("@b:x", "B", 0), member("@c:x", "C", 0)],
+            vec![
+                member("@a:x", "A", 0),
+                member("@b:x", "B", 0),
+                member("@c:x", "C", 0),
+            ],
         );
         state.move_down();
         assert_eq!(state.selected, 1);
@@ -188,7 +192,10 @@ mod tests {
     #[test]
     fn selected_member_returns_correct() {
         let mut state = MemberListState::new();
-        state.set_members("!r:x", vec![member("@a:x", "Alice", 0), member("@b:x", "Bob", 0)]);
+        state.set_members(
+            "!r:x",
+            vec![member("@a:x", "Alice", 0), member("@b:x", "Bob", 0)],
+        );
         state.selected = 1;
         let m = state.selected_member().unwrap();
         assert_eq!(m.display_name, "Bob");

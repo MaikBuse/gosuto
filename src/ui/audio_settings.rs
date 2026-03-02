@@ -87,7 +87,11 @@ fn render_field(
     let bounds = *buf.area();
     let marker_color = if selected { theme::CYAN } else { theme::DIM };
     let label_color = if selected { theme::CYAN } else { theme::TEXT };
-    let marker = if selected { icons.selected } else { icons.unselected };
+    let marker = if selected {
+        icons.selected
+    } else {
+        icons.unselected
+    };
 
     let marker_s = Style::default().fg(marker_color).bg(theme::BG);
     let label_s = Style::default()

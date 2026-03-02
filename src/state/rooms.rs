@@ -450,8 +450,14 @@ mod tests {
         ]);
         // Should have: SpaceHeader, Room
         assert_eq!(state.display_rows.len(), 2);
-        assert!(matches!(state.display_rows[0], DisplayRow::SpaceHeader { .. }));
-        assert!(matches!(state.display_rows[1], DisplayRow::Room { indent: 2, .. }));
+        assert!(matches!(
+            state.display_rows[0],
+            DisplayRow::SpaceHeader { .. }
+        ));
+        assert!(matches!(
+            state.display_rows[1],
+            DisplayRow::Room { indent: 2, .. }
+        ));
     }
 
     #[test]
@@ -464,11 +470,33 @@ mod tests {
         ]);
         // Should have: SectionHeader(alpha.org), Room A, Room C, SectionHeader(beta.org), Room B
         assert_eq!(state.display_rows.len(), 5);
-        assert!(matches!(&state.display_rows[0], DisplayRow::SectionHeader { label } if label == "alpha.org"));
-        assert!(matches!(state.display_rows[1], DisplayRow::Room { room_index: 0, indent: 0 }));
-        assert!(matches!(state.display_rows[2], DisplayRow::Room { room_index: 2, indent: 0 }));
-        assert!(matches!(&state.display_rows[3], DisplayRow::SectionHeader { label } if label == "beta.org"));
-        assert!(matches!(state.display_rows[4], DisplayRow::Room { room_index: 1, indent: 0 }));
+        assert!(
+            matches!(&state.display_rows[0], DisplayRow::SectionHeader { label } if label == "alpha.org")
+        );
+        assert!(matches!(
+            state.display_rows[1],
+            DisplayRow::Room {
+                room_index: 0,
+                indent: 0
+            }
+        ));
+        assert!(matches!(
+            state.display_rows[2],
+            DisplayRow::Room {
+                room_index: 2,
+                indent: 0
+            }
+        ));
+        assert!(
+            matches!(&state.display_rows[3], DisplayRow::SectionHeader { label } if label == "beta.org")
+        );
+        assert!(matches!(
+            state.display_rows[4],
+            DisplayRow::Room {
+                room_index: 1,
+                indent: 0
+            }
+        ));
     }
 
     #[test]
@@ -479,7 +507,9 @@ mod tests {
             room("!dm2:x", "Bob", RoomCategory::DirectMessage),
         ]);
         assert_eq!(state.display_rows.len(), 3);
-        assert!(matches!(&state.display_rows[0], DisplayRow::SectionHeader { label } if label == "DIRECT MESSAGES"));
+        assert!(
+            matches!(&state.display_rows[0], DisplayRow::SectionHeader { label } if label == "DIRECT MESSAGES")
+        );
     }
 
     #[test]
@@ -514,7 +544,10 @@ mod tests {
         assert_eq!(state.display_rows.len(), 1);
         assert!(matches!(
             state.display_rows[0],
-            DisplayRow::SpaceHeader { collapsed: true, .. }
+            DisplayRow::SpaceHeader {
+                collapsed: true,
+                ..
+            }
         ));
         // Toggle again to expand
         state.selected = 0;
@@ -555,10 +588,7 @@ mod tests {
     fn move_down_skips_call_participants() {
         let mut state = RoomListState::new();
         let mut call_members = HashMap::new();
-        call_members.insert(
-            "!a:x".to_string(),
-            HashSet::from(["@user:x".to_string()]),
-        );
+        call_members.insert("!a:x".to_string(), HashSet::from(["@user:x".to_string()]));
         state.room_call_members = call_members;
         state.set_rooms(vec![
             room("!a:x", "Room A", RoomCategory::Room),
@@ -677,10 +707,7 @@ mod tests {
         let mut state = RoomListState::new();
         let mut child = space_child("!child1:x", "Child", "!space1:x");
         child.unread_count = 5;
-        state.set_rooms(vec![
-            room("!space1:x", "Space", RoomCategory::Space),
-            child,
-        ]);
+        state.set_rooms(vec![room("!space1:x", "Space", RoomCategory::Space), child]);
         state.selected = 0;
         state.toggle_space();
         if let DisplayRow::SpaceHeader { unread_count, .. } = &state.display_rows[0] {

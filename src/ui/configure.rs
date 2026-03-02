@@ -158,7 +158,11 @@ pub fn render(state: &UserConfigState, icons: &Icons, frame: &mut Frame) {
     } else {
         theme::TEXT
     };
-    let ver_marker = if ver_selected { icons.selected } else { icons.unselected };
+    let ver_marker = if ver_selected {
+        icons.selected
+    } else {
+        icons.unselected
+    };
 
     let ver_marker_s = Style::default().fg(ver_marker_color).bg(theme::BG);
     let ver_label_s = Style::default()

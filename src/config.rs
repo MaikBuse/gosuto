@@ -302,10 +302,7 @@ mod tests {
         );
         assert_eq!(deserialized.audio.input_volume, config.audio.input_volume);
         assert_eq!(deserialized.audio.output_volume, config.audio.output_volume);
-        assert_eq!(
-            deserialized.ui.use_nerd_fonts,
-            config.ui.use_nerd_fonts
-        );
+        assert_eq!(deserialized.ui.use_nerd_fonts, config.ui.use_nerd_fonts);
     }
 
     #[test]

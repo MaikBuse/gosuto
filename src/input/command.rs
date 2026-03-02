@@ -348,10 +348,7 @@ mod tests {
     #[test]
     fn parse_leave() {
         let result = parse_command("leave");
-        assert!(matches!(
-            result,
-            InputResult::Command(CommandAction::Leave)
-        ));
+        assert!(matches!(result, InputResult::Command(CommandAction::Leave)));
     }
 
     #[test]
@@ -380,10 +377,7 @@ mod tests {
     #[test]
     fn parse_call() {
         let result = parse_command("call");
-        assert!(matches!(
-            result,
-            InputResult::Command(CommandAction::Call)
-        ));
+        assert!(matches!(result, InputResult::Command(CommandAction::Call)));
     }
 
     #[test]
@@ -501,9 +495,10 @@ mod tests {
     #[test]
     fn parse_verify_no_arg() {
         let result = parse_command("verify");
-        assert!(
-            matches!(result, InputResult::Command(CommandAction::Verify(None)))
-        );
+        assert!(matches!(
+            result,
+            InputResult::Command(CommandAction::Verify(None))
+        ));
     }
 
     #[test]

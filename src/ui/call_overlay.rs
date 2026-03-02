@@ -113,7 +113,13 @@ impl TransmissionPopup {
         }
     }
 
-    fn render_popup(&self, info: &CallInfo, display_state: &CallDisplayState, icons: &Icons, frame: &mut Frame) {
+    fn render_popup(
+        &self,
+        info: &CallInfo,
+        display_state: &CallDisplayState,
+        icons: &Icons,
+        frame: &mut Frame,
+    ) {
         let area = frame.area();
         if area.width < 20 || area.height < 14 {
             return;

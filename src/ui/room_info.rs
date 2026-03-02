@@ -306,7 +306,11 @@ pub fn render(state: &RoomInfoState, icons: &Icons, frame: &mut Frame) {
         } else {
             theme::TEXT
         };
-        let enc_marker = if enc_selected { icons.selected } else { icons.unselected };
+        let enc_marker = if enc_selected {
+            icons.selected
+        } else {
+            icons.unselected
+        };
 
         let enc_marker_s = Style::default().fg(enc_marker_color).bg(theme::BG);
         let enc_label_s = Style::default()
@@ -364,7 +368,14 @@ pub fn render(state: &RoomInfoState, icons: &Icons, frame: &mut Frame) {
             ' ',
             Style::default().bg(theme::BG),
         );
-        write_str(buf, &bounds, enc_end_x + 1, row, icons.arrow_right, enc_arrow_s);
+        write_str(
+            buf,
+            &bounds,
+            enc_end_x + 1,
+            row,
+            icons.arrow_right,
+            enc_arrow_s,
+        );
     }
 
     // Show saving indicator

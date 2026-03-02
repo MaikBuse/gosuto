@@ -200,7 +200,11 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
                 unread_count,
                 ..
             } => {
-                let arrow = if *collapsed { icons.collapse } else { icons.expand };
+                let arrow = if *collapsed {
+                    icons.collapse
+                } else {
+                    icons.expand
+                };
                 let label = format!("{} {} {}", arrow, icons.space, name);
 
                 let style = anim
@@ -222,11 +226,25 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
                 // Narrow clip rect to reserve space for unread badge
                 let name_clip = if *collapsed && *unread_count > 0 && !is_selected {
                     let badge_len = format!("({})", unread_count).len() as u16 + 2;
-                    Rect::new(inner.x, inner.y, inner.width.saturating_sub(badge_len), inner.height)
+                    Rect::new(
+                        inner.x,
+                        inner.y,
+                        inner.width.saturating_sub(badge_len),
+                        inner.height,
+                    )
                 } else {
                     inner
                 };
-                write_str_clipped(buf, &bounds, inner.x + 1, y, &label, style, &name_clip, true);
+                write_str_clipped(
+                    buf,
+                    &bounds,
+                    inner.x + 1,
+                    y,
+                    &label,
+                    style,
+                    &name_clip,
+                    true,
+                );
 
                 // Unread badge for collapsed spaces
                 if *collapsed && *unread_count > 0 && !is_selected {
@@ -260,7 +278,12 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
                     // Narrow clip rect to reserve space for unread badge
                     let name_clip = if room.unread_count > 0 && !is_selected {
                         let badge_len = format!("({})", room.unread_count).len() as u16 + 2;
-                        Rect::new(inner.x, inner.y, inner.width.saturating_sub(badge_len), inner.height)
+                        Rect::new(
+                            inner.x,
+                            inner.y,
+                            inner.width.saturating_sub(badge_len),
+                            inner.height,
+                        )
                     } else {
                         inner
                     };
@@ -280,7 +303,16 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
                         let badge = format!("({})", room.unread_count);
                         let badge_x = inner.x + inner.width - badge.len() as u16 - 1;
                         let badge_style = Style::default().fg(theme::CYAN).bg(theme::BG);
-                        write_str_clipped(buf, &bounds, badge_x, y, &badge, badge_style, &inner, false);
+                        write_str_clipped(
+                            buf,
+                            &bounds,
+                            badge_x,
+                            y,
+                            &badge,
+                            badge_style,
+                            &inner,
+                            false,
+                        );
                     }
                 }
             }
@@ -312,7 +344,10 @@ pub fn render_tooltip(app: &App, frame: &mut Frame, room_list_area: Rect) {
 
     // Reconstruct the full label (same format as render())
     let label = match row {
-        DisplayRow::Room { room_index, indent: _ } => {
+        DisplayRow::Room {
+            room_index,
+            indent: _,
+        } => {
             let room = match app.room_list.rooms.get(*room_index) {
                 Some(r) => r,
                 None => return,
@@ -324,8 +359,14 @@ pub fn render_tooltip(app: &App, frame: &mut Frame, room_list_area: Rect) {
             };
             format!("{} {}", prefix, room.name)
         }
-        DisplayRow::SpaceHeader { name, collapsed, .. } => {
-            let arrow = if *collapsed { icons.collapse } else { icons.expand };
+        DisplayRow::SpaceHeader {
+            name, collapsed, ..
+        } => {
+            let arrow = if *collapsed {
+                icons.collapse
+            } else {
+                icons.expand
+            };
             format!("{} {} {}", arrow, icons.space, name)
         }
         _ => return,
@@ -400,7 +441,14 @@ pub fn render_tooltip(app: &App, frame: &mut Frame, room_list_area: Rect) {
     // Clear background
     for dy in 0..box_height {
         for dx in 0..box_width {
-            set_cell_if(buf, &bounds, tooltip_x + dx, tooltip_y + dy, ' ', Style::default().bg(theme::BG));
+            set_cell_if(
+                buf,
+                &bounds,
+                tooltip_x + dx,
+                tooltip_y + dy,
+                ' ',
+                Style::default().bg(theme::BG),
+            );
         }
     }
 
@@ -410,12 +458,26 @@ pub fn render_tooltip(app: &App, frame: &mut Frame, room_list_area: Rect) {
     for dx in 1..box_width - 1 {
         set_cell_if(buf, &bounds, tooltip_x + dx, tooltip_y, '─', border_style);
     }
-    set_cell_if(buf, &bounds, tooltip_x + box_width - 1, tooltip_y, '╮', border_style);
+    set_cell_if(
+        buf,
+        &bounds,
+        tooltip_x + box_width - 1,
+        tooltip_y,
+        '╮',
+        border_style,
+    );
 
     // Middle: │ text │
     let mid_y = tooltip_y + 1;
     set_cell_if(buf, &bounds, tooltip_x, mid_y, '│', border_style);
-    set_cell_if(buf, &bounds, tooltip_x + box_width - 1, mid_y, '│', border_style);
+    set_cell_if(
+        buf,
+        &bounds,
+        tooltip_x + box_width - 1,
+        mid_y,
+        '│',
+        border_style,
+    );
 
     // Fill middle row background
     for dx in 1..box_width - 1 {
@@ -424,7 +486,16 @@ pub fn render_tooltip(app: &App, frame: &mut Frame, room_list_area: Rect) {
 
     // Write the label text (clipped to box interior)
     let text_clip = Rect::new(tooltip_x + 1, mid_y, box_width.saturating_sub(2), 1);
-    write_str_clipped(buf, &bounds, tooltip_x + 2, mid_y, &label, text_style, &text_clip, false);
+    write_str_clipped(
+        buf,
+        &bounds,
+        tooltip_x + 2,
+        mid_y,
+        &label,
+        text_style,
+        &text_clip,
+        false,
+    );
 
     // Bottom: ╰─...─╯
     let bot_y = tooltip_y + 2;
@@ -432,7 +503,14 @@ pub fn render_tooltip(app: &App, frame: &mut Frame, room_list_area: Rect) {
     for dx in 1..box_width - 1 {
         set_cell_if(buf, &bounds, tooltip_x + dx, bot_y, '─', border_style);
     }
-    set_cell_if(buf, &bounds, tooltip_x + box_width - 1, bot_y, '╯', border_style);
+    set_cell_if(
+        buf,
+        &bounds,
+        tooltip_x + box_width - 1,
+        bot_y,
+        '╯',
+        border_style,
+    );
 }
 
 #[inline]
