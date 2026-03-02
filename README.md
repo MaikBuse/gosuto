@@ -23,6 +23,27 @@ I switched from Discord to Matrix and couldn't find a native terminal client tha
 
 ## ═════════ install
 
+Pre-built binaries for **Linux** and **Windows** are available on the [releases page](https://github.com/maikbuse/gosuto/releases).
+
+### Linux
+
+Download the binary, make it executable, and move it somewhere on your `PATH`:
+
+```bash
+chmod +x gosuto
+sudo mv gosuto /usr/local/bin/
+```
+
+### Windows
+
+Download `gosuto.exe` and place it in a directory on your `PATH`, or run it directly:
+
+```powershell
+.\gosuto.exe
+```
+
+### Build from source
+
 ```bash
 # install directly
 cargo install --git https://github.com/maikbuse/gosuto.git
@@ -31,7 +52,8 @@ cargo install --git https://github.com/maikbuse/gosuto.git
 git clone https://github.com/maikbuse/gosuto.git
 cd gosuto
 cargo build --release
-./target/release/gosuto
+./target/release/gosuto        # Linux
+.\target\release\gosuto.exe    # Windows
 ```
 
 Run `gosuto` and log in with your Matrix homeserver, username, and password.
@@ -42,12 +64,38 @@ Gosuto has a which-key popup — press a key in normal mode and it shows you wha
 
 ## ═════════ config
 
-Data lives in `~/.local/share/gosuto/`:
+Configuration is stored in `config.toml` inside the platform config directory:
+
+| Platform | Path |
+|----------|------|
+| Linux    | `~/.config/gosuto/config.toml` |
+| Windows  | `%APPDATA%\gosuto\config.toml` |
+
+A default config file is created on first launch. Edit it to change network, audio, UI, and visual effect settings.
+
+## ═════════ data
+
+Session and runtime data live in the platform data directory:
+
+| Platform | Path |
+|----------|------|
+| Linux    | `~/.local/share/gosuto/` |
+| Windows  | `%LOCALAPPDATA%\gosuto\` |
 
 ```
  session.json   encrypted session credentials
  store/         matrix-sdk SQLite store
- logs/          log files (enable with GOSUTO_LOG=debug gosuto)
+ logs/          log files
+```
+
+To enable logging, set the `GOSUTO_LOG` environment variable before launching:
+
+```bash
+GOSUTO_LOG=debug gosuto                        # Linux
+```
+
+```powershell
+$env:GOSUTO_LOG="debug"; .\gosuto.exe          # Windows (PowerShell)
 ```
 
 ## ═════════ license
