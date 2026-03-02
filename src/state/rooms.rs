@@ -39,7 +39,10 @@ pub enum DisplayRow {
 }
 
 fn extract_server_domain(room_id: &str) -> &str {
-    room_id.split_once(':').map(|(_, domain)| domain).unwrap_or(room_id)
+    room_id
+        .split_once(':')
+        .map(|(_, domain)| domain)
+        .unwrap_or(room_id)
 }
 
 #[derive(Debug)]
@@ -196,10 +199,7 @@ impl RoomListState {
             let mut domain_groups: HashMap<String, Vec<usize>> = HashMap::new();
             for &oi in &orphans {
                 let domain = extract_server_domain(&self.rooms[oi].id).to_string();
-                domain_groups
-                    .entry(domain.clone())
-                    .or_default()
-                    .push(oi);
+                domain_groups.entry(domain.clone()).or_default().push(oi);
                 if !domain_order.contains(&domain) {
                     domain_order.push(domain);
                 }

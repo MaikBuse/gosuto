@@ -1112,17 +1112,15 @@ impl App {
                     _ => self.which_key = None,
                 }
             }
-            Some(Some(cat)) => {
-                match key.code {
-                    KeyCode::Esc => self.which_key = None,
-                    KeyCode::Backspace => self.which_key = Some(None),
-                    KeyCode::Char(ch) => {
-                        self.which_key = None;
-                        self.dispatch_which_key_action(cat, ch);
-                    }
-                    _ => self.which_key = None,
+            Some(Some(cat)) => match key.code {
+                KeyCode::Esc => self.which_key = None,
+                KeyCode::Backspace => self.which_key = Some(None),
+                KeyCode::Char(ch) => {
+                    self.which_key = None;
+                    self.dispatch_which_key_action(cat, ch);
                 }
-            }
+                _ => self.which_key = None,
+            },
             None => {}
         }
     }
