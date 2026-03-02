@@ -85,8 +85,13 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
         let mut spans = vec![Span::styled(format!("{} ", time), theme::dim_style())];
 
         if msg.verified == Some(false) {
+            let icons = app.config.icons();
             spans.push(Span::styled(
-                "\u{26A0} ",
+                icons.unverified,
+                ratatui::style::Style::default().fg(theme::RED),
+            ));
+            spans.push(Span::styled(
+                " ",
                 ratatui::style::Style::default().fg(theme::RED),
             ));
         }

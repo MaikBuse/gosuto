@@ -4,6 +4,7 @@ use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 
 use crate::app::AudioSettingsState;
+use crate::ui::icons::Icons;
 use crate::ui::theme;
 
 const POPUP_WIDTH: u16 = 54;
@@ -11,7 +12,7 @@ const POPUP_HEIGHT: u16 = 20;
 
 const BAR_WIDTH: usize = 20;
 
-pub fn render(state: &AudioSettingsState, frame: &mut Frame) {
+pub fn render(state: &AudioSettingsState, icons: &Icons, frame: &mut Frame) {
     let area = frame.area();
     if area.width < 30 || area.height < 14 {
         return;
@@ -46,7 +47,7 @@ pub fn render(state: &AudioSettingsState, frame: &mut Frame) {
 
     for (vis_idx, &field_id) in visible.iter().enumerate() {
         let selected = vis_idx == state.selected_field;
-        render_field(buf, left, right, row, field_id, state, selected);
+        render_field(buf, left, right, row, field_id, state, selected, icons);
         row += 1;
 
         // Add a blank row after output device and output volume for visual grouping
@@ -81,11 +82,12 @@ fn render_field(
     field_id: usize,
     state: &AudioSettingsState,
     selected: bool,
+    icons: &Icons,
 ) {
     let bounds = *buf.area();
     let marker_color = if selected { theme::CYAN } else { theme::DIM };
     let label_color = if selected { theme::CYAN } else { theme::TEXT };
-    let marker = if selected { '◈' } else { '◇' };
+    let marker = if selected { icons.selected } else { icons.unselected };
 
     let marker_s = Style::default().fg(marker_color).bg(theme::BG);
     let label_s = Style::default()
@@ -97,7 +99,7 @@ fn render_field(
             Modifier::empty()
         });
 
-    set_cell(buf, &bounds, left, row, marker, marker_s);
+    write_str(buf, &bounds, left, row, marker, marker_s);
     set_cell(
         buf,
         &bounds,
@@ -118,7 +120,7 @@ fn render_field(
                 .get(state.input_device_idx)
                 .map(|s| s.as_str())
                 .unwrap_or("Default");
-            render_device_selector(buf, &bounds, value_x, right, row, name, selected);
+            render_device_selector(buf, &bounds, value_x, right, row, name, selected, icons);
         }
         1 => {
             write_str(buf, &bounds, label_x, row, "OUTPUT DEVICE", label_s);
@@ -127,7 +129,7 @@ fn render_field(
                 .get(state.output_device_idx)
                 .map(|s| s.as_str())
                 .unwrap_or("Default");
-            render_device_selector(buf, &bounds, value_x, right, row, name, selected);
+            render_device_selector(buf, &bounds, value_x, right, row, name, selected, icons);
         }
         2 => {
             write_str(buf, &bounds, label_x, row, "INPUT VOLUME", label_s);
@@ -180,6 +182,7 @@ fn render_device_selector(
     row: u16,
     name: &str,
     selected: bool,
+    icons: &Icons,
 ) {
     let arrow_color = if selected { theme::CYAN } else { theme::DIM };
     let name_color = if selected { theme::TEXT } else { theme::DIM };
@@ -187,7 +190,7 @@ fn render_device_selector(
     let arrow_s = Style::default().fg(arrow_color).bg(theme::BG);
     let name_s = Style::default().fg(name_color).bg(theme::BG);
 
-    set_cell(buf, bounds, x, row, '◂', arrow_s);
+    write_str(buf, bounds, x, row, icons.arrow_left, arrow_s);
     set_cell(buf, bounds, x + 1, row, ' ', Style::default().bg(theme::BG));
 
     // Truncate name to fit
@@ -201,7 +204,7 @@ fn render_device_selector(
 
     let end_x = x + 2 + display.chars().count() as u16;
     set_cell(buf, bounds, end_x, row, ' ', Style::default().bg(theme::BG));
-    set_cell(buf, bounds, end_x + 1, row, '▸', arrow_s);
+    write_str(buf, bounds, end_x + 1, row, icons.arrow_right, arrow_s);
 }
 
 fn render_volume_bar(

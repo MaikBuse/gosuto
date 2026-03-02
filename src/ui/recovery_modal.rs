@@ -4,12 +4,13 @@ use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 
 use crate::state::{RecoveryModalState, RecoveryStage};
+use crate::ui::icons::Icons;
 use crate::ui::theme;
 
 const POPUP_WIDTH: u16 = 52;
 const POPUP_HEIGHT: u16 = 12;
 
-pub fn render(state: &RecoveryModalState, frame: &mut Frame) {
+pub fn render(state: &RecoveryModalState, icons: &Icons, frame: &mut Frame) {
     let area = frame.area();
     if area.width < 30 || area.height < 10 {
         return;
@@ -260,7 +261,8 @@ pub fn render(state: &RecoveryModalState, frame: &mut Frame) {
             );
         }
         RecoveryStage::Enabled => {
-            let msg = "Recovery is enabled \u{2713}";
+            let msg = format!("Recovery is enabled {}", icons.checkmark);
+            let msg = msg.as_str();
             let x = left + (inner_w.saturating_sub(msg.len())) as u16 / 2;
             let y = popup.y + popup.height / 2;
             write_str(

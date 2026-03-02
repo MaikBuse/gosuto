@@ -4,12 +4,13 @@ use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 
 use crate::app::{CreateRoomState, HISTORY_VISIBILITY_OPTIONS};
+use crate::ui::icons::Icons;
 use crate::ui::theme;
 
 const POPUP_WIDTH: u16 = 54;
 const POPUP_HEIGHT: u16 = 22;
 
-pub fn render(state: &CreateRoomState, frame: &mut Frame) {
+pub fn render(state: &CreateRoomState, icons: &Icons, frame: &mut Frame) {
     let area = frame.area();
     if area.width < 30 || area.height < 12 {
         return;
@@ -46,7 +47,7 @@ pub fn render(state: &CreateRoomState, frame: &mut Frame) {
 
     // ── Field 0: NAME (editable) ──
     let name_selected = state.selected_field == 0;
-    render_field_label(buf, &bounds, left, label_x, row, "NAME", name_selected);
+    render_field_label(buf, &bounds, left, label_x, row, "NAME", name_selected, icons);
 
     let max_name_w = (right - value_x) as usize;
     if state.editing_name {
@@ -78,7 +79,7 @@ pub fn render(state: &CreateRoomState, frame: &mut Frame) {
 
     // ── Field 1: TOPIC (editable) ──
     let topic_selected = state.selected_field == 1;
-    render_field_label(buf, &bounds, left, label_x, row, "TOPIC", topic_selected);
+    render_field_label(buf, &bounds, left, label_x, row, "TOPIC", topic_selected, icons);
 
     let max_topic_w = (right - value_x) as usize;
     if state.editing_topic {
@@ -110,7 +111,7 @@ pub fn render(state: &CreateRoomState, frame: &mut Frame) {
 
     // ── Field 2: HISTORY (cycle selector) ──
     let hist_selected = state.selected_field == 2;
-    render_field_label(buf, &bounds, left, label_x, row, "HISTORY", hist_selected);
+    render_field_label(buf, &bounds, left, label_x, row, "HISTORY", hist_selected, icons);
 
     let arrow_color = if hist_selected {
         theme::CYAN
@@ -125,7 +126,7 @@ pub fn render(state: &CreateRoomState, frame: &mut Frame) {
     let arrow_s = Style::default().fg(arrow_color).bg(theme::BG);
     let vis_s = Style::default().fg(vis_val_color).bg(theme::BG);
 
-    set_cell(buf, &bounds, value_x, row, '\u{25C2}', arrow_s);
+    write_str(buf, &bounds, value_x, row, icons.arrow_left, arrow_s);
     set_cell(
         buf,
         &bounds,
@@ -147,7 +148,7 @@ pub fn render(state: &CreateRoomState, frame: &mut Frame) {
         ' ',
         Style::default().bg(theme::BG),
     );
-    set_cell(buf, &bounds, end_x + 1, row, '\u{25B8}', arrow_s);
+    write_str(buf, &bounds, end_x + 1, row, icons.arrow_right, arrow_s);
     row += 1;
 
     // History visibility description
@@ -158,7 +159,7 @@ pub fn render(state: &CreateRoomState, frame: &mut Frame) {
 
     // ── Field 3: ENCRYPTED (toggle) ──
     let enc_selected = state.selected_field == 3;
-    render_field_label(buf, &bounds, left, label_x, row, "ENCRYPTED", enc_selected);
+    render_field_label(buf, &bounds, left, label_x, row, "ENCRYPTED", enc_selected, icons);
 
     let enc_arrow_color = if enc_selected {
         theme::CYAN
@@ -173,7 +174,7 @@ pub fn render(state: &CreateRoomState, frame: &mut Frame) {
     let enc_arrow_s = Style::default().fg(enc_arrow_color).bg(theme::BG);
     let enc_val_s = Style::default().fg(enc_val_color).bg(theme::BG);
 
-    set_cell(buf, &bounds, value_x, row, '\u{25C2}', enc_arrow_s);
+    write_str(buf, &bounds, value_x, row, icons.arrow_left, enc_arrow_s);
     set_cell(
         buf,
         &bounds,
@@ -195,7 +196,7 @@ pub fn render(state: &CreateRoomState, frame: &mut Frame) {
         ' ',
         Style::default().bg(theme::BG),
     );
-    set_cell(buf, &bounds, enc_end_x + 1, row, '\u{25B8}', enc_arrow_s);
+    write_str(buf, &bounds, enc_end_x + 1, row, icons.arrow_right, enc_arrow_s);
     row += 2;
 
     // ── Field 4: CREATE button ──
@@ -262,10 +263,11 @@ fn render_field_label(
     row: u16,
     label: &str,
     selected: bool,
+    icons: &Icons,
 ) {
     let marker_color = if selected { theme::CYAN } else { theme::DIM };
     let label_color = if selected { theme::CYAN } else { theme::TEXT };
-    let marker = if selected { '\u{25C8}' } else { '\u{25C7}' };
+    let marker = if selected { icons.selected } else { icons.unselected };
 
     let marker_s = Style::default().fg(marker_color).bg(theme::BG);
     let label_s = Style::default()
@@ -277,7 +279,7 @@ fn render_field_label(
             Modifier::empty()
         });
 
-    set_cell(buf, bounds, left, row, marker, marker_s);
+    write_str(buf, bounds, left, row, marker, marker_s);
     set_cell(
         buf,
         bounds,

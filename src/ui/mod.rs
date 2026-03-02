@@ -5,6 +5,7 @@ pub mod completion_popup;
 pub mod configure;
 pub mod create_room;
 pub mod effects;
+pub mod icons;
 pub mod input_bar;
 pub mod layout;
 pub mod login;
@@ -75,6 +76,8 @@ pub fn render(app: &App, frame: &mut Frame) {
     // Room name tooltip for truncated names
     room_list::render_tooltip(app, frame, layout.room_list);
 
+    let icons = app.config.icons();
+
     // Render call overlay on top for any active call state or incoming ringing
     if let Some(ref info) = app.call_info {
         let ds = if info.is_incoming
@@ -88,7 +91,7 @@ pub fn render(app: &App, frame: &mut Frame) {
                 crate::voip::CallState::Active => call_overlay::CallDisplayState::Active,
             }
         };
-        call_overlay::render(&app.call_popup, info, &ds, frame);
+        call_overlay::render(&app.call_popup, info, &ds, icons, frame);
     } else if let Some(ref room_id) = app.incoming_call_room {
         let caller = app.incoming_call_user.as_deref().unwrap_or("unknown");
         call_overlay::render_ringing(
@@ -96,28 +99,29 @@ pub fn render(app: &App, frame: &mut Frame) {
             caller,
             room_id,
             app.incoming_call_room_name.as_deref(),
+            icons,
             frame,
         );
     }
 
     // Audio settings modal overlay
     if app.audio_settings.open {
-        audio_settings::render(&app.audio_settings, frame);
+        audio_settings::render(&app.audio_settings, icons, frame);
     }
 
     // Room info modal overlay
     if app.room_info.open {
-        room_info::render(&app.room_info, frame);
+        room_info::render(&app.room_info, icons, frame);
     }
 
     // Create room modal overlay
     if app.create_room.open {
-        create_room::render(&app.create_room, frame);
+        create_room::render(&app.create_room, icons, frame);
     }
 
     // User config modal overlay
     if app.user_config.open {
-        configure::render(&app.user_config, frame);
+        configure::render(&app.user_config, icons, frame);
     }
 
     // Verification modal overlay
@@ -127,7 +131,7 @@ pub fn render(app: &App, frame: &mut Frame) {
 
     // Recovery modal overlay
     if let Some(ref recovery_state) = app.recovery_modal {
-        recovery_modal::render(recovery_state, frame);
+        recovery_modal::render(recovery_state, icons, frame);
     }
 
     // Which-key leader popup

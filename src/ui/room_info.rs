@@ -4,12 +4,13 @@ use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 
 use crate::app::{HISTORY_VISIBILITY_OPTIONS, RoomInfoState};
+use crate::ui::icons::Icons;
 use crate::ui::theme;
 
 const POPUP_WIDTH: u16 = 54;
 const POPUP_HEIGHT: u16 = 20;
 
-pub fn render(state: &RoomInfoState, frame: &mut Frame) {
+pub fn render(state: &RoomInfoState, icons: &Icons, frame: &mut Frame) {
     let area = frame.area();
     if area.width < 30 || area.height < 12 {
         return;
@@ -82,9 +83,9 @@ pub fn render(state: &RoomInfoState, frame: &mut Frame) {
         theme::TEXT
     };
     let name_marker = if name_selected {
-        '\u{25C8}'
+        icons.selected
     } else {
-        '\u{25C7}'
+        icons.unselected
     };
 
     let name_marker_s = Style::default().fg(name_marker_color).bg(theme::BG);
@@ -97,7 +98,7 @@ pub fn render(state: &RoomInfoState, frame: &mut Frame) {
             Modifier::empty()
         });
 
-    set_cell(buf, &bounds, left, row, name_marker, name_marker_s);
+    write_str(buf, &bounds, left, row, name_marker, name_marker_s);
     set_cell(
         buf,
         &bounds,
@@ -147,9 +148,9 @@ pub fn render(state: &RoomInfoState, frame: &mut Frame) {
         theme::TEXT
     };
     let topic_marker = if topic_selected {
-        '\u{25C8}'
+        icons.selected
     } else {
-        '\u{25C7}'
+        icons.unselected
     };
 
     let topic_marker_s = Style::default().fg(topic_marker_color).bg(theme::BG);
@@ -162,7 +163,7 @@ pub fn render(state: &RoomInfoState, frame: &mut Frame) {
             Modifier::empty()
         });
 
-    set_cell(buf, &bounds, left, row, topic_marker, topic_marker_s);
+    write_str(buf, &bounds, left, row, topic_marker, topic_marker_s);
     set_cell(
         buf,
         &bounds,
@@ -210,9 +211,9 @@ pub fn render(state: &RoomInfoState, frame: &mut Frame) {
         theme::TEXT
     };
     let hist_marker = if hist_selected {
-        '\u{25C8}'
+        icons.selected
     } else {
-        '\u{25C7}'
+        icons.unselected
     };
 
     let hist_marker_s = Style::default().fg(hist_marker_color).bg(theme::BG);
@@ -225,7 +226,7 @@ pub fn render(state: &RoomInfoState, frame: &mut Frame) {
             Modifier::empty()
         });
 
-    set_cell(buf, &bounds, left, row, hist_marker, hist_marker_s);
+    write_str(buf, &bounds, left, row, hist_marker, hist_marker_s);
     set_cell(
         buf,
         &bounds,
@@ -250,7 +251,7 @@ pub fn render(state: &RoomInfoState, frame: &mut Frame) {
     let arrow_s = Style::default().fg(arrow_color).bg(theme::BG);
     let vis_s = Style::default().fg(vis_val_color).bg(theme::BG);
 
-    set_cell(buf, &bounds, value_x, row, '\u{25C2}', arrow_s);
+    write_str(buf, &bounds, value_x, row, icons.arrow_left, arrow_s);
     set_cell(
         buf,
         &bounds,
@@ -272,7 +273,7 @@ pub fn render(state: &RoomInfoState, frame: &mut Frame) {
         ' ',
         Style::default().bg(theme::BG),
     );
-    set_cell(buf, &bounds, end_x + 1, row, '\u{25B8}', arrow_s);
+    write_str(buf, &bounds, end_x + 1, row, icons.arrow_right, arrow_s);
     row += 1;
 
     // History visibility description
@@ -305,7 +306,7 @@ pub fn render(state: &RoomInfoState, frame: &mut Frame) {
         } else {
             theme::TEXT
         };
-        let enc_marker = if enc_selected { '\u{25C8}' } else { '\u{25C7}' };
+        let enc_marker = if enc_selected { icons.selected } else { icons.unselected };
 
         let enc_marker_s = Style::default().fg(enc_marker_color).bg(theme::BG);
         let enc_label_s = Style::default()
@@ -317,7 +318,7 @@ pub fn render(state: &RoomInfoState, frame: &mut Frame) {
                 Modifier::empty()
             });
 
-        set_cell(buf, &bounds, left, row, enc_marker, enc_marker_s);
+        write_str(buf, &bounds, left, row, enc_marker, enc_marker_s);
         set_cell(
             buf,
             &bounds,
@@ -341,7 +342,7 @@ pub fn render(state: &RoomInfoState, frame: &mut Frame) {
         let enc_arrow_s = Style::default().fg(enc_arrow_color).bg(theme::BG);
         let enc_val_s = Style::default().fg(enc_val_color).bg(theme::BG);
 
-        set_cell(buf, &bounds, value_x, row, '\u{25C2}', enc_arrow_s);
+        write_str(buf, &bounds, value_x, row, icons.arrow_left, enc_arrow_s);
         set_cell(
             buf,
             &bounds,
@@ -363,7 +364,7 @@ pub fn render(state: &RoomInfoState, frame: &mut Frame) {
             ' ',
             Style::default().bg(theme::BG),
         );
-        set_cell(buf, &bounds, enc_end_x + 1, row, '\u{25B8}', enc_arrow_s);
+        write_str(buf, &bounds, enc_end_x + 1, row, icons.arrow_right, enc_arrow_s);
     }
 
     // Show saving indicator

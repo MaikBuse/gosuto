@@ -7,16 +7,17 @@ use ratatui::{
 
 use crate::app::App;
 use crate::input::FocusPanel;
+use crate::ui::icons::Icons;
 use crate::ui::theme;
 
 /// IRC-style power level prefix
-fn power_prefix(power_level: i64) -> &'static str {
+fn power_prefix<'a>(power_level: i64, icons: &'a Icons) -> &'a str {
     match power_level {
-        100 => "~",     // owner
-        75..=99 => "&", // admin
-        50..=74 => "@", // mod/op
-        1..=49 => "+",  // voice
-        _ => " ",       // regular
+        100 => icons.power_owner,
+        75..=99 => icons.power_admin,
+        50..=74 => icons.power_mod,
+        1..=49 => icons.power_voice,
+        _ => icons.power_none,
     }
 }
 
@@ -56,12 +57,14 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
         .border_style(border_style)
         .style(ratatui::style::Style::default().bg(theme::BG));
 
+    let icons = app.config.icons();
+
     let items: Vec<ListItem> = app
         .members_list
         .members
         .iter()
         .map(|member| {
-            let prefix = power_prefix(member.power_level);
+            let prefix = power_prefix(member.power_level, icons);
             let prefix_style = if member.power_level >= 50 {
                 ratatui::style::Style::default().fg(theme::GREEN)
             } else if member.power_level > 0 {

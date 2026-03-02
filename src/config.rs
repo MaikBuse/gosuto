@@ -3,6 +3,8 @@ use std::path::PathBuf;
 use anyhow::Result;
 use tracing::{info, warn};
 
+use crate::ui::icons::{self, Icons};
+
 pub const APP_NAME: &str = "gosuto";
 pub const TICK_RATE_MS: u64 = 250;
 pub const RENDER_RATE_MS: u64 = 50;
@@ -15,6 +17,20 @@ pub struct GosutoConfig {
     pub effects: EffectsConfig,
     #[serde(default)]
     pub audio: AudioConfig,
+    #[serde(default)]
+    pub ui: UiConfig,
+}
+
+impl GosutoConfig {
+    pub fn icons(&self) -> &'static Icons {
+        icons::icons(self.ui.use_nerd_fonts)
+    }
+}
+
+#[derive(Debug, Default, serde::Deserialize, serde::Serialize)]
+pub struct UiConfig {
+    #[serde(default)]
+    pub use_nerd_fonts: bool,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -257,6 +273,7 @@ mod tests {
         assert!(!config.network.accept_invalid_certs);
         assert!(config.effects.rain);
         assert!(config.effects.glitch);
+        assert!(!config.ui.use_nerd_fonts);
     }
 
     #[test]
@@ -285,6 +302,27 @@ mod tests {
         );
         assert_eq!(deserialized.audio.input_volume, config.audio.input_volume);
         assert_eq!(deserialized.audio.output_volume, config.audio.output_volume);
+        assert_eq!(
+            deserialized.ui.use_nerd_fonts,
+            config.ui.use_nerd_fonts
+        );
+    }
+
+    #[test]
+    fn ui_config_nerd_fonts_roundtrip() {
+        let toml_str = r#"
+[ui]
+use_nerd_fonts = true
+"#;
+        let config: GosutoConfig = toml::from_str(toml_str).unwrap();
+        assert!(config.ui.use_nerd_fonts);
+        assert_eq!(config.icons().room, crate::ui::icons::NERD.room);
+    }
+
+    #[test]
+    fn icons_default_returns_unicode() {
+        let config = GosutoConfig::default();
+        assert_eq!(config.icons().room, crate::ui::icons::UNICODE.room);
     }
 
     #[test]

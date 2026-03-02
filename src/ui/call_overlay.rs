@@ -4,6 +4,7 @@ use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 
 use crate::ui::effects::{TextReveal, Xorshift64};
+use crate::ui::icons::Icons;
 use crate::ui::theme;
 use crate::voip::{CallInfo, CallState};
 
@@ -112,7 +113,7 @@ impl TransmissionPopup {
         }
     }
 
-    fn render_popup(&self, info: &CallInfo, display_state: &CallDisplayState, frame: &mut Frame) {
+    fn render_popup(&self, info: &CallInfo, display_state: &CallDisplayState, icons: &Icons, frame: &mut Frame) {
         let area = frame.area();
         if area.width < 20 || area.height < 14 {
             return;
@@ -154,7 +155,7 @@ impl TransmissionPopup {
         let border_color = self.pulse_color(display_state);
         self.render_border(buf, &bounds, popup, border_color);
         self.render_title(buf, &bounds, popup, border_color, display_state, info);
-        self.render_caller_line(buf, &bounds, popup, info, display_state);
+        self.render_caller_line(buf, &bounds, popup, info, display_state, icons);
         self.render_separator(buf, &bounds, popup, room_name_line);
         self.render_state_content(buf, &bounds, popup, info, display_state, room_name_line);
         if show_waveform {
@@ -276,6 +277,7 @@ impl TransmissionPopup {
         area: Rect,
         info: &CallInfo,
         state: &CallDisplayState,
+        icons: &Icons,
     ) {
         let row = area.y + 2;
         let left = area.x + 3;
@@ -294,7 +296,7 @@ impl TransmissionPopup {
         // Room name line (above participant line)
         if let Some(ref name) = info.room_name {
             let room_s = Style::default().fg(theme::CYAN).bg(theme::BG);
-            let label = format!("⌂ {}", name);
+            let label = format!("{} {}", icons.home, name);
             let max_w = (right - left) as usize;
             let truncated: String = label.chars().take(max_w).collect();
             write_str(buf, bounds, left, row, &truncated, room_s);
@@ -308,12 +310,12 @@ impl TransmissionPopup {
 
         if info.participants.is_empty() {
             // Joining, no participants yet
-            set_cell(
+            write_str(
                 buf,
                 bounds,
                 left,
                 caller_row,
-                '▶',
+                icons.participant,
                 Style::default().fg(color).bg(theme::BG),
             );
             set_cell(
@@ -327,12 +329,12 @@ impl TransmissionPopup {
             write_str(buf, bounds, left + 2, caller_row, "joining...", name_s);
         } else if info.participants.len() == 1 {
             // 1:1 call — show single participant
-            set_cell(
+            write_str(
                 buf,
                 bounds,
                 left,
                 caller_row,
-                '▶',
+                icons.participant,
                 Style::default().fg(color).bg(theme::BG),
             );
             set_cell(
@@ -358,12 +360,12 @@ impl TransmissionPopup {
                 if y >= area.y + area.height - 3 {
                     break;
                 }
-                set_cell(
+                write_str(
                     buf,
                     bounds,
                     left,
                     y,
-                    '▶',
+                    icons.participant,
                     Style::default().fg(color).bg(theme::BG),
                 );
                 set_cell(
@@ -378,8 +380,9 @@ impl TransmissionPopup {
             }
         }
 
-        // ◉ VOICE right-aligned
-        let voice = "◉ VOICE";
+        // VOICE right-aligned
+        let voice = format!("{} VOICE", icons.voice);
+        let voice = voice.as_str();
         let vx = right.saturating_sub(voice.chars().count() as u16);
         write_str(
             buf,
@@ -600,9 +603,10 @@ pub fn render(
     popup: &TransmissionPopup,
     info: &CallInfo,
     ds: &CallDisplayState,
+    icons: &Icons,
     frame: &mut Frame,
 ) {
-    popup.render_popup(info, ds, frame);
+    popup.render_popup(info, ds, icons, frame);
 }
 
 /// Render for incoming ringing (no CallInfo yet)
@@ -611,6 +615,7 @@ pub fn render_ringing(
     caller: &str,
     room_id: &str,
     room_name: Option<&str>,
+    icons: &Icons,
     frame: &mut Frame,
 ) {
     // Create a temporary CallInfo for display
@@ -622,5 +627,5 @@ pub fn render_ringing(
         participants: vec![caller.to_string()],
         started_at: None,
     };
-    popup.render_popup(&info, &CallDisplayState::Ringing, frame);
+    popup.render_popup(&info, &CallDisplayState::Ringing, icons, frame);
 }

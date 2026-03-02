@@ -121,6 +121,7 @@ pub fn scroll_offset(app: &App, area: Rect) -> usize {
 
 pub fn render(app: &App, frame: &mut Frame, area: Rect) {
     let focused = app.vim.focus == FocusPanel::RoomList;
+    let icons = app.config.icons();
 
     let border_style = if focused {
         theme::border_focused_style()
@@ -199,8 +200,8 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
                 unread_count,
                 ..
             } => {
-                let arrow = if *collapsed { "▶" } else { "▼" };
-                let label = format!("{} \u{2261} {}", arrow, name);
+                let arrow = if *collapsed { icons.collapse } else { icons.expand };
+                let label = format!("{} {} {}", arrow, icons.space, name);
 
                 let style = anim
                     .row_style(row_idx, is_selected, focused)
@@ -238,11 +239,11 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
             DisplayRow::Room { room_index, indent } => {
                 if let Some(room) = app.room_list.rooms.get(*room_index) {
                     let prefix = match room.category {
-                        RoomCategory::Space => "\u{2261} ",
-                        RoomCategory::Room => "# ",
-                        RoomCategory::DirectMessage => "@ ",
+                        RoomCategory::Space => icons.space,
+                        RoomCategory::Room => icons.room,
+                        RoomCategory::DirectMessage => icons.dm,
                     };
-                    let label = format!("{}{}", prefix, room.name);
+                    let label = format!("{} {}", prefix, room.name);
                     let indent_px = *indent as u16;
 
                     let style = anim
@@ -307,6 +308,8 @@ pub fn render_tooltip(app: &App, frame: &mut Frame, room_list_area: Rect) {
         None => return,
     };
 
+    let icons = app.config.icons();
+
     // Reconstruct the full label (same format as render())
     let label = match row {
         DisplayRow::Room { room_index, indent: _ } => {
@@ -315,15 +318,15 @@ pub fn render_tooltip(app: &App, frame: &mut Frame, room_list_area: Rect) {
                 None => return,
             };
             let prefix = match room.category {
-                RoomCategory::Space => "\u{2261} ",
-                RoomCategory::Room => "# ",
-                RoomCategory::DirectMessage => "@ ",
+                RoomCategory::Space => icons.space,
+                RoomCategory::Room => icons.room,
+                RoomCategory::DirectMessage => icons.dm,
             };
-            format!("{}{}", prefix, room.name)
+            format!("{} {}", prefix, room.name)
         }
         DisplayRow::SpaceHeader { name, collapsed, .. } => {
-            let arrow = if *collapsed { "▶" } else { "▼" };
-            format!("{} \u{2261} {}", arrow, name)
+            let arrow = if *collapsed { icons.collapse } else { icons.expand };
+            format!("{} {} {}", arrow, icons.space, name)
         }
         _ => return,
     };

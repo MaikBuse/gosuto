@@ -130,6 +130,13 @@ pub const COMMANDS: &[CommandDef] = &[
         description: "Manage recovery key",
         takes_arg: false,
     },
+    CommandDef {
+        name: "nerdfonts",
+        aliases: &["nerd", "icons"],
+        syntax: ":nerdfonts",
+        description: "Toggle Nerd Font icons",
+        takes_arg: false,
+    },
 ];
 
 pub fn filtered_commands(prefix: &str) -> Vec<&'static CommandDef> {
@@ -633,6 +640,7 @@ fn parse_command(input: &str) -> InputResult {
             InputResult::Command(CommandAction::Verify(target))
         }
         "recovery" | "backup" => InputResult::Command(CommandAction::Recovery),
+        "nerdfonts" | "nerd" | "icons" => InputResult::Command(CommandAction::NerdFonts),
         _ => InputResult::None,
     }
 }

@@ -4,12 +4,13 @@ use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 
 use crate::app::UserConfigState;
+use crate::ui::icons::Icons;
 use crate::ui::theme;
 
 const POPUP_WIDTH: u16 = 54;
 const POPUP_HEIGHT: u16 = 18;
 
-pub fn render(state: &UserConfigState, frame: &mut Frame) {
+pub fn render(state: &UserConfigState, icons: &Icons, frame: &mut Frame) {
     let area = frame.area();
     if area.width < 30 || area.height < 12 {
         return;
@@ -94,9 +95,9 @@ pub fn render(state: &UserConfigState, frame: &mut Frame) {
         theme::TEXT
     };
     let name_marker = if name_selected {
-        '\u{25C8}'
+        icons.selected
     } else {
-        '\u{25C7}'
+        icons.unselected
     };
 
     let name_marker_s = Style::default().fg(name_marker_color).bg(theme::BG);
@@ -109,7 +110,7 @@ pub fn render(state: &UserConfigState, frame: &mut Frame) {
             Modifier::empty()
         });
 
-    set_cell(buf, &bounds, left, row, name_marker, name_marker_s);
+    write_str(buf, &bounds, left, row, name_marker, name_marker_s);
     set_cell(
         buf,
         &bounds,
@@ -157,7 +158,7 @@ pub fn render(state: &UserConfigState, frame: &mut Frame) {
     } else {
         theme::TEXT
     };
-    let ver_marker = if ver_selected { '\u{25C8}' } else { '\u{25C7}' };
+    let ver_marker = if ver_selected { icons.selected } else { icons.unselected };
 
     let ver_marker_s = Style::default().fg(ver_marker_color).bg(theme::BG);
     let ver_label_s = Style::default()
@@ -169,7 +170,7 @@ pub fn render(state: &UserConfigState, frame: &mut Frame) {
             Modifier::empty()
         });
 
-    set_cell(buf, &bounds, left, row, ver_marker, ver_marker_s);
+    write_str(buf, &bounds, left, row, ver_marker, ver_marker_s);
     set_cell(
         buf,
         &bounds,

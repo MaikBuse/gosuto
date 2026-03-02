@@ -1009,6 +1009,10 @@ impl App {
                 self.config.effects.rain = self.effects.enabled;
                 crate::config::save_config(&self.config);
             }
+            CommandAction::NerdFonts => {
+                self.config.ui.use_nerd_fonts = !self.config.ui.use_nerd_fonts;
+                crate::config::save_config(&self.config);
+            }
             CommandAction::Glitch => {
                 self.effects.toggle_glitch();
                 self.config.effects.glitch = self.effects.glitch_enabled;

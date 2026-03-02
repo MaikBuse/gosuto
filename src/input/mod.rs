@@ -48,4 +48,5 @@ pub enum CommandAction {
     Configure,
     Verify(Option<String>),
     Recovery,
+    NerdFonts,
 }
