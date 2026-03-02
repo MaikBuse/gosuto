@@ -1974,8 +1974,18 @@ impl App {
             KeyCode::Enter | KeyCode::Char(' ') => {
                 let field = self.audio_settings.current_field();
                 match field {
-                    4 => self.audio_settings.voice_activity = !self.audio_settings.voice_activity,
-                    6 => self.audio_settings.push_to_talk = !self.audio_settings.push_to_talk,
+                    4 => {
+                        self.audio_settings.voice_activity = !self.audio_settings.voice_activity;
+                        if self.audio_settings.voice_activity {
+                            self.audio_settings.push_to_talk = false;
+                        }
+                    }
+                    6 => {
+                        self.audio_settings.push_to_talk = !self.audio_settings.push_to_talk;
+                        if self.audio_settings.push_to_talk {
+                            self.audio_settings.voice_activity = false;
+                        }
+                    }
                     7 => self.audio_settings.capturing_ptt_key = true,
                     _ => {}
                 }
@@ -2026,6 +2036,9 @@ impl App {
             4 => {
                 // Voice activity toggle
                 self.audio_settings.voice_activity = dir > 0;
+                if self.audio_settings.voice_activity {
+                    self.audio_settings.push_to_talk = false;
+                }
             }
             5 => {
                 // Sensitivity
@@ -2036,6 +2049,9 @@ impl App {
             6 => {
                 // Push to talk toggle
                 self.audio_settings.push_to_talk = dir > 0;
+                if self.audio_settings.push_to_talk {
+                    self.audio_settings.voice_activity = false;
+                }
             }
             _ => {}
         }
