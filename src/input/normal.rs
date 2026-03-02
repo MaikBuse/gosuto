@@ -42,6 +42,7 @@ pub fn handle_normal(key: KeyEvent, vim: &mut VimState) -> InputResult {
             vim.enter_insert();
             InputResult::None
         }
+        KeyCode::Char(' ') => InputResult::ShowWhichKey,
         KeyCode::Char(':') => {
             vim.enter_command();
             InputResult::None

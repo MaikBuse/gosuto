@@ -114,6 +114,13 @@ impl VimState {
         self.completion.reset(command::COMMANDS.len());
     }
 
+    pub fn enter_command_with(&mut self, prefix: &str) {
+        self.mode = VimMode::Command;
+        self.command_buffer = prefix.to_string();
+        self.pending_g = false;
+        self.completion.reset(0);
+    }
+
     #[allow(dead_code)]
     pub fn clear_input(&mut self) {
         self.input_buffer.clear();

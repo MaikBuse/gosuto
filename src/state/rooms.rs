@@ -33,6 +33,13 @@ pub enum DisplayRow {
         room_index: usize,
         indent: u8,
     },
+    CallParticipant {
+        display_name: String,
+    },
+}
+
+fn extract_server_domain(room_id: &str) -> &str {
+    room_id.split_once(':').map(|(_, domain)| domain).unwrap_or(room_id)
 }
 
 #[derive(Debug)]
@@ -41,6 +48,7 @@ pub struct RoomListState {
     pub display_rows: Vec<DisplayRow>,
     pub selected: usize,
     pub search_filter: Option<String>,
+    pub room_call_members: HashMap<String, HashSet<String>>,
     collapsed_spaces: HashMap<String, bool>,
 }
 
@@ -51,6 +59,7 @@ impl RoomListState {
             display_rows: Vec::new(),
             selected: 0,
             search_filter: None,
+            room_call_members: HashMap::new(),
             collapsed_spaces: HashMap::new(),
         }
     }
@@ -148,11 +157,24 @@ impl RoomListState {
                         room_index: ci,
                         indent: 2,
                     });
+                    if let Some(members) = self.room_call_members.get(&self.rooms[ci].id) {
+                        let mut sorted_members: Vec<&String> = members.iter().collect();
+                        sorted_members.sort();
+                        for user_id in sorted_members {
+                            let display_name = user_id
+                                .strip_prefix('@')
+                                .and_then(|s| s.split_once(':'))
+                                .map(|(local, _)| local)
+                                .unwrap_or(user_id)
+                                .to_string();
+                            rows.push(DisplayRow::CallParticipant { display_name });
+                        }
+                    }
                 }
             }
         }
 
-        // Orphan rooms: regular rooms not claimed by any space
+        // Orphan rooms: regular rooms not claimed by any space, grouped by server domain
         let orphans: Vec<usize> = self
             .rooms
             .iter()
@@ -169,14 +191,44 @@ impl RoomListState {
             .collect();
 
         if !orphans.is_empty() {
-            rows.push(DisplayRow::SectionHeader {
-                label: "ROOMS".to_string(),
-            });
-            for oi in orphans {
-                rows.push(DisplayRow::Room {
-                    room_index: oi,
-                    indent: 0,
+            // Group orphans by server domain, preserving encounter order
+            let mut domain_order: Vec<String> = Vec::new();
+            let mut domain_groups: HashMap<String, Vec<usize>> = HashMap::new();
+            for &oi in &orphans {
+                let domain = extract_server_domain(&self.rooms[oi].id).to_string();
+                domain_groups
+                    .entry(domain.clone())
+                    .or_default()
+                    .push(oi);
+                if !domain_order.contains(&domain) {
+                    domain_order.push(domain);
+                }
+            }
+
+            for domain in &domain_order {
+                rows.push(DisplayRow::SectionHeader {
+                    label: domain.clone(),
                 });
+                for &oi in &domain_groups[domain] {
+                    rows.push(DisplayRow::Room {
+                        room_index: oi,
+                        indent: 0,
+                    });
+                    // Emit call participant rows for this room
+                    if let Some(members) = self.room_call_members.get(&self.rooms[oi].id) {
+                        let mut sorted_members: Vec<&String> = members.iter().collect();
+                        sorted_members.sort();
+                        for user_id in sorted_members {
+                            let display_name = user_id
+                                .strip_prefix('@')
+                                .and_then(|s| s.split_once(':'))
+                                .map(|(local, _)| local)
+                                .unwrap_or(user_id)
+                                .to_string();
+                            rows.push(DisplayRow::CallParticipant { display_name });
+                        }
+                    }
+                }
             }
         }
 
@@ -203,6 +255,19 @@ impl RoomListState {
                     room_index: di,
                     indent: 0,
                 });
+                if let Some(members) = self.room_call_members.get(&self.rooms[di].id) {
+                    let mut sorted_members: Vec<&String> = members.iter().collect();
+                    sorted_members.sort();
+                    for user_id in sorted_members {
+                        let display_name = user_id
+                            .strip_prefix('@')
+                            .and_then(|s| s.split_once(':'))
+                            .map(|(local, _)| local)
+                            .unwrap_or(user_id)
+                            .to_string();
+                        rows.push(DisplayRow::CallParticipant { display_name });
+                    }
+                }
             }
         }
 

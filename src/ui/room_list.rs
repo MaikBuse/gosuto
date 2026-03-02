@@ -268,6 +268,11 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
                     }
                 }
             }
+            DisplayRow::CallParticipant { display_name } => {
+                let label = format!("    > {}", display_name);
+                let style = Style::default().fg(theme::GREEN).bg(theme::BG);
+                write_str_clipped(buf, &bounds, inner.x + 1, y, &label, style, &inner);
+            }
         }
     }
 }
