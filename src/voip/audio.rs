@@ -367,7 +367,7 @@ impl AudioPipeline {
                                 })
                                 .sum();
                             let rms = (sum_sq / samples.len().max(1) as f32).sqrt();
-                            let _ = level_tx.send(AppEvent::MicLevel(rms.clamp(0.0, 1.0)));
+                            let _ = level_tx.send(AppEvent::MicLevel(rms.sqrt().clamp(0.0, 1.0)));
                         }
                     },
                     |err: cpal::StreamError| error!("Mic test stream error: {err}"),
