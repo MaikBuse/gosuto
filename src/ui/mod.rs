@@ -72,6 +72,9 @@ pub fn render(app: &App, frame: &mut Frame) {
     // Command auto-completion popup (rendered after effects so it isn't overwritten)
     completion_popup::render(app, frame, layout.input_bar);
 
+    // Room name tooltip for truncated names
+    room_list::render_tooltip(app, frame, layout.room_list);
+
     // Render call overlay on top for any active call state or incoming ringing
     if let Some(ref info) = app.call_info {
         let ds = if info.is_incoming

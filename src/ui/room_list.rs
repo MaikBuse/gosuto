@@ -185,7 +185,7 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
                     .bg(theme::BG)
                     .add_modifier(Modifier::BOLD);
                 let text = format!(" {} ", label);
-                write_str_clipped(buf, &bounds, inner.x + 1, y, &text, style, &inner);
+                write_str_clipped(buf, &bounds, inner.x + 1, y, &text, style, &inner, true);
                 // Fill remaining with ─
                 let line_style = Style::default().fg(theme::DIM).bg(theme::BG);
                 let text_end = inner.x + 1 + text.len() as u16;
@@ -218,14 +218,21 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
                     }
                 }
 
-                write_str_clipped(buf, &bounds, inner.x + 1, y, &label, style, &inner);
+                // Narrow clip rect to reserve space for unread badge
+                let name_clip = if *collapsed && *unread_count > 0 && !is_selected {
+                    let badge_len = format!("({})", unread_count).len() as u16 + 2;
+                    Rect::new(inner.x, inner.y, inner.width.saturating_sub(badge_len), inner.height)
+                } else {
+                    inner
+                };
+                write_str_clipped(buf, &bounds, inner.x + 1, y, &label, style, &name_clip, true);
 
                 // Unread badge for collapsed spaces
                 if *collapsed && *unread_count > 0 && !is_selected {
                     let badge = format!("({})", unread_count);
                     let badge_x = inner.x + inner.width - badge.len() as u16 - 1;
                     let badge_style = Style::default().fg(theme::CYAN).bg(theme::BG);
-                    write_str_clipped(buf, &bounds, badge_x, y, &badge, badge_style, &inner);
+                    write_str_clipped(buf, &bounds, badge_x, y, &badge, badge_style, &inner, false);
                 }
             }
             DisplayRow::Room { room_index, indent } => {
@@ -249,6 +256,13 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
                         }
                     }
 
+                    // Narrow clip rect to reserve space for unread badge
+                    let name_clip = if room.unread_count > 0 && !is_selected {
+                        let badge_len = format!("({})", room.unread_count).len() as u16 + 2;
+                        Rect::new(inner.x, inner.y, inner.width.saturating_sub(badge_len), inner.height)
+                    } else {
+                        inner
+                    };
                     write_str_clipped(
                         buf,
                         &bounds,
@@ -256,7 +270,8 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
                         y,
                         &label,
                         style,
-                        &inner,
+                        &name_clip,
+                        true,
                     );
 
                     // Unread badge
@@ -264,17 +279,157 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
                         let badge = format!("({})", room.unread_count);
                         let badge_x = inner.x + inner.width - badge.len() as u16 - 1;
                         let badge_style = Style::default().fg(theme::CYAN).bg(theme::BG);
-                        write_str_clipped(buf, &bounds, badge_x, y, &badge, badge_style, &inner);
+                        write_str_clipped(buf, &bounds, badge_x, y, &badge, badge_style, &inner, false);
                     }
                 }
             }
             DisplayRow::CallParticipant { display_name } => {
                 let label = format!("    > {}", display_name);
                 let style = Style::default().fg(theme::GREEN).bg(theme::BG);
-                write_str_clipped(buf, &bounds, inner.x + 1, y, &label, style, &inner);
+                write_str_clipped(buf, &bounds, inner.x + 1, y, &label, style, &inner, true);
             }
         }
     }
+}
+
+/// Render a floating tooltip showing the full room name when the selected row is truncated.
+pub fn render_tooltip(app: &App, frame: &mut Frame, room_list_area: Rect) {
+    // Only show tooltip when room list is focused
+    if app.vim.focus != FocusPanel::RoomList {
+        return;
+    }
+
+    let display_rows = &app.room_list.display_rows;
+    let selected = app.room_list.selected;
+
+    let row = match display_rows.get(selected) {
+        Some(r) => r,
+        None => return,
+    };
+
+    // Reconstruct the full label (same format as render())
+    let label = match row {
+        DisplayRow::Room { room_index, indent: _ } => {
+            let room = match app.room_list.rooms.get(*room_index) {
+                Some(r) => r,
+                None => return,
+            };
+            let prefix = match room.category {
+                RoomCategory::Space => "\u{2261} ",
+                RoomCategory::Room => "# ",
+                RoomCategory::DirectMessage => "@ ",
+            };
+            format!("{}{}", prefix, room.name)
+        }
+        DisplayRow::SpaceHeader { name, collapsed, .. } => {
+            let arrow = if *collapsed { "▶" } else { "▼" };
+            format!("{} \u{2261} {}", arrow, name)
+        }
+        _ => return,
+    };
+
+    // Inner area of the room list panel (inside borders)
+    let inner_width = room_list_area.width.saturating_sub(2) as usize;
+    if inner_width == 0 {
+        return;
+    }
+
+    // Check if label is truncated (account for 1-char left padding)
+    let available_cols = inner_width.saturating_sub(1);
+    if label.chars().count() <= available_cols {
+        return; // Not truncated, no tooltip needed
+    }
+
+    // Compute the selected row's screen y-position
+    let inner_height = room_list_area.height.saturating_sub(2) as usize;
+    if inner_height == 0 {
+        return;
+    }
+
+    let total_rows = display_rows.len();
+    let scroll_off = if total_rows <= inner_height || selected < inner_height / 2 {
+        0
+    } else if selected > total_rows - inner_height / 2 {
+        total_rows - inner_height
+    } else {
+        selected - inner_height / 2
+    };
+
+    // Check if selected row is visible
+    if selected < scroll_off || selected >= scroll_off + inner_height {
+        return;
+    }
+
+    let row_y = room_list_area.y + 1 + (selected - scroll_off) as u16;
+
+    // Position tooltip to the right of the room list panel
+    let tooltip_x = room_list_area.x + room_list_area.width;
+    let term = frame.area();
+
+    // Need at least 5 columns for a useful tooltip
+    let max_tooltip_width = term.width.saturating_sub(tooltip_x);
+    if max_tooltip_width < 5 {
+        return;
+    }
+
+    // Tooltip content: " full_name " with 1-char padding + 2-char border
+    let content_width = label.chars().count() as u16 + 2; // 1-char padding each side
+    let box_width = (content_width + 2).min(max_tooltip_width); // +2 for left/right border
+    let box_height: u16 = 3; // top border + content + bottom border
+
+    // Clamp to terminal bounds vertically
+    let tooltip_y = if row_y + box_height > term.y + term.height {
+        (term.y + term.height).saturating_sub(box_height)
+    } else {
+        row_y
+    };
+
+    if tooltip_y + box_height > term.y + term.height {
+        return;
+    }
+
+    let buf = frame.buffer_mut();
+    let bounds = *buf.area();
+
+    let border_style = Style::default().fg(theme::CYAN).bg(theme::BG);
+    let text_style = Style::default().fg(theme::TEXT).bg(theme::BG);
+
+    // Clear background
+    for dy in 0..box_height {
+        for dx in 0..box_width {
+            set_cell_if(buf, &bounds, tooltip_x + dx, tooltip_y + dy, ' ', Style::default().bg(theme::BG));
+        }
+    }
+
+    // Draw border
+    // Top: ╭─...─╮
+    set_cell_if(buf, &bounds, tooltip_x, tooltip_y, '╭', border_style);
+    for dx in 1..box_width - 1 {
+        set_cell_if(buf, &bounds, tooltip_x + dx, tooltip_y, '─', border_style);
+    }
+    set_cell_if(buf, &bounds, tooltip_x + box_width - 1, tooltip_y, '╮', border_style);
+
+    // Middle: │ text │
+    let mid_y = tooltip_y + 1;
+    set_cell_if(buf, &bounds, tooltip_x, mid_y, '│', border_style);
+    set_cell_if(buf, &bounds, tooltip_x + box_width - 1, mid_y, '│', border_style);
+
+    // Fill middle row background
+    for dx in 1..box_width - 1 {
+        set_cell_if(buf, &bounds, tooltip_x + dx, mid_y, ' ', text_style);
+    }
+
+    // Write the label text (clipped to box interior)
+    let text_clip = Rect::new(tooltip_x + 1, mid_y, box_width.saturating_sub(2), 1);
+    write_str_clipped(buf, &bounds, tooltip_x + 2, mid_y, &label, text_style, &text_clip, false);
+
+    // Bottom: ╰─...─╯
+    let bot_y = tooltip_y + 2;
+    set_cell_if(buf, &bounds, tooltip_x, bot_y, '╰', border_style);
+    for dx in 1..box_width - 1 {
+        set_cell_if(buf, &bounds, tooltip_x + dx, bot_y, '─', border_style);
+    }
+    set_cell_if(buf, &bounds, tooltip_x + box_width - 1, bot_y, '╯', border_style);
 }
 
 #[inline]
@@ -294,10 +449,15 @@ fn write_str_clipped(
     text: &str,
     style: Style,
     clip: &Rect,
-) {
+    ellipsis: bool,
+) -> bool {
+    let clip_end = clip.x + clip.width;
+    let char_count = text.chars().count() as u16;
+    let truncated = x + char_count > clip_end;
+
     for (i, ch) in text.chars().enumerate() {
         let cx = x + i as u16;
-        if cx >= clip.x + clip.width {
+        if cx >= clip_end {
             break;
         }
         if cx >= bounds.x
@@ -309,4 +469,19 @@ fn write_str_clipped(
             buf[(cx, y)].set_style(style);
         }
     }
+
+    // Overwrite last visible character with ellipsis when truncated
+    if truncated && ellipsis && clip_end > clip.x {
+        let last = clip_end - 1;
+        if last >= bounds.x
+            && last < bounds.x + bounds.width
+            && y >= bounds.y
+            && y < bounds.y + bounds.height
+        {
+            buf[(last, y)].set_char('\u{2026}');
+            buf[(last, y)].set_style(style);
+        }
+    }
+
+    truncated
 }
