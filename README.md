@@ -9,7 +9,7 @@
 
 **Gōsuto** (ゴースト) — _ghost_ — a cyberpunk terminal Matrix client with vim motions.
 
-## ════════════════════ the point ════════════════════
+## ═════════ the point
 
 ~3,400 lines of Rust. One static binary. No Electron, no browser, no bloat.
 
@@ -18,7 +18,7 @@
 - Async Tokio runtime, 50ms render cycle
 - Neon-on-black palette, matrix rain, glitch effects, text reveal animations
 
-## ════════════════════ features ════════════════════
+## ═════════ features
 
 ### chat
 
@@ -39,7 +39,7 @@ LiveKit-based voice calls. Configure audio devices with `:audio`. Start, answer,
 - **glitch** — randomized text corruption
 - **text reveal** — characters materialize on the login screen
 
-## ════════════════════ keybindings ════════════════════
+## ═════════ keybindings
 
 Three modes, color-coded in the status bar:
 
@@ -66,7 +66,7 @@ Three modes, color-coded in the status bar:
 
 Type your message. `Enter` sends. `Esc` returns to Normal.
 
-## ════════════════════ commands ════════════════════
+## ═════════ commands
 
 ```
  :quit, :q                     exit gosuto
@@ -85,7 +85,7 @@ Type your message. `Enter` sends. `Esc` returns to Normal.
  :logout                       log out
 ```
 
-## ════════════════════ install ════════════════════
+## ═════════ install
 
 ```bash
 # install directly
@@ -100,7 +100,7 @@ cargo build --release
 
 Run `gosuto` and log in with your Matrix homeserver, username, and password.
 
-## ════════════════════ config ════════════════════
+## ═════════ config
 
 Data lives in `~/.local/share/gosuto/`:
 
@@ -110,7 +110,7 @@ Data lives in `~/.local/share/gosuto/`:
  logs/          log files (enable with GOSUTO_LOG=debug gosuto)
 ```
 
-## ════════════════════ license ════════════════════
+## ═════════ license
 
 Licensed under either of
 
