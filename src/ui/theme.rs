@@ -73,3 +73,37 @@ pub fn command_mode_style() -> Style {
         .bg(MAGENTA)
         .add_modifier(Modifier::BOLD)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sender_color_deterministic() {
+        let c1 = sender_color("@alice:matrix.org");
+        let c2 = sender_color("@alice:matrix.org");
+        assert_eq!(c1, c2);
+    }
+
+    #[test]
+    fn sender_color_different_inputs() {
+        let c1 = sender_color("@alice:matrix.org");
+        let c2 = sender_color("@bob:matrix.org");
+        // Different inputs should produce results (may or may not be different
+        // colors due to hash collisions, but the function should not panic)
+        let _ = (c1, c2);
+    }
+
+    #[test]
+    fn sender_color_empty_string() {
+        let c = sender_color("");
+        // 0 % 8 == 0, so should return SENDER_COLORS[0] which is CYAN
+        assert_eq!(c, SENDER_COLORS[0]);
+    }
+
+    #[test]
+    fn sender_color_returns_from_palette() {
+        let c = sender_color("test_user");
+        assert!(SENDER_COLORS.contains(&c));
+    }
+}

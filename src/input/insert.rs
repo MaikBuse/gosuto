@@ -32,3 +32,72 @@ pub fn handle_insert(key: KeyEvent, vim: &mut VimState) -> InputResult {
         _ => InputResult::None,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::input::vim::VimMode;
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    fn ctrl(c: char) -> KeyEvent {
+        KeyEvent::new(KeyCode::Char(c), KeyModifiers::CONTROL)
+    }
+
+    #[test]
+    fn esc_returns_to_normal() {
+        let mut vim = VimState::new();
+        vim.enter_insert();
+        let result = handle_insert(key(KeyCode::Esc), &mut vim);
+        assert!(matches!(result, InputResult::None));
+        assert_eq!(vim.mode, VimMode::Normal);
+    }
+
+    #[test]
+    fn enter_sends_message() {
+        let mut vim = VimState::new();
+        vim.enter_insert();
+        vim.insert_char('h');
+        vim.insert_char('i');
+        let result = handle_insert(key(KeyCode::Enter), &mut vim);
+        assert!(matches!(result, InputResult::SendMessage(ref s) if s == "hi"));
+    }
+
+    #[test]
+    fn enter_empty_returns_none() {
+        let mut vim = VimState::new();
+        vim.enter_insert();
+        let result = handle_insert(key(KeyCode::Enter), &mut vim);
+        assert!(matches!(result, InputResult::None));
+    }
+
+    #[test]
+    fn char_inserts() {
+        let mut vim = VimState::new();
+        vim.enter_insert();
+        let result = handle_insert(key(KeyCode::Char('x')), &mut vim);
+        assert!(matches!(result, InputResult::None));
+        assert_eq!(vim.input_buffer, "x");
+    }
+
+    #[test]
+    fn backspace_delegates() {
+        let mut vim = VimState::new();
+        vim.enter_insert();
+        vim.insert_char('a');
+        vim.insert_char('b');
+        let result = handle_insert(key(KeyCode::Backspace), &mut vim);
+        assert!(matches!(result, InputResult::None));
+        assert_eq!(vim.input_buffer, "a");
+    }
+
+    #[test]
+    fn ctrl_c_quits() {
+        let mut vim = VimState::new();
+        vim.enter_insert();
+        let result = handle_insert(ctrl('c'), &mut vim);
+        assert!(matches!(result, InputResult::Quit));
+    }
+}

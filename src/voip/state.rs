@@ -54,3 +54,60 @@ impl CallInfo {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn new_outgoing_fields() {
+        let call = CallInfo::new_outgoing("!room:x".to_string(), Some("Room".to_string()));
+        assert_eq!(call.room_id, "!room:x");
+        assert_eq!(call.room_name.as_deref(), Some("Room"));
+        assert_eq!(call.state, CallState::Connecting);
+        assert!(!call.is_incoming);
+        assert!(call.participants.is_empty());
+        assert!(call.started_at.is_none());
+    }
+
+    #[test]
+    fn new_outgoing_no_room_name() {
+        let call = CallInfo::new_outgoing("!room:x".to_string(), None);
+        assert!(call.room_name.is_none());
+    }
+
+    #[test]
+    fn new_incoming_fields() {
+        let call = CallInfo::new_incoming(
+            "!room:x".to_string(),
+            "@caller:x".to_string(),
+            Some("Room".to_string()),
+        );
+        assert_eq!(call.room_id, "!room:x");
+        assert!(call.is_incoming);
+        assert_eq!(call.state, CallState::Connecting);
+        assert_eq!(call.participants, vec!["@caller:x"]);
+    }
+
+    #[test]
+    fn elapsed_display_no_start() {
+        let call = CallInfo::new_outgoing("!room:x".to_string(), None);
+        assert_eq!(call.elapsed_display(), "--:--");
+    }
+
+    #[test]
+    fn elapsed_display_with_start() {
+        let mut call = CallInfo::new_outgoing("!room:x".to_string(), None);
+        call.started_at = Some(Instant::now());
+        // Should show 00:00 or 00:01 depending on timing
+        let display = call.elapsed_display();
+        assert!(display.contains(':'));
+        assert_eq!(display.len(), 5); // "MM:SS" format
+    }
+
+    #[test]
+    fn elapsed_secs_none_when_not_started() {
+        let call = CallInfo::new_outgoing("!room:x".to_string(), None);
+        assert!(call.elapsed_secs().is_none());
+    }
+}

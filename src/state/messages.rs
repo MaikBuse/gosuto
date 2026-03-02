@@ -102,3 +102,172 @@ impl MessageState {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_msg(event_id: &str, body: &str, pending: bool) -> DisplayMessage {
+        DisplayMessage {
+            event_id: event_id.to_string(),
+            sender: "@user:example.com".to_string(),
+            body: body.to_string(),
+            timestamp: Local::now(),
+            is_emote: false,
+            is_notice: false,
+            pending,
+            verified: None,
+        }
+    }
+
+    #[test]
+    fn add_message_with_unique_event_id() {
+        let mut state = MessageState::new();
+        state.add_message(make_msg("$1", "hello", false));
+        assert_eq!(state.messages.len(), 1);
+        assert_eq!(state.messages[0].body, "hello");
+    }
+
+    #[test]
+    fn add_message_dedup_same_event_id() {
+        let mut state = MessageState::new();
+        state.add_message(make_msg("$1", "hello", false));
+        state.add_message(make_msg("$1", "hello again", false));
+        assert_eq!(state.messages.len(), 1);
+    }
+
+    #[test]
+    fn add_message_empty_event_id_always_added() {
+        let mut state = MessageState::new();
+        state.add_message(make_msg("", "first", false));
+        state.add_message(make_msg("", "second", false));
+        assert_eq!(state.messages.len(), 2);
+    }
+
+    #[test]
+    fn prepend_messages_filters_duplicates() {
+        let mut state = MessageState::new();
+        state.add_message(make_msg("$1", "existing", false));
+        state.prepend_messages(
+            vec![make_msg("$1", "dup", false), make_msg("$2", "new", false)],
+            true,
+        );
+        assert_eq!(state.messages.len(), 2);
+        assert_eq!(state.messages[0].body, "new");
+        assert_eq!(state.messages[1].body, "existing");
+    }
+
+    #[test]
+    fn prepend_messages_ordering() {
+        let mut state = MessageState::new();
+        state.add_message(make_msg("$3", "C", false));
+        state.prepend_messages(
+            vec![make_msg("$1", "A", false), make_msg("$2", "B", false)],
+            false,
+        );
+        assert_eq!(state.messages[0].body, "A");
+        assert_eq!(state.messages[1].body, "B");
+        assert_eq!(state.messages[2].body, "C");
+    }
+
+    #[test]
+    fn prepend_messages_sets_has_more() {
+        let mut state = MessageState::new();
+        state.prepend_messages(vec![make_msg("$1", "msg", false)], false);
+        assert!(!state.has_more);
+        state.prepend_messages(vec![make_msg("$2", "msg2", false)], true);
+        assert!(state.has_more);
+    }
+
+    #[test]
+    fn prepend_messages_clears_loading() {
+        let mut state = MessageState::new();
+        state.loading = true;
+        state.prepend_messages(vec![], false);
+        assert!(!state.loading);
+    }
+
+    #[test]
+    fn confirm_sent_matches_pending_by_body() {
+        let mut state = MessageState::new();
+        state.add_message(make_msg("", "hello world", true));
+        state.confirm_sent("hello world", "$evt1");
+        assert!(!state.messages[0].pending);
+        assert_eq!(state.messages[0].event_id, "$evt1");
+    }
+
+    #[test]
+    fn confirm_sent_no_match_leaves_unchanged() {
+        let mut state = MessageState::new();
+        state.add_message(make_msg("", "hello", true));
+        state.confirm_sent("no match", "$evt1");
+        assert!(state.messages[0].pending);
+        assert_eq!(state.messages[0].event_id, "");
+    }
+
+    #[test]
+    fn set_room_clears_state() {
+        let mut state = MessageState::new();
+        state.add_message(make_msg("$1", "msg", false));
+        state.scroll_offset = 5;
+        state.has_more = false;
+        state.set_room(Some("!room1:example.com".to_string()));
+        assert!(state.messages.is_empty());
+        assert_eq!(state.scroll_offset, 0);
+        assert!(state.has_more);
+        assert!(state.loading);
+    }
+
+    #[test]
+    fn set_room_noop_on_same_room() {
+        let mut state = MessageState::new();
+        state.set_room(Some("!room1:example.com".to_string()));
+        state.add_message(make_msg("$1", "msg", false));
+        state.loading = false;
+        state.set_room(Some("!room1:example.com".to_string()));
+        assert_eq!(state.messages.len(), 1);
+        assert!(!state.loading);
+    }
+
+    #[test]
+    fn scroll_up_increments() {
+        let mut state = MessageState::new();
+        assert_eq!(state.scroll_offset, 0);
+        state.scroll_up();
+        assert_eq!(state.scroll_offset, 1);
+        state.scroll_up();
+        assert_eq!(state.scroll_offset, 2);
+    }
+
+    #[test]
+    fn scroll_down_decrements() {
+        let mut state = MessageState::new();
+        state.scroll_offset = 3;
+        state.scroll_down();
+        assert_eq!(state.scroll_offset, 2);
+    }
+
+    #[test]
+    fn scroll_down_saturates_at_zero() {
+        let mut state = MessageState::new();
+        state.scroll_down();
+        assert_eq!(state.scroll_offset, 0);
+    }
+
+    #[test]
+    fn scroll_to_bottom_resets() {
+        let mut state = MessageState::new();
+        state.scroll_offset = 10;
+        state.scroll_to_bottom();
+        assert_eq!(state.scroll_offset, 0);
+    }
+
+    #[test]
+    fn set_fetch_error_stores_error_and_clears_loading() {
+        let mut state = MessageState::new();
+        state.loading = true;
+        state.set_fetch_error("network error".to_string());
+        assert_eq!(state.fetch_error.as_deref(), Some("network error"));
+        assert!(!state.loading);
+    }
+}

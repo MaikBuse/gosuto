@@ -79,3 +79,208 @@ fn handle_search(key: KeyEvent, vim: &mut VimState) -> InputResult {
         _ => InputResult::None,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::input::vim::VimMode;
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    fn ctrl(c: char) -> KeyEvent {
+        KeyEvent::new(KeyCode::Char(c), KeyModifiers::CONTROL)
+    }
+
+    #[test]
+    fn j_moves_down() {
+        let mut vim = VimState::new();
+        let result = handle_normal(key(KeyCode::Char('j')), &mut vim);
+        assert!(matches!(result, InputResult::MoveDown));
+    }
+
+    #[test]
+    fn down_arrow_moves_down() {
+        let mut vim = VimState::new();
+        let result = handle_normal(key(KeyCode::Down), &mut vim);
+        assert!(matches!(result, InputResult::MoveDown));
+    }
+
+    #[test]
+    fn k_moves_up() {
+        let mut vim = VimState::new();
+        let result = handle_normal(key(KeyCode::Char('k')), &mut vim);
+        assert!(matches!(result, InputResult::MoveUp));
+    }
+
+    #[test]
+    fn up_arrow_moves_up() {
+        let mut vim = VimState::new();
+        let result = handle_normal(key(KeyCode::Up), &mut vim);
+        assert!(matches!(result, InputResult::MoveUp));
+    }
+
+    #[test]
+    fn big_g_moves_bottom() {
+        let mut vim = VimState::new();
+        let result = handle_normal(key(KeyCode::Char('G')), &mut vim);
+        assert!(matches!(result, InputResult::MoveBottom));
+    }
+
+    #[test]
+    fn gg_moves_top() {
+        let mut vim = VimState::new();
+        let r1 = handle_normal(key(KeyCode::Char('g')), &mut vim);
+        assert!(matches!(r1, InputResult::None));
+        assert!(vim.pending_g);
+        let r2 = handle_normal(key(KeyCode::Char('g')), &mut vim);
+        assert!(matches!(r2, InputResult::MoveTop));
+        assert!(!vim.pending_g);
+    }
+
+    #[test]
+    fn g_followed_by_non_g_cancels() {
+        let mut vim = VimState::new();
+        handle_normal(key(KeyCode::Char('g')), &mut vim);
+        let result = handle_normal(key(KeyCode::Char('j')), &mut vim);
+        // After pending_g is cleared, j should produce MoveDown
+        assert!(matches!(result, InputResult::MoveDown));
+        assert!(!vim.pending_g);
+    }
+
+    #[test]
+    fn q_quits() {
+        let mut vim = VimState::new();
+        let result = handle_normal(key(KeyCode::Char('q')), &mut vim);
+        assert!(matches!(result, InputResult::Quit));
+    }
+
+    #[test]
+    fn ctrl_c_quits() {
+        let mut vim = VimState::new();
+        let result = handle_normal(ctrl('c'), &mut vim);
+        assert!(matches!(result, InputResult::Quit));
+    }
+
+    #[test]
+    fn tab_switches_panel() {
+        let mut vim = VimState::new();
+        let result = handle_normal(key(KeyCode::Tab), &mut vim);
+        assert!(matches!(result, InputResult::SwitchPanel));
+    }
+
+    #[test]
+    fn h_focus_left() {
+        let mut vim = VimState::new();
+        let result = handle_normal(key(KeyCode::Char('h')), &mut vim);
+        assert!(matches!(result, InputResult::FocusLeft));
+    }
+
+    #[test]
+    fn l_focus_right() {
+        let mut vim = VimState::new();
+        let result = handle_normal(key(KeyCode::Char('l')), &mut vim);
+        assert!(matches!(result, InputResult::FocusRight));
+    }
+
+    #[test]
+    fn enter_selects() {
+        let mut vim = VimState::new();
+        let result = handle_normal(key(KeyCode::Enter), &mut vim);
+        assert!(matches!(result, InputResult::Select));
+    }
+
+    #[test]
+    fn i_enters_insert() {
+        let mut vim = VimState::new();
+        let result = handle_normal(key(KeyCode::Char('i')), &mut vim);
+        assert!(matches!(result, InputResult::None));
+        assert_eq!(vim.mode, VimMode::Insert);
+    }
+
+    #[test]
+    fn colon_enters_command() {
+        let mut vim = VimState::new();
+        let result = handle_normal(key(KeyCode::Char(':')), &mut vim);
+        assert!(matches!(result, InputResult::None));
+        assert_eq!(vim.mode, VimMode::Command);
+    }
+
+    #[test]
+    fn slash_enters_search() {
+        let mut vim = VimState::new();
+        let result = handle_normal(key(KeyCode::Char('/')), &mut vim);
+        assert!(matches!(result, InputResult::None));
+        assert!(vim.searching);
+    }
+
+    #[test]
+    fn space_shows_which_key() {
+        let mut vim = VimState::new();
+        let result = handle_normal(key(KeyCode::Char(' ')), &mut vim);
+        assert!(matches!(result, InputResult::ShowWhichKey));
+    }
+
+    #[test]
+    fn c_calls_member() {
+        let mut vim = VimState::new();
+        let result = handle_normal(key(KeyCode::Char('c')), &mut vim);
+        assert!(matches!(result, InputResult::CallMember));
+    }
+
+    #[test]
+    fn a_answers_call() {
+        let mut vim = VimState::new();
+        let result = handle_normal(key(KeyCode::Char('a')), &mut vim);
+        assert!(matches!(result, InputResult::AnswerCall));
+    }
+
+    #[test]
+    fn r_rejects_call() {
+        let mut vim = VimState::new();
+        let result = handle_normal(key(KeyCode::Char('r')), &mut vim);
+        assert!(matches!(result, InputResult::RejectCall));
+    }
+
+    // --- Search mode ---
+
+    #[test]
+    fn search_char_appends() {
+        let mut vim = VimState::new();
+        vim.searching = true;
+        let result = handle_normal(key(KeyCode::Char('a')), &mut vim);
+        assert!(matches!(result, InputResult::Search(ref q) if q == "a"));
+        assert_eq!(vim.search_query, "a");
+    }
+
+    #[test]
+    fn search_backspace_pops() {
+        let mut vim = VimState::new();
+        vim.searching = true;
+        vim.search_query = "abc".to_string();
+        let result = handle_normal(key(KeyCode::Backspace), &mut vim);
+        assert!(matches!(result, InputResult::Search(ref q) if q == "ab"));
+    }
+
+    #[test]
+    fn search_enter_confirms() {
+        let mut vim = VimState::new();
+        vim.searching = true;
+        vim.search_query = "test".to_string();
+        let result = handle_normal(key(KeyCode::Enter), &mut vim);
+        assert!(matches!(result, InputResult::Search(ref q) if q == "test"));
+        assert!(!vim.searching);
+    }
+
+    #[test]
+    fn search_esc_cancels() {
+        let mut vim = VimState::new();
+        vim.searching = true;
+        vim.search_query = "test".to_string();
+        let result = handle_normal(key(KeyCode::Esc), &mut vim);
+        assert!(matches!(result, InputResult::ClearSearch));
+        assert!(!vim.searching);
+        assert!(vim.search_query.is_empty());
+    }
+}

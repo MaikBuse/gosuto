@@ -161,3 +161,133 @@ fn is_transparent_cell(cell: &ratatui::buffer::Cell) -> bool {
     let fg_is_default = cell.fg == Color::Reset;
     bg_is_default && symbol_is_empty && fg_is_default
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- Xorshift64 ---
+
+    #[test]
+    fn xorshift_zero_seed_uses_fallback() {
+        let mut rng = Xorshift64::new(0);
+        // Should not be stuck at 0 — fallback seed is used
+        let val = rng.next();
+        assert_ne!(val, 0);
+    }
+
+    #[test]
+    fn xorshift_deterministic_sequence() {
+        let mut rng1 = Xorshift64::new(42);
+        let mut rng2 = Xorshift64::new(42);
+        for _ in 0..100 {
+            assert_eq!(rng1.next(), rng2.next());
+        }
+    }
+
+    #[test]
+    fn xorshift_different_seeds_differ() {
+        let mut rng1 = Xorshift64::new(1);
+        let mut rng2 = Xorshift64::new(2);
+        // Very unlikely to produce the same first value
+        assert_ne!(rng1.next(), rng2.next());
+    }
+
+    #[test]
+    fn xorshift_next_f32_in_range() {
+        let mut rng = Xorshift64::new(123);
+        for _ in 0..1000 {
+            let val = rng.next_f32();
+            assert!((0.0..=1.0).contains(&val), "next_f32 out of range: {val}");
+        }
+    }
+
+    #[test]
+    fn xorshift_next_range_bounds() {
+        let mut rng = Xorshift64::new(456);
+        for _ in 0..1000 {
+            let val = rng.next_range(10.0, 20.0);
+            assert!(
+                (10.0..=20.0).contains(&val),
+                "next_range out of bounds: {val}"
+            );
+        }
+    }
+
+    #[test]
+    fn xorshift_next_u32_range_min_eq_max() {
+        let mut rng = Xorshift64::new(789);
+        let val = rng.next_u32_range(5, 5);
+        assert_eq!(val, 5);
+    }
+
+    #[test]
+    fn xorshift_next_u32_range_values_in_range() {
+        let mut rng = Xorshift64::new(101);
+        for _ in 0..1000 {
+            let val = rng.next_u32_range(3, 10);
+            assert!(
+                (3..10).contains(&val),
+                "next_u32_range out of bounds: {val}"
+            );
+        }
+    }
+
+    #[test]
+    fn xorshift_next_u32_range_min_gt_max() {
+        let mut rng = Xorshift64::new(202);
+        // When min >= max, should return min
+        let val = rng.next_u32_range(10, 5);
+        assert_eq!(val, 10);
+    }
+
+    // --- EffectsState ---
+
+    #[test]
+    fn effects_initial_state() {
+        let state = EffectsState::new(true, false);
+        assert!(state.enabled);
+        assert!(!state.glitch_enabled);
+    }
+
+    #[test]
+    fn effects_toggle_flips() {
+        let mut state = EffectsState::new(false, false);
+        assert!(!state.enabled);
+        state.toggle();
+        assert!(state.enabled);
+        state.toggle();
+        assert!(!state.enabled);
+    }
+
+    #[test]
+    fn effects_toggle_glitch_flips() {
+        let mut state = EffectsState::new(false, false);
+        assert!(!state.glitch_enabled);
+        state.toggle_glitch();
+        assert!(state.glitch_enabled);
+        state.toggle_glitch();
+        assert!(!state.glitch_enabled);
+    }
+
+    #[test]
+    fn effects_render_to_buffer_disabled() {
+        let state = EffectsState::new(false, false);
+        let area = Rect::new(0, 0, 10, 10);
+        assert!(state.render_to_buffer(area).is_none());
+    }
+
+    #[test]
+    fn effects_render_emp_buffer_disabled() {
+        let state = EffectsState::new(false, false);
+        let area = Rect::new(0, 0, 10, 10);
+        assert!(state.render_emp_buffer(area, 0).is_none());
+    }
+
+    #[test]
+    fn effects_render_members_emp_buffer_disabled() {
+        let state = EffectsState::new(false, false);
+        let area = Rect::new(0, 0, 10, 10);
+        assert!(state.render_members_emp_buffer(area, 0).is_none());
+    }
+}

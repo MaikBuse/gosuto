@@ -389,3 +389,304 @@ impl RoomListState {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn room(id: &str, name: &str, cat: RoomCategory) -> RoomSummary {
+        RoomSummary {
+            id: id.to_string(),
+            name: name.to_string(),
+            category: cat,
+            unread_count: 0,
+            is_space_child: false,
+            parent_space_id: None,
+        }
+    }
+
+    fn space_child(id: &str, name: &str, parent: &str) -> RoomSummary {
+        RoomSummary {
+            id: id.to_string(),
+            name: name.to_string(),
+            category: RoomCategory::Room,
+            unread_count: 0,
+            is_space_child: true,
+            parent_space_id: Some(parent.to_string()),
+        }
+    }
+
+    #[test]
+    fn extract_server_domain_standard() {
+        assert_eq!(extract_server_domain("!room:matrix.org"), "matrix.org");
+    }
+
+    #[test]
+    fn extract_server_domain_no_colon() {
+        assert_eq!(extract_server_domain("nocolon"), "nocolon");
+    }
+
+    #[test]
+    fn extract_server_domain_with_port() {
+        assert_eq!(
+            extract_server_domain("!room:example.com:8448"),
+            "example.com:8448"
+        );
+    }
+
+    #[test]
+    fn empty_rooms_list() {
+        let state = RoomListState::new();
+        assert!(state.display_rows.is_empty());
+        assert!(state.selected_room().is_none());
+    }
+
+    #[test]
+    fn rebuild_with_spaces_and_children() {
+        let mut state = RoomListState::new();
+        state.set_rooms(vec![
+            room("!space1:x", "My Space", RoomCategory::Space),
+            space_child("!child1:x", "Child Room", "!space1:x"),
+        ]);
+        // Should have: SpaceHeader, Room
+        assert_eq!(state.display_rows.len(), 2);
+        assert!(matches!(state.display_rows[0], DisplayRow::SpaceHeader { .. }));
+        assert!(matches!(state.display_rows[1], DisplayRow::Room { indent: 2, .. }));
+    }
+
+    #[test]
+    fn rebuild_orphan_rooms_grouped_by_domain() {
+        let mut state = RoomListState::new();
+        state.set_rooms(vec![
+            room("!a:alpha.org", "Room A", RoomCategory::Room),
+            room("!b:beta.org", "Room B", RoomCategory::Room),
+            room("!c:alpha.org", "Room C", RoomCategory::Room),
+        ]);
+        // Should have: SectionHeader(alpha.org), Room A, Room C, SectionHeader(beta.org), Room B
+        assert_eq!(state.display_rows.len(), 5);
+        assert!(matches!(&state.display_rows[0], DisplayRow::SectionHeader { label } if label == "alpha.org"));
+        assert!(matches!(state.display_rows[1], DisplayRow::Room { room_index: 0, indent: 0 }));
+        assert!(matches!(state.display_rows[2], DisplayRow::Room { room_index: 2, indent: 0 }));
+        assert!(matches!(&state.display_rows[3], DisplayRow::SectionHeader { label } if label == "beta.org"));
+        assert!(matches!(state.display_rows[4], DisplayRow::Room { room_index: 1, indent: 0 }));
+    }
+
+    #[test]
+    fn rebuild_dms_section() {
+        let mut state = RoomListState::new();
+        state.set_rooms(vec![
+            room("!dm1:x", "Alice", RoomCategory::DirectMessage),
+            room("!dm2:x", "Bob", RoomCategory::DirectMessage),
+        ]);
+        assert_eq!(state.display_rows.len(), 3);
+        assert!(matches!(&state.display_rows[0], DisplayRow::SectionHeader { label } if label == "DIRECT MESSAGES"));
+    }
+
+    #[test]
+    fn rebuild_search_filter() {
+        let mut state = RoomListState::new();
+        state.set_rooms(vec![
+            room("!a:x", "General", RoomCategory::Room),
+            room("!b:x", "Random", RoomCategory::Room),
+        ]);
+        state.set_filter(Some("gen".to_string()));
+        // Only General should remain (plus its section header)
+        let room_rows: Vec<_> = state
+            .display_rows
+            .iter()
+            .filter(|r| matches!(r, DisplayRow::Room { .. }))
+            .collect();
+        assert_eq!(room_rows.len(), 1);
+    }
+
+    #[test]
+    fn rebuild_collapsed_space_hides_children() {
+        let mut state = RoomListState::new();
+        state.set_rooms(vec![
+            room("!space1:x", "Space", RoomCategory::Space),
+            space_child("!child1:x", "Child", "!space1:x"),
+        ]);
+        assert_eq!(state.display_rows.len(), 2);
+        // Select the space header and toggle
+        state.selected = 0;
+        state.toggle_space();
+        // After collapse: only the SpaceHeader remains
+        assert_eq!(state.display_rows.len(), 1);
+        assert!(matches!(
+            state.display_rows[0],
+            DisplayRow::SpaceHeader { collapsed: true, .. }
+        ));
+        // Toggle again to expand
+        state.selected = 0;
+        state.toggle_space();
+        assert_eq!(state.display_rows.len(), 2);
+    }
+
+    #[test]
+    fn move_up_skips_section_headers() {
+        let mut state = RoomListState::new();
+        state.set_rooms(vec![
+            room("!a:alpha.org", "Room A", RoomCategory::Room),
+            room("!b:beta.org", "Room B", RoomCategory::Room),
+        ]);
+        // Layout: SectionHeader(alpha), Room A, SectionHeader(beta), Room B
+        // Start at Room B (index 3)
+        state.selected = 3;
+        state.move_up();
+        // Should skip SectionHeader(beta) and land on Room A (index 1)
+        assert_eq!(state.selected, 1);
+    }
+
+    #[test]
+    fn move_down_skips_non_navigable() {
+        let mut state = RoomListState::new();
+        state.set_rooms(vec![
+            room("!a:alpha.org", "Room A", RoomCategory::Room),
+            room("!b:beta.org", "Room B", RoomCategory::Room),
+        ]);
+        // Start at Room A (index 1)
+        state.selected = 1;
+        state.move_down();
+        // Should skip SectionHeader(beta) and land on Room B (index 3)
+        assert_eq!(state.selected, 3);
+    }
+
+    #[test]
+    fn move_down_skips_call_participants() {
+        let mut state = RoomListState::new();
+        let mut call_members = HashMap::new();
+        call_members.insert(
+            "!a:x".to_string(),
+            HashSet::from(["@user:x".to_string()]),
+        );
+        state.room_call_members = call_members;
+        state.set_rooms(vec![
+            room("!a:x", "Room A", RoomCategory::Room),
+            room("!b:x", "Room B", RoomCategory::Room),
+        ]);
+        // Layout: SectionHeader(x), Room A, CallParticipant, Room B
+        // Find Room A's index
+        let room_a_idx = state
+            .display_rows
+            .iter()
+            .position(|r| matches!(r, DisplayRow::Room { room_index: 0, .. }))
+            .unwrap();
+        state.selected = room_a_idx;
+        state.move_down();
+        // Should skip the CallParticipant and land on Room B
+        assert!(matches!(
+            state.display_rows[state.selected],
+            DisplayRow::Room { room_index: 1, .. }
+        ));
+    }
+
+    #[test]
+    fn move_top_finds_first_navigable() {
+        let mut state = RoomListState::new();
+        state.set_rooms(vec![
+            room("!a:x", "Room A", RoomCategory::Room),
+            room("!b:x", "Room B", RoomCategory::Room),
+        ]);
+        state.selected = 2;
+        state.move_top();
+        // First navigable is the SectionHeader(x) at 0? No — SectionHeader is not navigable.
+        // Actually looking at is_navigable: SpaceHeader and Room are navigable.
+        // SectionHeader is NOT navigable. So first navigable is Room A.
+        assert!(matches!(
+            state.display_rows[state.selected],
+            DisplayRow::Room { room_index: 0, .. }
+        ));
+    }
+
+    #[test]
+    fn move_bottom_finds_last_navigable() {
+        let mut state = RoomListState::new();
+        state.set_rooms(vec![
+            room("!a:x", "Room A", RoomCategory::Room),
+            room("!b:x", "Room B", RoomCategory::Room),
+        ]);
+        state.move_bottom();
+        assert!(matches!(
+            state.display_rows[state.selected],
+            DisplayRow::Room { room_index: 1, .. }
+        ));
+    }
+
+    #[test]
+    fn selected_room_on_room_row() {
+        let mut state = RoomListState::new();
+        state.set_rooms(vec![room("!a:x", "Room A", RoomCategory::Room)]);
+        // Skip to first navigable (Room)
+        state.move_top();
+        let selected = state.selected_room().unwrap();
+        assert_eq!(selected.name, "Room A");
+    }
+
+    #[test]
+    fn selected_room_on_header_returns_none() {
+        let mut state = RoomListState::new();
+        state.set_rooms(vec![room("!a:x", "Room A", RoomCategory::Room)]);
+        // Force selection to section header
+        state.selected = 0;
+        // SectionHeader is at index 0
+        if matches!(state.display_rows[0], DisplayRow::SectionHeader { .. }) {
+            assert!(state.selected_room().is_none());
+        }
+    }
+
+    #[test]
+    fn set_filter_clears_and_rebuilds() {
+        let mut state = RoomListState::new();
+        state.set_rooms(vec![
+            room("!a:x", "Alpha", RoomCategory::Room),
+            room("!b:x", "Beta", RoomCategory::Room),
+        ]);
+        let initial_len = state.display_rows.len();
+        state.set_filter(Some("alpha".to_string()));
+        assert!(state.display_rows.len() < initial_len);
+        state.set_filter(None);
+        assert_eq!(state.display_rows.len(), initial_len);
+    }
+
+    #[test]
+    fn toggle_space_noop_on_non_space() {
+        let mut state = RoomListState::new();
+        state.set_rooms(vec![room("!a:x", "Room A", RoomCategory::Room)]);
+        let initial_len = state.display_rows.len();
+        state.move_top();
+        state.toggle_space();
+        assert_eq!(state.display_rows.len(), initial_len);
+    }
+
+    #[test]
+    fn move_up_empty_display() {
+        let mut state = RoomListState::new();
+        state.move_up();
+        assert_eq!(state.selected, 0);
+    }
+
+    #[test]
+    fn move_down_empty_display() {
+        let mut state = RoomListState::new();
+        state.move_down();
+        assert_eq!(state.selected, 0);
+    }
+
+    #[test]
+    fn collapsed_space_aggregates_unread() {
+        let mut state = RoomListState::new();
+        let mut child = space_child("!child1:x", "Child", "!space1:x");
+        child.unread_count = 5;
+        state.set_rooms(vec![
+            room("!space1:x", "Space", RoomCategory::Space),
+            child,
+        ]);
+        state.selected = 0;
+        state.toggle_space();
+        if let DisplayRow::SpaceHeader { unread_count, .. } = &state.display_rows[0] {
+            assert_eq!(*unread_count, 5);
+        } else {
+            panic!("Expected SpaceHeader");
+        }
+    }
+}

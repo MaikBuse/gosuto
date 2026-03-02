@@ -263,6 +263,333 @@ pub fn handle_command(key: KeyEvent, vim: &mut VimState) -> InputResult {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::input::vim::VimMode;
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    fn ctrl(c: char) -> KeyEvent {
+        KeyEvent::new(KeyCode::Char(c), KeyModifiers::CONTROL)
+    }
+
+    // --- filtered_commands ---
+
+    #[test]
+    fn filtered_commands_empty_returns_all() {
+        let result = filtered_commands("");
+        assert_eq!(result.len(), COMMANDS.len());
+    }
+
+    #[test]
+    fn filtered_commands_partial_filters() {
+        let result = filtered_commands("qu");
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].name, "quit");
+    }
+
+    #[test]
+    fn filtered_commands_alias_matches() {
+        let result = filtered_commands("q");
+        assert!(result.iter().any(|c| c.name == "quit"));
+    }
+
+    #[test]
+    fn filtered_commands_no_match() {
+        let result = filtered_commands("zzzzz");
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn filtered_commands_multiple_matches() {
+        let result = filtered_commands("re");
+        // "reject" and "recovery" both start with "re"
+        assert!(result.len() >= 2);
+    }
+
+    // --- parse_command ---
+
+    #[test]
+    fn parse_quit() {
+        let result = parse_command("quit");
+        assert!(matches!(result, InputResult::Command(CommandAction::Quit)));
+    }
+
+    #[test]
+    fn parse_q_alias() {
+        let result = parse_command("q");
+        assert!(matches!(result, InputResult::Command(CommandAction::Quit)));
+    }
+
+    #[test]
+    fn parse_join_with_arg() {
+        let result = parse_command("join #room:matrix.org");
+        assert!(
+            matches!(result, InputResult::Command(CommandAction::Join(ref r)) if r == "#room:matrix.org")
+        );
+    }
+
+    #[test]
+    fn parse_join_no_arg_returns_none() {
+        let result = parse_command("join");
+        assert!(matches!(result, InputResult::None));
+    }
+
+    #[test]
+    fn parse_leave() {
+        let result = parse_command("leave");
+        assert!(matches!(
+            result,
+            InputResult::Command(CommandAction::Leave)
+        ));
+    }
+
+    #[test]
+    fn parse_dm_with_arg() {
+        let result = parse_command("dm @user:matrix.org");
+        assert!(
+            matches!(result, InputResult::Command(CommandAction::DirectMessage(ref u)) if u == "@user:matrix.org")
+        );
+    }
+
+    #[test]
+    fn parse_dm_no_arg_returns_none() {
+        let result = parse_command("dm");
+        assert!(matches!(result, InputResult::None));
+    }
+
+    #[test]
+    fn parse_logout() {
+        let result = parse_command("logout");
+        assert!(matches!(
+            result,
+            InputResult::Command(CommandAction::Logout)
+        ));
+    }
+
+    #[test]
+    fn parse_call() {
+        let result = parse_command("call");
+        assert!(matches!(
+            result,
+            InputResult::Command(CommandAction::Call)
+        ));
+    }
+
+    #[test]
+    fn parse_answer_alias_accept() {
+        assert!(matches!(
+            parse_command("answer"),
+            InputResult::Command(CommandAction::Answer)
+        ));
+        assert!(matches!(
+            parse_command("accept"),
+            InputResult::Command(CommandAction::Answer)
+        ));
+    }
+
+    #[test]
+    fn parse_reject_alias_decline() {
+        assert!(matches!(
+            parse_command("reject"),
+            InputResult::Command(CommandAction::Reject)
+        ));
+        assert!(matches!(
+            parse_command("decline"),
+            InputResult::Command(CommandAction::Reject)
+        ));
+    }
+
+    #[test]
+    fn parse_hangup_alias_end() {
+        assert!(matches!(
+            parse_command("hangup"),
+            InputResult::Command(CommandAction::Hangup)
+        ));
+        assert!(matches!(
+            parse_command("end"),
+            InputResult::Command(CommandAction::Hangup)
+        ));
+    }
+
+    #[test]
+    fn parse_rain_aliases() {
+        assert!(matches!(
+            parse_command("rain"),
+            InputResult::Command(CommandAction::Rain)
+        ));
+        assert!(matches!(
+            parse_command("matrix"),
+            InputResult::Command(CommandAction::Rain)
+        ));
+        assert!(matches!(
+            parse_command("effects"),
+            InputResult::Command(CommandAction::Rain)
+        ));
+    }
+
+    #[test]
+    fn parse_glitch() {
+        assert!(matches!(
+            parse_command("glitch"),
+            InputResult::Command(CommandAction::Glitch)
+        ));
+    }
+
+    #[test]
+    fn parse_audio_alias_sound() {
+        assert!(matches!(
+            parse_command("audio"),
+            InputResult::Command(CommandAction::AudioSettings)
+        ));
+        assert!(matches!(
+            parse_command("sound"),
+            InputResult::Command(CommandAction::AudioSettings)
+        ));
+    }
+
+    #[test]
+    fn parse_create_alias_new() {
+        assert!(matches!(
+            parse_command("create"),
+            InputResult::Command(CommandAction::CreateRoom)
+        ));
+        assert!(matches!(
+            parse_command("new"),
+            InputResult::Command(CommandAction::CreateRoom)
+        ));
+    }
+
+    #[test]
+    fn parse_edit_alias_roominfo() {
+        assert!(matches!(
+            parse_command("edit"),
+            InputResult::Command(CommandAction::RoomInfo)
+        ));
+        assert!(matches!(
+            parse_command("roominfo"),
+            InputResult::Command(CommandAction::RoomInfo)
+        ));
+    }
+
+    #[test]
+    fn parse_configure_aliases() {
+        assert!(matches!(
+            parse_command("configure"),
+            InputResult::Command(CommandAction::Configure)
+        ));
+        assert!(matches!(
+            parse_command("config"),
+            InputResult::Command(CommandAction::Configure)
+        ));
+        assert!(matches!(
+            parse_command("profile"),
+            InputResult::Command(CommandAction::Configure)
+        ));
+    }
+
+    #[test]
+    fn parse_verify_no_arg() {
+        let result = parse_command("verify");
+        assert!(
+            matches!(result, InputResult::Command(CommandAction::Verify(None)))
+        );
+    }
+
+    #[test]
+    fn parse_verify_with_arg() {
+        let result = parse_command("verify @user:matrix.org");
+        assert!(
+            matches!(result, InputResult::Command(CommandAction::Verify(Some(ref u))) if u == "@user:matrix.org")
+        );
+    }
+
+    #[test]
+    fn parse_recovery_alias_backup() {
+        assert!(matches!(
+            parse_command("recovery"),
+            InputResult::Command(CommandAction::Recovery)
+        ));
+        assert!(matches!(
+            parse_command("backup"),
+            InputResult::Command(CommandAction::Recovery)
+        ));
+    }
+
+    #[test]
+    fn parse_unknown_returns_none() {
+        assert!(matches!(parse_command("xyzzy"), InputResult::None));
+    }
+
+    #[test]
+    fn parse_whitespace_trimmed() {
+        let result = parse_command("  quit  ");
+        assert!(matches!(result, InputResult::Command(CommandAction::Quit)));
+    }
+
+    // --- handle_command key handling ---
+
+    #[test]
+    fn esc_exits_command_mode() {
+        let mut vim = VimState::new();
+        vim.enter_command();
+        let result = handle_command(key(KeyCode::Esc), &mut vim);
+        assert!(matches!(result, InputResult::None));
+        assert_eq!(vim.mode, VimMode::Normal);
+    }
+
+    #[test]
+    fn ctrl_c_quits_in_command_mode() {
+        let mut vim = VimState::new();
+        vim.enter_command();
+        let result = handle_command(ctrl('c'), &mut vim);
+        assert!(matches!(result, InputResult::Quit));
+    }
+
+    #[test]
+    fn char_appends_to_buffer() {
+        let mut vim = VimState::new();
+        vim.enter_command();
+        handle_command(key(KeyCode::Char('q')), &mut vim);
+        assert_eq!(vim.command_buffer, "q");
+        handle_command(key(KeyCode::Char('u')), &mut vim);
+        assert_eq!(vim.command_buffer, "qu");
+    }
+
+    #[test]
+    fn backspace_last_char_exits() {
+        let mut vim = VimState::new();
+        vim.enter_command();
+        handle_command(key(KeyCode::Char('q')), &mut vim);
+        handle_command(key(KeyCode::Backspace), &mut vim);
+        assert_eq!(vim.mode, VimMode::Normal);
+    }
+
+    #[test]
+    fn backspace_with_remaining_chars() {
+        let mut vim = VimState::new();
+        vim.enter_command();
+        handle_command(key(KeyCode::Char('q')), &mut vim);
+        handle_command(key(KeyCode::Char('u')), &mut vim);
+        handle_command(key(KeyCode::Backspace), &mut vim);
+        assert_eq!(vim.command_buffer, "q");
+        assert_eq!(vim.mode, VimMode::Command);
+    }
+
+    #[test]
+    fn enter_executes_command() {
+        let mut vim = VimState::new();
+        vim.enter_command();
+        vim.command_buffer = "quit".to_string();
+        let result = handle_command(key(KeyCode::Enter), &mut vim);
+        assert!(matches!(result, InputResult::Command(CommandAction::Quit)));
+        assert_eq!(vim.mode, VimMode::Normal);
+    }
+}
+
 fn parse_command(input: &str) -> InputResult {
     let input = input.trim();
     let mut parts = input.splitn(2, ' ');

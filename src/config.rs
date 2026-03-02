@@ -250,4 +250,47 @@ mod tests {
         let unchecked = store_path_for_homeserver_unchecked("https://example.com").unwrap();
         assert_eq!(checked, unchecked);
     }
+
+    #[test]
+    fn default_config_values() {
+        let config = GosutoConfig::default();
+        assert!(!config.network.accept_invalid_certs);
+        assert!(config.effects.rain);
+        assert!(config.effects.glitch);
+    }
+
+    #[test]
+    fn audio_default_values() {
+        let audio = AudioConfig::default();
+        assert_eq!(audio.input_volume, 1.0);
+        assert_eq!(audio.output_volume, 1.0);
+        assert!(!audio.voice_activity);
+        assert_eq!(audio.sensitivity, 0.15);
+        assert!(!audio.push_to_talk);
+        assert!(audio.push_to_talk_key.is_none());
+        assert!(audio.input_device.is_none());
+        assert!(audio.output_device.is_none());
+    }
+
+    #[test]
+    fn config_roundtrip_toml() {
+        let config = GosutoConfig::default();
+        let serialized = toml::to_string_pretty(&config).unwrap();
+        let deserialized: GosutoConfig = toml::from_str(&serialized).unwrap();
+        assert_eq!(deserialized.effects.rain, config.effects.rain);
+        assert_eq!(deserialized.effects.glitch, config.effects.glitch);
+        assert_eq!(
+            deserialized.network.accept_invalid_certs,
+            config.network.accept_invalid_certs
+        );
+        assert_eq!(deserialized.audio.input_volume, config.audio.input_volume);
+        assert_eq!(deserialized.audio.output_volume, config.audio.output_volume);
+    }
+
+    #[test]
+    fn effects_default_enabled() {
+        let effects = EffectsConfig::default();
+        assert!(effects.rain);
+        assert!(effects.glitch);
+    }
 }
