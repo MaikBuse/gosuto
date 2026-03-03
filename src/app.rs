@@ -208,6 +208,7 @@ pub struct App {
     pub pending_set_room_name: Option<(String, String)>,  // (room_id, new_name)
     pub pending_set_room_topic: Option<(String, String)>, // (room_id, new_topic)
     pub pending_enable_encryption: Option<String>,        // room_id
+    pub pending_read_receipt: Option<(String, Option<String>)>, // (room_id, event_id hint)
     // VoIP
     pub call_info: Option<CallInfo>,
     pub call_cmd_tx: Option<CallCommandSender>,
@@ -280,6 +281,7 @@ impl App {
             pending_set_room_name: None,
             pending_set_room_topic: None,
             pending_enable_encryption: None,
+            pending_read_receipt: None,
             call_info: None,
             call_cmd_tx: None,
             incoming_call_room: None,
@@ -443,10 +445,16 @@ impl App {
             }
             AppEvent::RoomListUpdated(rooms) => {
                 self.room_list.set_rooms(rooms);
+                // Clear unread badge for the room we're currently viewing
+                if let Some(ref current_id) = self.messages.current_room_id {
+                    self.room_list.clear_unread(current_id);
+                }
             }
             AppEvent::NewMessage { room_id, message } => {
                 if self.messages.current_room_id.as_deref() == Some(&room_id) {
+                    let eid = message.event_id.clone();
                     self.messages.add_message(message);
+                    self.pending_read_receipt = Some((room_id.clone(), Some(eid)));
                 }
             }
             AppEvent::MessagesLoaded {
@@ -455,7 +463,9 @@ impl App {
                 has_more,
             } => {
                 if self.messages.current_room_id.as_deref() == Some(&room_id) {
+                    let last_event_id = messages.last().map(|m| m.event_id.clone());
                     self.messages.prepend_messages(messages, has_more);
+                    self.pending_read_receipt = Some((room_id.clone(), last_event_id));
                 }
             }
             AppEvent::MessageSent {

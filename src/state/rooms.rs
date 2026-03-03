@@ -376,6 +376,13 @@ impl RoomListState {
         }
     }
 
+    pub fn clear_unread(&mut self, room_id: &str) {
+        if let Some(room) = self.rooms.iter_mut().find(|r| r.id == room_id) {
+            room.unread_count = 0;
+        }
+        self.rebuild_display_rows();
+    }
+
     pub fn set_filter(&mut self, query: Option<String>) {
         self.search_filter = query;
         self.rebuild_display_rows();

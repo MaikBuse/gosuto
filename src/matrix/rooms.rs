@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use matrix_sdk::Client;
 use matrix_sdk::RoomMemberships;
+use matrix_sdk::room::Receipts;
 use matrix_sdk::ruma::events::room::history_visibility::HistoryVisibility;
 use matrix_sdk::ruma::events::space::child::SpaceChildEventContent;
 use tracing::{error, warn};
@@ -316,5 +317,64 @@ pub async fn set_history_visibility(
                 error: format!("Failed to update visibility: {}", e),
             });
         }
+    }
+}
+
+pub async fn mark_room_as_read(client: &Client, room_id: &str, event_id_hint: Option<&str>) {
+    let room_id_parsed: Result<matrix_sdk::ruma::OwnedRoomId, _> = room_id.try_into();
+    let Ok(rid) = room_id_parsed else {
+        warn!("Invalid room id for read receipt: {}", room_id);
+        return;
+    };
+
+    let Some(room) = client.get_room(&rid) else {
+        warn!("Room not found for read receipt: {}", room_id);
+        return;
+    };
+
+    // Try the caller-provided event_id first, fall back to room.latest_event()
+    let event_id = if let Some(hint) = event_id_hint {
+        let parsed: Result<matrix_sdk::ruma::OwnedEventId, _> = hint.try_into();
+        match parsed {
+            Ok(eid) => Some(eid),
+            Err(e) => {
+                warn!("Invalid event_id hint '{}' for {}: {}", hint, room_id, e);
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    let event_id = event_id.or_else(|| {
+        let ev = room.latest_event();
+        if ev.is_none() {
+            warn!(
+                "No latest_event for room {} (encrypted DM?), cannot send read receipt",
+                room_id
+            );
+        }
+        ev.and_then(|e| {
+            let eid = e.event_id();
+            if eid.is_none() {
+                warn!("latest_event for room {} has no event_id", room_id);
+            }
+            eid
+        })
+    });
+
+    let Some(event_id) = event_id else {
+        return;
+    };
+
+    if let Err(e) = room
+        .send_multiple_receipts(
+            Receipts::new()
+                .fully_read_marker(Some(event_id.clone()))
+                .public_read_receipt(Some(event_id)),
+        )
+        .await
+    {
+        warn!("Failed to send read receipt for {}: {}", room_id, e);
     }
 }

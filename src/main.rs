@@ -237,6 +237,16 @@ async fn main() -> Result<()> {
                                         matrix::rooms::fetch_room_members(&client, &rid2, &tx2).await;
                                     }
                                 });
+
+                                // Send read receipt
+                                let client_holder3 = matrix_client.clone();
+                                let rid3 = room_id.clone();
+                                tokio::spawn(async move {
+                                    let client = { client_holder3.lock().await.clone() };
+                                    if let Some(client) = client {
+                                        matrix::rooms::mark_room_as_read(&client, &rid3, None).await;
+                                    }
+                                });
                             }
                         }
 
@@ -275,6 +285,17 @@ async fn main() -> Result<()> {
                                     && let Err(e) = matrix::messages::send_message(&client, &room_id, &body, &tx).await
                                 {
                                     error!("Failed to send message: {}", e);
+                                }
+                            });
+                        }
+
+                        // Handle read receipt for new messages in open room
+                        if let Some((room_id, event_id)) = app.pending_read_receipt.take() {
+                            let client_holder = matrix_client.clone();
+                            tokio::spawn(async move {
+                                let client = { client_holder.lock().await.clone() };
+                                if let Some(client) = client {
+                                    matrix::rooms::mark_room_as_read(&client, &room_id, event_id.as_deref()).await;
                                 }
                             });
                         }
@@ -345,6 +366,18 @@ async fn main() -> Result<()> {
                                                 let enc_event = InitialStateEvent::with_empty_state_key(enc);
                                                 request.initial_state.push(enc_event.to_raw_any());
 
+                                                // Set call member event PL to 0 so both DM participants can use calls
+                                                use matrix_sdk::ruma::serde::Raw;
+                                                let pl_override = serde_json::json!({
+                                                    "events": {
+                                                        "m.call.member": 0,
+                                                        "org.matrix.msc3401.call.member": 0
+                                                    }
+                                                });
+                                                request.power_level_content_override = Some(
+                                                    Raw::from_json(serde_json::value::to_raw_value(&pl_override).expect("valid JSON"))
+                                                );
+
                                                 match client.create_room(request).await {
                                                     Ok(response) => {
                                                         let _ = tx.send(AppEvent::DmRoomReady {
@@ -406,6 +439,18 @@ async fn main() -> Result<()> {
                                         let enc_event = InitialStateEvent::with_empty_state_key(enc);
                                         request.initial_state.push(enc_event.to_raw_any());
                                     }
+
+                                    // Set call member event PL to 0 so all participants can use calls
+                                    use matrix_sdk::ruma::serde::Raw;
+                                    let pl_override = serde_json::json!({
+                                        "events": {
+                                            "m.call.member": 0,
+                                            "org.matrix.msc3401.call.member": 0
+                                        }
+                                    });
+                                    request.power_level_content_override = Some(
+                                        Raw::from_json(serde_json::value::to_raw_value(&pl_override).expect("valid JSON"))
+                                    );
 
                                     match client.create_room(request).await {
                                         Ok(response) => {
