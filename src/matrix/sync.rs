@@ -66,17 +66,19 @@ pub async fn start_sync(
 
     // Register event handler for typing indicators
     let typing_tx = tx.clone();
-    client.add_event_handler(
-        move |event: SyncTypingEvent, room: matrix_sdk::Room| {
-            let tx = typing_tx.clone();
-            async move {
-                let room_id = room.room_id().to_string();
-                let user_ids: Vec<String> =
-                    event.content.user_ids.iter().map(|u| u.to_string()).collect();
-                let _ = tx.send(AppEvent::TypingUsersUpdated { room_id, user_ids });
-            }
-        },
-    );
+    client.add_event_handler(move |event: SyncTypingEvent, room: matrix_sdk::Room| {
+        let tx = typing_tx.clone();
+        async move {
+            let room_id = room.room_id().to_string();
+            let user_ids: Vec<String> = event
+                .content
+                .user_ids
+                .iter()
+                .map(|u| u.to_string())
+                .collect();
+            let _ = tx.send(AppEvent::TypingUsersUpdated { room_id, user_ids });
+        }
+    });
 
     // Register event handler for incoming verification requests
     let verify_tx = tx.clone();

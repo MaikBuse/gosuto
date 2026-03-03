@@ -49,17 +49,21 @@ pub fn compute_layout(frame: &Frame, input_lines: usize, show_typing: bool) -> A
             .direction(Direction::Vertical)
             .constraints([
                 Constraint::Min(3),               // chat messages
-                Constraint::Length(1),             // typing indicator
-                Constraint::Length(input_height),  // input bar
+                Constraint::Length(1),            // typing indicator
+                Constraint::Length(input_height), // input bar
             ])
             .split(middle_panel);
-        (middle_vertical[0], Some(middle_vertical[1]), middle_vertical[2])
+        (
+            middle_vertical[0],
+            Some(middle_vertical[1]),
+            middle_vertical[2],
+        )
     } else {
         let middle_vertical = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
                 Constraint::Min(3),               // chat messages
-                Constraint::Length(input_height),  // input bar
+                Constraint::Length(input_height), // input bar
             ])
             .split(middle_panel);
         (middle_vertical[0], None, middle_vertical[1])

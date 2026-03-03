@@ -1,8 +1,4 @@
-use ratatui::{
-    Frame,
-    layout::Rect,
-    text::Span,
-};
+use ratatui::{Frame, layout::Rect, text::Span};
 
 use crate::app::App;
 use crate::ui::theme;

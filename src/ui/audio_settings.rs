@@ -195,7 +195,14 @@ fn render_device_selector(
     let name_s = Style::default().fg(name_color).bg(theme::BG);
 
     write_str(buf, &bounds, x, row, icons.arrow_left, arrow_s);
-    set_cell(buf, &bounds, x + 1, row, ' ', Style::default().bg(theme::BG));
+    set_cell(
+        buf,
+        &bounds,
+        x + 1,
+        row,
+        ' ',
+        Style::default().bg(theme::BG),
+    );
 
     // Truncate name to fit
     let max_name_w = (right.saturating_sub(x + 4)) as usize;
@@ -207,7 +214,14 @@ fn render_device_selector(
     write_str(buf, &bounds, x + 2, row, &display, name_s);
 
     let end_x = x + 2 + display.chars().count() as u16;
-    set_cell(buf, &bounds, end_x, row, ' ', Style::default().bg(theme::BG));
+    set_cell(
+        buf,
+        &bounds,
+        end_x,
+        row,
+        ' ',
+        Style::default().bg(theme::BG),
+    );
     write_str(buf, &bounds, end_x + 1, row, icons.arrow_right, arrow_s);
 }
 

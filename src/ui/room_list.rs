@@ -235,15 +235,7 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
                 } else {
                     inner
                 };
-                write_str_clipped(
-                    buf,
-                    inner.x + 1,
-                    y,
-                    &label,
-                    style,
-                    &name_clip,
-                    true,
-                );
+                write_str_clipped(buf, inner.x + 1, y, &label, style, &name_clip, true);
 
                 // Unread badge for collapsed spaces
                 if *collapsed && *unread_count > 0 && !is_selected {
@@ -301,15 +293,7 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
                         let badge = format!("({})", room.unread_count);
                         let badge_x = inner.x + inner.width - badge.len() as u16 - 1;
                         let badge_style = Style::default().fg(theme::CYAN).bg(theme::BG);
-                        write_str_clipped(
-                            buf,
-                            badge_x,
-                            y,
-                            &badge,
-                            badge_style,
-                            &inner,
-                            false,
-                        );
+                        write_str_clipped(buf, badge_x, y, &badge, badge_style, &inner, false);
                     }
                 }
             }

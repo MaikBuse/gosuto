@@ -934,9 +934,7 @@ impl App {
                 let should_send = self
                     .last_typing_sent
                     .is_none_or(|t| t.elapsed() >= std::time::Duration::from_secs(4));
-                if should_send
-                    && let Some(room_id) = self.messages.current_room_id.clone()
-                {
+                if should_send && let Some(room_id) = self.messages.current_room_id.clone() {
                     self.pending_typing_notice = Some((room_id, true));
                     self.last_typing_sent = Some(Instant::now());
                 }
