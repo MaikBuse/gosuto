@@ -766,7 +766,7 @@ impl App {
                 };
                 let display_names: Vec<String> = user_ids
                     .iter()
-                    .filter(|uid| own_id.map_or(true, |own| uid.as_str() != own))
+                    .filter(|uid| own_id != Some(uid.as_str()))
                     .map(|uid| {
                         // Resolve to display name from loaded members
                         self.members_list
@@ -933,12 +933,12 @@ impl App {
             InputResult::TypingActivity => {
                 let should_send = self
                     .last_typing_sent
-                    .map_or(true, |t| t.elapsed() >= std::time::Duration::from_secs(4));
-                if should_send {
-                    if let Some(room_id) = self.messages.current_room_id.clone() {
-                        self.pending_typing_notice = Some((room_id, true));
-                        self.last_typing_sent = Some(Instant::now());
-                    }
+                    .is_none_or(|t| t.elapsed() >= std::time::Duration::from_secs(4));
+                if should_send
+                    && let Some(room_id) = self.messages.current_room_id.clone()
+                {
+                    self.pending_typing_notice = Some((room_id, true));
+                    self.last_typing_sent = Some(Instant::now());
                 }
             }
             InputResult::SendMessage(msg) => {
@@ -2173,6 +2173,20 @@ fn key_event_name(key: &KeyEvent) -> String {
         KeyCode::Insert => "Insert".to_string(),
         KeyCode::Delete => "Delete".to_string(),
         KeyCode::Esc => "Esc".to_string(),
+        KeyCode::Modifier(m) => {
+            use crossterm::event::ModifierKeyCode::*;
+            match m {
+                LeftControl | RightControl => "Ctrl",
+                LeftShift | RightShift => "Shift",
+                LeftAlt | RightAlt => "Alt",
+                LeftSuper | RightSuper => "Super",
+                LeftHyper | RightHyper => "Hyper",
+                LeftMeta | RightMeta => "Meta",
+                IsoLevel3Shift => "IsoLevel3Shift",
+                IsoLevel5Shift => "IsoLevel5Shift",
+            }
+            .to_string()
+        }
         _ => format!("{:?}", key.code),
     }
 }
