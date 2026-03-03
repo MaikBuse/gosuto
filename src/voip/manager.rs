@@ -174,25 +174,23 @@ impl CallManager {
 
         // 3. Publish m.call.member state event (before requesting JWT —
         //    some SFU implementations expect the state event to exist)
-        let call_member_event_id =
+        let call_member_event_id: Option<String> =
             match matrixrtc::publish_call_member(&client, &room_id, &device_id, &focus).await {
-                Ok(event_id) => event_id,
+                Ok(event_id) => Some(event_id),
                 Err(e) => {
-                    error!("Failed to publish m.call.member: {:#}", e);
-                    let _ = self
-                        .event_tx
-                        .send(AppEvent::CallError(format!("Signaling error: {:#}", e)));
-                    return;
+                    warn!("Failed to publish m.call.member (will attempt call anyway): {:#}", e);
+                    None
                 }
             };
 
         // 3b. Send rtc.notification so other clients ring (MSC4075)
-        if let Err(e) = matrixrtc::send_call_notify(&client, &room_id, &call_member_event_id).await
-        {
-            warn!(
-                "Failed to send call notification (ringing may not work on other clients): {:#}",
-                e
-            );
+        if let Some(ref event_id) = call_member_event_id {
+            if let Err(e) = matrixrtc::send_call_notify(&client, &room_id, event_id).await {
+                warn!(
+                    "Failed to send call notification (ringing may not work on other clients): {:#}",
+                    e
+                );
+            }
         }
 
         // 4. Get LiveKit credentials (JWT) — SFU can now see the call member event
@@ -208,7 +206,9 @@ impl CallManager {
             Err(e) => {
                 error!("Failed to get LiveKit credentials: {:#}", e);
                 // Clean up the state event we just published
-                let _ = matrixrtc::remove_call_member(&client, &room_id, &device_id).await;
+                if call_member_event_id.is_some() {
+                    let _ = matrixrtc::remove_call_member(&client, &room_id, &device_id).await;
+                }
                 let _ = self.event_tx.send(AppEvent::CallError(
                     "Failed to get call credentials from the SFU service".to_string(),
                 ));
@@ -220,7 +220,9 @@ impl CallManager {
         let mut encryption_key = vec![0u8; 32];
         if let Err(e) = getrandom::getrandom(&mut encryption_key) {
             error!("Failed to generate encryption key: {}", e);
-            let _ = matrixrtc::remove_call_member(&client, &room_id, &device_id).await;
+            if call_member_event_id.is_some() {
+                let _ = matrixrtc::remove_call_member(&client, &room_id, &device_id).await;
+            }
             let _ = self.event_tx.send(AppEvent::CallError(
                 "Failed to generate encryption key".to_string(),
             ));
@@ -228,15 +230,13 @@ impl CallManager {
         }
 
         // 5b. Publish our encryption key to Matrix
-        if let Err(e) =
-            matrixrtc::publish_encryption_keys(&client, &room_id, &device_id, &encryption_key).await
-        {
-            error!("Failed to publish encryption key: {:#}", e);
-            let _ = matrixrtc::remove_call_member(&client, &room_id, &device_id).await;
-            let _ = self.event_tx.send(AppEvent::CallError(
-                "Failed to publish encryption key".to_string(),
-            ));
-            return;
+        let published_encryption_keys = matrixrtc::publish_encryption_keys(
+            &client, &room_id, &device_id, &encryption_key,
+        )
+        .await
+        .is_ok();
+        if !published_encryption_keys {
+            warn!("Failed to publish encryption keys (call will proceed without E2EE signaling)");
         }
 
         // 5c. Connect to LiveKit with E2EE
@@ -249,8 +249,12 @@ impl CallManager {
                     error!("Failed to connect to LiveKit: {:#}", e);
                     log_jwt_claims(&creds.token);
                     // Try to clean up state events
-                    let _ = matrixrtc::remove_call_member(&client, &room_id, &device_id).await;
-                    let _ = matrixrtc::remove_encryption_keys(&client, &room_id, &device_id).await;
+                    if call_member_event_id.is_some() {
+                        let _ = matrixrtc::remove_call_member(&client, &room_id, &device_id).await;
+                    }
+                    if published_encryption_keys {
+                        let _ = matrixrtc::remove_encryption_keys(&client, &room_id, &device_id).await;
+                    }
                     let err_str = format!("{:#}", e);
                     let msg = if err_str.contains("401") || err_str.contains("nauthorized") {
                         "LiveKit rejected credentials — check SFU server configuration".to_string()
@@ -290,7 +294,9 @@ impl CallManager {
             Err(e) => {
                 error!("Failed to start audio capture: {:#}", e);
                 let _ = session.close().await;
-                let _ = matrixrtc::remove_call_member(&client, &room_id, &device_id).await;
+                if call_member_event_id.is_some() {
+                    let _ = matrixrtc::remove_call_member(&client, &room_id, &device_id).await;
+                }
                 let _ = self.event_tx.send(AppEvent::CallError(
                     "Microphone error: could not start audio capture".to_string(),
                 ));
@@ -303,7 +309,9 @@ impl CallManager {
             error!("Failed to publish audio track: {:#}", e);
             audio.stop();
             let _ = session.close().await;
-            let _ = matrixrtc::remove_call_member(&client, &room_id, &device_id).await;
+            if call_member_event_id.is_some() {
+                let _ = matrixrtc::remove_call_member(&client, &room_id, &device_id).await;
+            }
             let _ = self.event_tx.send(AppEvent::CallError(
                 "Failed to publish audio to the call".to_string(),
             ));

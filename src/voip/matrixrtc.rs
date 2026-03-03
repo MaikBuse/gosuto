@@ -279,51 +279,71 @@ pub async fn ensure_call_member_permissions(client: &Client, room_id: &OwnedRoom
 
     let required_pl = call_member_pl.unwrap_or(state_default);
 
-    if user_pl >= required_pl {
+    // Check if m.call.member is already explicitly set to PL <= 0
+    let already_open = call_member_pl.map_or(false, |pl| pl <= 0);
+
+    if already_open && user_pl >= required_pl {
         debug!(
-            "User PL {} >= required PL {} for m.call.member, permission OK",
+            "m.call.member already set to PL {} (<= 0) and user PL {} is sufficient, permission OK",
+            required_pl, user_pl
+        );
+        return Ok(());
+    }
+
+    // Determine if user can modify power levels
+    let pl_change_pl = events
+        .and_then(|e| e.get("m.room.power_levels").and_then(|v| v.as_i64()))
+        .unwrap_or(state_default);
+    let can_modify_pls = user_pl >= pl_change_pl;
+
+    if !already_open && can_modify_pls {
+        // Proactively fix power levels for all participants
+        info!(
+            "Auto-fixing power levels: setting m.call.member PL to 0 (user PL={}, state_default={})",
+            user_pl, state_default
+        );
+
+        let mut updated = pl_json.clone();
+        let events_map = updated
+            .as_object_mut()
+            .context("Power levels not an object")?
+            .entry("events")
+            .or_insert_with(|| serde_json::json!({}))
+            .as_object_mut()
+            .context("events field not an object")?;
+
+        events_map.insert("m.call.member".to_string(), serde_json::json!(0));
+        events_map.insert(
+            "org.matrix.msc3401.call.member".to_string(),
+            serde_json::json!(0),
+        );
+        events_map.insert(
+            "io.element.call.encryption_keys".to_string(),
+            serde_json::json!(0),
+        );
+
+        room.send_state_event_raw("m.room.power_levels", "", updated)
+            .await
+            .context("Failed to update power levels for call events")?;
+
+        info!("Updated room power levels to allow m.call.member events");
+        return Ok(());
+    }
+
+    if user_pl >= required_pl {
+        // User has enough PL to send call events but can't modify power levels — proceed anyway
+        debug!(
+            "User PL {} >= required PL {} for m.call.member, permission OK (cannot fix for others)",
             user_pl, required_pl
         );
         return Ok(());
     }
 
-    // User doesn't have permission — can we fix it?
-    let pl_change_pl = events
-        .and_then(|e| e.get("m.room.power_levels").and_then(|v| v.as_i64()))
-        .unwrap_or(state_default);
-
-    if user_pl < pl_change_pl {
-        anyhow::bail!(
-            "Cannot start call: insufficient permissions. Ask a room admin to allow call events."
-        );
-    }
-
-    // We can modify power levels — add call member event overrides
-    info!(
-        "Auto-fixing power levels: setting m.call.member PL to 0 (user PL={}, state_default={})",
-        user_pl, state_default
+    warn!(
+        "User PL {} < required PL {} for m.call.member and cannot modify power levels. \
+         Will attempt to join call anyway.",
+        user_pl, required_pl
     );
-
-    let mut updated = pl_json.clone();
-    let events_map = updated
-        .as_object_mut()
-        .context("Power levels not an object")?
-        .entry("events")
-        .or_insert_with(|| serde_json::json!({}))
-        .as_object_mut()
-        .context("events field not an object")?;
-
-    events_map.insert("m.call.member".to_string(), serde_json::json!(0));
-    events_map.insert(
-        "org.matrix.msc3401.call.member".to_string(),
-        serde_json::json!(0),
-    );
-
-    room.send_state_event_raw("m.room.power_levels", "", updated)
-        .await
-        .context("Failed to update power levels for call events")?;
-
-    info!("Updated room power levels to allow m.call.member events");
     Ok(())
 }
 
