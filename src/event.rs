@@ -128,6 +128,15 @@ pub enum AppEvent {
         reason: String,
     },
     VerificationError(String),
+    // Image events
+    ImageLoaded {
+        event_id: String,
+        image_data: Vec<u8>,
+    },
+    ImageFailed {
+        event_id: String,
+        error: String,
+    },
     // Recovery events
     RecoveryState(String),
     RecoveryKeyReady(String),

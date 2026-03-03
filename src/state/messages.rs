@@ -1,15 +1,34 @@
 use chrono::{DateTime, Local};
 
 #[derive(Debug, Clone)]
+pub enum MessageContent {
+    Text(String),
+    Image {
+        body: String,
+        width: Option<u32>,
+        height: Option<u32>,
+    },
+}
+
+#[derive(Debug, Clone)]
 pub struct DisplayMessage {
     pub event_id: String,
     pub sender: String,
-    pub body: String,
+    pub content: MessageContent,
     pub timestamp: DateTime<Local>,
     pub is_emote: bool,
     pub is_notice: bool,
     pub pending: bool,
     pub verified: Option<bool>,
+}
+
+impl DisplayMessage {
+    pub fn body_text(&self) -> &str {
+        match &self.content {
+            MessageContent::Text(s) => s,
+            MessageContent::Image { body, .. } => body,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -95,7 +114,7 @@ impl MessageState {
             .messages
             .iter_mut()
             .rev()
-            .find(|m| m.pending && m.body == pending_body)
+            .find(|m| m.pending && m.body_text() == pending_body)
         {
             msg.pending = false;
             msg.event_id = event_id.to_string();
@@ -111,7 +130,7 @@ mod tests {
         DisplayMessage {
             event_id: event_id.to_string(),
             sender: "@user:example.com".to_string(),
-            body: body.to_string(),
+            content: MessageContent::Text(body.to_string()),
             timestamp: Local::now(),
             is_emote: false,
             is_notice: false,
@@ -125,7 +144,7 @@ mod tests {
         let mut state = MessageState::new();
         state.add_message(make_msg("$1", "hello", false));
         assert_eq!(state.messages.len(), 1);
-        assert_eq!(state.messages[0].body, "hello");
+        assert_eq!(state.messages[0].body_text(), "hello");
     }
 
     #[test]
@@ -153,8 +172,8 @@ mod tests {
             true,
         );
         assert_eq!(state.messages.len(), 2);
-        assert_eq!(state.messages[0].body, "new");
-        assert_eq!(state.messages[1].body, "existing");
+        assert_eq!(state.messages[0].body_text(), "new");
+        assert_eq!(state.messages[1].body_text(), "existing");
     }
 
     #[test]
@@ -165,9 +184,9 @@ mod tests {
             vec![make_msg("$1", "A", false), make_msg("$2", "B", false)],
             false,
         );
-        assert_eq!(state.messages[0].body, "A");
-        assert_eq!(state.messages[1].body, "B");
-        assert_eq!(state.messages[2].body, "C");
+        assert_eq!(state.messages[0].body_text(), "A");
+        assert_eq!(state.messages[1].body_text(), "B");
+        assert_eq!(state.messages[2].body_text(), "C");
     }
 
     #[test]

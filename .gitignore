@@ -1,4 +1,5 @@
 /target
+/docs
 
 # Markdown files (except key docs)
 *.md

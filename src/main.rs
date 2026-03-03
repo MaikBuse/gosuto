@@ -73,7 +73,35 @@ async fn main() -> Result<()> {
 
     // Create app
     let accept_invalid_certs = gosuto_config.network.accept_invalid_certs;
-    let mut app = App::new(event_tx.clone(), gosuto_config, picker);
+    let (image_decode_tx, image_decode_rx) = std::sync::mpsc::channel();
+    let (encode_tx, mut encode_rx) = tokio::sync::mpsc::unbounded_channel::<(
+        String,
+        ratatui_image::protocol::StatefulProtocol,
+        ratatui::layout::Rect,
+    )>();
+    let (encode_done_tx, encode_done_rx) =
+        std::sync::mpsc::channel::<(String, ratatui_image::protocol::StatefulProtocol)>();
+    let mut app = App::new(
+        event_tx.clone(),
+        gosuto_config,
+        picker,
+        image_decode_tx,
+        encode_tx,
+    );
+
+    // Spawn sequential background encode worker
+    tokio::spawn(async move {
+        while let Some((event_id, protocol, area)) = encode_rx.recv().await {
+            let tx = encode_done_tx.clone();
+            let _ = tokio::task::spawn_blocking(move || {
+                use ratatui_image::ResizeEncodeRender;
+                let mut protocol = protocol;
+                protocol.resize_encode(&ratatui_image::Resize::Fit(None), area);
+                let _ = tx.send((event_id, protocol));
+            })
+            .await;
+        }
+    });
 
     // Shared Matrix client
     let matrix_client: Arc<Mutex<Option<matrix_sdk::Client>>> = Arc::new(Mutex::new(None));
@@ -214,6 +242,8 @@ async fn main() -> Result<()> {
                             // Clear stale members and image cache immediately
                             app.members_list.clear();
                             app.image_cache.clear();
+                            while image_decode_rx.try_recv().is_ok() {}
+                            while encode_done_rx.try_recv().is_ok() {}
 
                             if let Some(ref room_id) = new_room {
                                 // Fetch messages
@@ -883,6 +913,31 @@ async fn main() -> Result<()> {
             } else if app.incoming_call_room.is_some() {
                 app.call_popup
                     .tick(dt, &ui::call_overlay::CallDisplayState::Ringing);
+            }
+
+            // Process at most one decoded image per frame to avoid batch freeze
+            if let Ok((event_id, result)) = image_decode_rx.try_recv() {
+                match result {
+                    Ok(protocol) => {
+                        app.image_cache.insert(
+                            event_id,
+                            state::image_cache::CachedImage {
+                                protocol: Some(protocol),
+                            },
+                        );
+                    }
+                    Err(e) => {
+                        error!("Failed to decode image {}: {}", event_id, e);
+                        app.image_cache.mark_failed(&event_id);
+                    }
+                }
+            }
+
+            // Process completed background encodes
+            while let Ok((event_id, protocol)) = encode_done_rx.try_recv() {
+                if let Some(cached) = app.image_cache.get_mut(&event_id) {
+                    cached.protocol = Some(protocol);
+                }
             }
 
             tui.draw(|frame| ui::render(&mut app, frame))?;

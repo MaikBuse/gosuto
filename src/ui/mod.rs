@@ -22,7 +22,7 @@ pub mod which_key;
 use ratatui::Frame;
 
 use crate::app::App;
-pub fn render(app: &App, frame: &mut Frame) {
+pub fn render(app: &mut App, frame: &mut Frame) {
     if !app.auth.is_logged_in() {
         login::render(&app.login, &app.auth, frame);
         let area = frame.area();

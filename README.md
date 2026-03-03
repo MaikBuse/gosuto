@@ -71,7 +71,7 @@ Terminal multiplexers (tmux, screen) strip the Kitty protocol, so PTT key hold w
 
 ## ═══ finding your way around
 
-Gosuto has a which-key popup — press a key (e.g. the spacebar) in normal mode and it shows you what's available. Command mode (`:`) has tab completion and suggestions. Between those two, you shouldn't need to memorize anything from a README.
+Gosuto has a which-key popup — press a key (e.g. the spacebar) in normal mode and it shows you what's available. Command mode (`:`) has tab completion and suggestions. Between those two, you shouldn't need to memorize anything from the docs.
 
 ## ═══ config
 

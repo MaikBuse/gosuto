@@ -288,8 +288,10 @@ fn fill_bg(buf: &mut Buffer, bounds: &Rect, popup: Rect) {
     for y in popup.y..popup.y + popup.height {
         for x in popup.x..popup.x + popup.width {
             if in_bounds(x, y, bounds) {
-                buf[(x, y)].set_char(' ');
-                buf[(x, y)].set_style(Style::default().bg(theme::BG));
+                let cell = &mut buf[(x, y)];
+                cell.set_char(' ');
+                cell.set_style(Style::default().bg(theme::BG));
+                cell.skip = false;
             }
         }
     }
@@ -306,6 +308,7 @@ fn set_cell(buf: &mut Buffer, bounds: &Rect, x: u16, y: u16, ch: char, style: St
         let cell = &mut buf[(x, y)];
         cell.set_char(ch);
         cell.set_style(style);
+        cell.skip = false;
     }
 }
 

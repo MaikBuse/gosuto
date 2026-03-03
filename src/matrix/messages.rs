@@ -6,7 +6,7 @@ use matrix_sdk::ruma::uint;
 use tracing::{debug, error};
 
 use crate::event::{AppEvent, EventSender};
-use crate::state::DisplayMessage;
+use crate::state::{DisplayMessage, MessageContent};
 
 pub async fn fetch_messages(
     client: &Client,
@@ -57,17 +57,59 @@ pub async fn fetch_messages(
                     _ => continue,
                 };
 
-                let (body, is_emote, is_notice) = match &content.msgtype {
-                    MessageType::Text(text) => (text.body.clone(), false, false),
-                    MessageType::Emote(emote) => (emote.body.clone(), true, false),
-                    MessageType::Notice(notice) => (notice.body.clone(), false, true),
-                    _ => ("[unsupported message type]".to_string(), false, false),
+                let (msg_content, is_emote, is_notice) = match &content.msgtype {
+                    MessageType::Text(text) => {
+                        (MessageContent::Text(text.body.clone()), false, false)
+                    }
+                    MessageType::Emote(emote) => {
+                        (MessageContent::Text(emote.body.clone()), true, false)
+                    }
+                    MessageType::Notice(notice) => {
+                        (MessageContent::Text(notice.body.clone()), false, true)
+                    }
+                    MessageType::Image(img) => {
+                        let (w, h) = img
+                            .info
+                            .as_ref()
+                            .map(|i| {
+                                (
+                                    i.width.map(|v| u32::try_from(v).unwrap_or(0)),
+                                    i.height.map(|v| u32::try_from(v).unwrap_or(0)),
+                                )
+                            })
+                            .unwrap_or((None, None));
+                        (
+                            MessageContent::Image {
+                                body: img.body.clone(),
+                                width: w,
+                                height: h,
+                            },
+                            false,
+                            false,
+                        )
+                    }
+                    _ => (
+                        MessageContent::Text("[unsupported message type]".to_string()),
+                        false,
+                        false,
+                    ),
                 };
+
+                // Spawn image download for image messages
+                if let MessageType::Image(img) = &content.msgtype {
+                    let img_content = img.clone();
+                    let eid = event_id.clone();
+                    let client = client.clone();
+                    let tx = tx.clone();
+                    tokio::spawn(async move {
+                        crate::matrix::media::fetch_image(&client, eid, &img_content, &tx).await;
+                    });
+                }
 
                 messages.push(DisplayMessage {
                     event_id,
                     sender,
-                    body,
+                    content: msg_content,
                     timestamp,
                     is_emote,
                     is_notice,
@@ -97,7 +139,7 @@ pub async fn fetch_messages(
                 messages.push(DisplayMessage {
                     event_id,
                     sender,
-                    body: "[Unable to decrypt]".to_string(),
+                    content: MessageContent::Text("[Unable to decrypt]".to_string()),
                     timestamp,
                     is_emote: false,
                     is_notice: false,

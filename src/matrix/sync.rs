@@ -38,17 +38,67 @@ pub async fn start_sync(
                 .unwrap_or_default()
                 .with_timezone(&chrono::Local);
 
-                let (body, is_emote, is_notice) = match &event.content.msgtype {
-                    MessageType::Text(text) => (text.body.clone(), false, false),
-                    MessageType::Emote(emote) => (emote.body.clone(), true, false),
-                    MessageType::Notice(notice) => (notice.body.clone(), false, true),
-                    _ => ("[unsupported message type]".to_string(), false, false),
+                let (msg_content, is_emote, is_notice) = match &event.content.msgtype {
+                    MessageType::Text(text) => (
+                        crate::state::MessageContent::Text(text.body.clone()),
+                        false,
+                        false,
+                    ),
+                    MessageType::Emote(emote) => (
+                        crate::state::MessageContent::Text(emote.body.clone()),
+                        true,
+                        false,
+                    ),
+                    MessageType::Notice(notice) => (
+                        crate::state::MessageContent::Text(notice.body.clone()),
+                        false,
+                        true,
+                    ),
+                    MessageType::Image(img) => {
+                        let (w, h) = img
+                            .info
+                            .as_ref()
+                            .map(|i| {
+                                (
+                                    i.width.map(|v| u32::try_from(v).unwrap_or(0)),
+                                    i.height.map(|v| u32::try_from(v).unwrap_or(0)),
+                                )
+                            })
+                            .unwrap_or((None, None));
+
+                        // Spawn image download
+                        let img_content = img.clone();
+                        let eid = event.event_id.to_string();
+                        let client = room.client();
+                        let img_tx = tx.clone();
+                        tokio::spawn(async move {
+                            crate::matrix::media::fetch_image(&client, eid, &img_content, &img_tx)
+                                .await;
+                        });
+
+                        (
+                            crate::state::MessageContent::Image {
+                                body: img.body.clone(),
+                                width: w,
+                                height: h,
+                            },
+                            false,
+                            false,
+                        )
+                    }
+                    _ => (
+                        crate::state::MessageContent::Text(
+                            "[unsupported message type]".to_string(),
+                        ),
+                        false,
+                        false,
+                    ),
                 };
 
                 let msg = crate::state::DisplayMessage {
                     event_id: event.event_id.to_string(),
                     sender,
-                    body,
+                    content: msg_content,
                     timestamp,
                     is_emote,
                     is_notice,

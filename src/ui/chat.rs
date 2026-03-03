@@ -4,12 +4,63 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Wrap},
 };
+use ratatui_image::ResizeEncodeRender;
 
 use crate::app::App;
 use crate::input::FocusPanel;
+use crate::state::MessageContent;
 use crate::ui::theme;
 
-pub fn render(app: &App, frame: &mut Frame, area: Rect) {
+enum ChatSegment<'a> {
+    DateSeparator(Line<'a>),
+    TextMessage {
+        lines: Vec<Line<'a>>,
+    },
+    ImageMessage {
+        header: Line<'a>,
+        event_id: &'a str,
+        image_rows: u16,
+        loaded: bool,
+        failed: bool,
+    },
+}
+
+impl ChatSegment<'_> {
+    fn height(&self, inner_width: usize) -> usize {
+        match self {
+            ChatSegment::DateSeparator(_) => 1,
+            ChatSegment::TextMessage { lines } => {
+                if inner_width > 0 {
+                    lines
+                        .iter()
+                        .map(|line| {
+                            let w = line.width();
+                            if w == 0 { 1 } else { w.div_ceil(inner_width) }
+                        })
+                        .sum()
+                } else {
+                    lines.len()
+                }
+            }
+            ChatSegment::ImageMessage { image_rows, .. } => 1 + *image_rows as usize,
+        }
+    }
+}
+
+fn compute_image_rows(width: Option<u32>, height: Option<u32>, max_cols: u16) -> u16 {
+    match (width, height) {
+        (Some(w), Some(h)) if w > 0 && h > 0 => {
+            let display_w = (w as u16).min(max_cols);
+            let aspect = h as f64 / w as f64;
+            // Terminal cells are ~2:1 aspect ratio, so halve the row count
+            let rows = (display_w as f64 * aspect / 2.0).round() as u16;
+            rows.clamp(3, 15)
+        }
+        _ => 8,
+    }
+}
+
+pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
     let focused = app.vim.focus == FocusPanel::Messages;
 
     let border_style = if focused {
@@ -67,7 +118,9 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
         return;
     }
 
-    let mut lines: Vec<Line> = Vec::new();
+    // Build segments
+    let max_img_cols = (inner_width.saturating_sub(7) as u16).min(40);
+    let mut segments: Vec<ChatSegment> = Vec::new();
     let mut last_date: Option<chrono::NaiveDate> = None;
 
     for msg in messages {
@@ -75,7 +128,10 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
         if last_date != Some(msg_date) {
             let date_str = msg.timestamp.format("%B %-d, %Y").to_string();
             let sep = format!("─── {} ───", date_str);
-            lines.push(Line::from(Span::styled(sep, theme::dim_style())));
+            segments.push(ChatSegment::DateSeparator(Line::from(Span::styled(
+                sep,
+                theme::dim_style(),
+            ))));
             last_date = Some(msg_date);
         }
 
@@ -103,59 +159,223 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
                 .add_modifier(ratatui::style::Modifier::BOLD),
         ));
 
-        let body_style = if msg.pending {
-            theme::dim_style()
-        } else if msg.is_emote {
-            ratatui::style::Style::default().fg(sender_color)
-        } else if msg.is_notice {
-            theme::dim_style()
-        } else {
-            theme::text_style()
-        };
+        match &msg.content {
+            MessageContent::Text(body) => {
+                let body_style = if msg.pending {
+                    theme::dim_style()
+                } else if msg.is_emote {
+                    ratatui::style::Style::default().fg(sender_color)
+                } else if msg.is_notice {
+                    theme::dim_style()
+                } else {
+                    theme::text_style()
+                };
 
-        let body_lines: Vec<&str> = msg.body.split('\n').collect();
-        // First line: attach to the prefix spans
-        if let Some(first) = body_lines.first() {
-            spans.push(Span::styled(first.to_string(), body_style));
-            if msg.pending {
-                spans.push(Span::styled(" (sending...)", theme::dim_style()));
+                let body_lines: Vec<&str> = body.split('\n').collect();
+                // First line: attach to the prefix spans
+                if let Some(first) = body_lines.first() {
+                    spans.push(Span::styled(first.to_string(), body_style));
+                    if msg.pending {
+                        spans.push(Span::styled(" (sending...)", theme::dim_style()));
+                    }
+                }
+                let mut lines = vec![Line::from(spans)];
+
+                // Continuation lines: indent to align with body text
+                let indent_width = 6 + msg.sender.len() + 1;
+                let indent: String = " ".repeat(indent_width);
+                for cont_line in body_lines.iter().skip(1) {
+                    lines.push(Line::from(vec![
+                        Span::styled(indent.clone(), theme::dim_style()),
+                        Span::styled(cont_line.to_string(), body_style),
+                    ]));
+                }
+
+                segments.push(ChatSegment::TextMessage { lines });
             }
-        }
-        lines.push(Line::from(spans));
-
-        // Continuation lines: indent to align with body text
-        // Prefix width: "HH:MM " (6) + sender + " "
-        let indent_width = 6 + msg.sender.len() + 1;
-        let indent: String = " ".repeat(indent_width);
-        for cont_line in body_lines.iter().skip(1) {
-            lines.push(Line::from(vec![
-                Span::styled(indent.clone(), theme::dim_style()),
-                Span::styled(cont_line.to_string(), body_style),
-            ]));
+            MessageContent::Image {
+                body,
+                width,
+                height,
+            } => {
+                spans.push(Span::styled(
+                    format!("[image: {}]", body),
+                    theme::dim_style(),
+                ));
+                let header = Line::from(spans);
+                let image_rows = compute_image_rows(*width, *height, max_img_cols);
+                let loaded = app.image_cache.is_loaded(&msg.event_id);
+                let failed = app.image_cache.is_failed(&msg.event_id);
+                segments.push(ChatSegment::ImageMessage {
+                    header,
+                    event_id: &msg.event_id,
+                    image_rows,
+                    loaded,
+                    failed,
+                });
+            }
         }
     }
 
-    // Compute total visual lines accounting for wrapping
-    let total_visual_lines: usize = if inner_width > 0 {
-        lines
-            .iter()
-            .map(|line| {
-                let w = line.width();
-                if w == 0 { 1 } else { w.div_ceil(inner_width) }
-            })
-            .sum()
-    } else {
-        lines.len()
-    };
+    // Compute total visual height
+    let total_visual_lines: usize = segments.iter().map(|s| s.height(inner_width)).sum();
 
     let max_scroll = total_visual_lines.saturating_sub(inner_height);
     let clamped_offset = app.messages.scroll_offset.min(max_scroll);
     let scroll_y = max_scroll.saturating_sub(clamped_offset);
 
-    let paragraph = Paragraph::new(lines)
-        .block(block)
-        .wrap(Wrap { trim: false })
-        .scroll((scroll_y as u16, 0));
+    // Render the block border first
+    frame.render_widget(block, area);
 
-    frame.render_widget(paragraph, area);
+    // Inner area (inside borders)
+    let inner = Rect {
+        x: area.x + 1,
+        y: area.y + 1,
+        width: area.width.saturating_sub(2),
+        height: area.height.saturating_sub(2),
+    };
+
+    // Walk segments and render visible ones
+    let mut y_offset: usize = 0; // cumulative visual lines from top
+    let viewport_start = scroll_y;
+    let viewport_end = scroll_y + inner_height;
+
+    for segment in &segments {
+        let seg_height = segment.height(inner_width);
+        let seg_start = y_offset;
+        let seg_end = y_offset + seg_height;
+
+        y_offset += seg_height;
+
+        // Skip segments entirely above viewport
+        if seg_end <= viewport_start {
+            continue;
+        }
+        // Stop if entirely below viewport
+        if seg_start >= viewport_end {
+            break;
+        }
+
+        // Compute the sub-rect for this segment within the viewport
+        let render_y = if seg_start >= viewport_start {
+            (seg_start - viewport_start) as u16
+        } else {
+            0
+        };
+        let clip_top = if seg_start < viewport_start {
+            (viewport_start - seg_start) as u16
+        } else {
+            0
+        };
+        let available_height = (inner.height - render_y).min(seg_height as u16 - clip_top);
+
+        if available_height == 0 {
+            continue;
+        }
+
+        let sub_rect = Rect {
+            x: inner.x,
+            y: inner.y + render_y,
+            width: inner.width,
+            height: available_height,
+        };
+
+        match segment {
+            ChatSegment::DateSeparator(line) => {
+                let p = Paragraph::new(line.clone());
+                frame.render_widget(p, sub_rect);
+            }
+            ChatSegment::TextMessage { lines } => {
+                let p = Paragraph::new(lines.clone())
+                    .wrap(Wrap { trim: false })
+                    .scroll((clip_top, 0));
+                frame.render_widget(p, sub_rect);
+            }
+            ChatSegment::ImageMessage {
+                header,
+                event_id,
+                image_rows,
+                loaded,
+                failed,
+            } => {
+                // Render header line
+                if clip_top == 0 {
+                    let header_rect = Rect {
+                        height: 1,
+                        ..sub_rect
+                    };
+                    let p = Paragraph::new(header.clone());
+                    frame.render_widget(p, header_rect);
+                }
+
+                // Render image area below header
+                let img_y_in_seg = 1u16; // image starts at row 1 within segment
+                if clip_top < img_y_in_seg + *image_rows {
+                    let img_clip = clip_top.saturating_sub(img_y_in_seg);
+                    let img_render_y = if clip_top <= img_y_in_seg {
+                        sub_rect.y + (img_y_in_seg - clip_top)
+                    } else {
+                        sub_rect.y
+                    };
+                    let img_available = (sub_rect.y + sub_rect.height).saturating_sub(img_render_y);
+                    let img_height = (*image_rows - img_clip).min(img_available);
+
+                    if img_height > 0 {
+                        let img_rect = Rect {
+                            x: sub_rect.x + 6, // indent past timestamp
+                            y: img_render_y,
+                            width: max_img_cols.min(sub_rect.width.saturating_sub(6)),
+                            height: img_height,
+                        };
+
+                        if *loaded {
+                            if let Some(cached) = app.image_cache.get_mut(event_id) {
+                                if let Some(ref mut protocol) = cached.protocol {
+                                    let resize = ratatui_image::Resize::Fit(None);
+                                    if let Some(encode_rect) =
+                                        protocol.needs_resize(&resize, img_rect)
+                                    {
+                                        // Take protocol out for background encoding
+                                        let taken = cached.protocol.take().unwrap();
+                                        let _ = app.encode_tx.send((
+                                            event_id.to_string(),
+                                            taken,
+                                            encode_rect,
+                                        ));
+                                        let p = Paragraph::new(Line::from(Span::styled(
+                                            "[loading image...]",
+                                            theme::dim_style(),
+                                        )));
+                                        frame.render_widget(p, img_rect);
+                                    } else {
+                                        // Already encoded — cheap render
+                                        protocol.render(img_rect, frame.buffer_mut());
+                                    }
+                                } else {
+                                    // Protocol is out for encoding
+                                    let p = Paragraph::new(Line::from(Span::styled(
+                                        "[loading image...]",
+                                        theme::dim_style(),
+                                    )));
+                                    frame.render_widget(p, img_rect);
+                                }
+                            }
+                        } else if *failed {
+                            let placeholder = Paragraph::new(Line::from(Span::styled(
+                                "[failed to load image]",
+                                theme::error_style(),
+                            )));
+                            frame.render_widget(placeholder, img_rect);
+                        } else {
+                            let placeholder = Paragraph::new(Line::from(Span::styled(
+                                "[loading image...]",
+                                theme::dim_style(),
+                            )));
+                            frame.render_widget(placeholder, img_rect);
+                        }
+                    }
+                }
+            }
+        }
+    }
 }

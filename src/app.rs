@@ -6,10 +6,12 @@ use std::time::Instant;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use tracing::error;
 
+use ratatui_image::protocol::StatefulProtocol;
+
 use crate::config::GosutoConfig;
 use crate::event::{AppEvent, EventSender};
 use crate::input::{self, CommandAction, FocusPanel, InputResult, VimState};
-use crate::state::{AuthState, MemberListState, MessageState, RoomListState};
+use crate::state::{AuthState, ImageCache, MemberListState, MessageState, RoomListState};
 use crate::ui::call_overlay::TransmissionPopup;
 use crate::ui::effects::{EffectsState, TextReveal};
 use crate::ui::login::LoginState;
@@ -256,10 +258,26 @@ pub struct App {
     pub typing_users: HashMap<String, Vec<String>>,
     pub last_typing_sent: Option<Instant>,
     pub pending_typing_notice: Option<(String, bool)>,
+    // Inline images
+    pub picker: ratatui_image::picker::Picker,
+    pub image_cache: ImageCache,
+    pub image_decode_tx: std::sync::mpsc::Sender<(String, Result<StatefulProtocol, String>)>,
+    pub encode_tx:
+        tokio::sync::mpsc::UnboundedSender<(String, StatefulProtocol, ratatui::layout::Rect)>,
 }
 
 impl App {
-    pub fn new(event_tx: EventSender, config: GosutoConfig) -> Self {
+    pub fn new(
+        event_tx: EventSender,
+        config: GosutoConfig,
+        picker: ratatui_image::picker::Picker,
+        image_decode_tx: std::sync::mpsc::Sender<(String, Result<StatefulProtocol, String>)>,
+        encode_tx: tokio::sync::mpsc::UnboundedSender<(
+            String,
+            StatefulProtocol,
+            ratatui::layout::Rect,
+        )>,
+    ) -> Self {
         let rain_enabled = config.effects.rain;
         let glitch_enabled = config.effects.glitch;
         Self {
@@ -322,6 +340,10 @@ impl App {
             typing_users: HashMap::new(),
             last_typing_sent: None,
             pending_typing_notice: None,
+            picker,
+            image_cache: ImageCache::new(),
+            image_decode_tx,
+            encode_tx,
         }
     }
 
@@ -758,6 +780,27 @@ impl App {
                     }
                 }
             }
+            // Image events
+            AppEvent::ImageLoaded {
+                event_id,
+                image_data,
+            } => {
+                if self.image_cache.is_loaded(&event_id) || self.image_cache.is_failed(&event_id) {
+                    return;
+                }
+                let picker = self.picker.clone();
+                let tx = self.image_decode_tx.clone();
+                tokio::task::spawn_blocking(move || {
+                    let result = image::load_from_memory(&image_data)
+                        .map(|img| picker.new_resize_protocol(img))
+                        .map_err(|e| e.to_string());
+                    let _ = tx.send((event_id, result));
+                });
+            }
+            AppEvent::ImageFailed { event_id, error } => {
+                error!("Image download failed for {}: {}", event_id, error);
+                self.image_cache.mark_failed(&event_id);
+            }
             // Typing events
             AppEvent::TypingUsersUpdated { room_id, user_ids } => {
                 let own_id = match &self.auth {
@@ -973,7 +1016,7 @@ impl App {
             let msg = crate::state::DisplayMessage {
                 event_id: String::new(),
                 sender,
-                body: body.clone(),
+                content: crate::state::MessageContent::Text(body.clone()),
                 timestamp: chrono::Local::now(),
                 is_emote: false,
                 is_notice: false,
