@@ -54,6 +54,11 @@ pub enum AppEvent {
         room_id: String,
         members: Vec<RoomMember>,
     },
+    // Typing events
+    TypingUsersUpdated {
+        room_id: String,
+        user_ids: Vec<String>,
+    },
     DmRoomReady {
         room_id: String,
     },

@@ -289,6 +289,22 @@ async fn main() -> Result<()> {
                             });
                         }
 
+                        // Handle outgoing typing notice
+                        if let Some((room_id, typing)) = app.take_pending_typing_notice() {
+                            let client_holder = matrix_client.clone();
+                            tokio::spawn(async move {
+                                let client = { client_holder.lock().await.clone() };
+                                if let Some(client) = client {
+                                    let room_id_parsed: Result<matrix_sdk::ruma::OwnedRoomId, _> = room_id.as_str().try_into();
+                                    if let Ok(id) = room_id_parsed
+                                        && let Some(room) = client.get_room(&id)
+                                    {
+                                        let _ = room.typing_notice(typing).await;
+                                    }
+                                }
+                            });
+                        }
+
                         // Handle read receipt for new messages in open room
                         if let Some((room_id, event_id)) = app.pending_read_receipt.take() {
                             let client_holder = matrix_client.clone();

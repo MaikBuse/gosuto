@@ -27,6 +27,7 @@ pub enum InputResult {
     AnswerCall,
     RejectCall,
     ShowWhichKey,
+    TypingActivity,
 }
 
 #[derive(Debug, Clone)]

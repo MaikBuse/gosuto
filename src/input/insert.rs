@@ -15,7 +15,7 @@ pub fn handle_insert(key: KeyEvent, vim: &mut VimState) -> InputResult {
         }
         KeyCode::Enter if key.modifiers.contains(KeyModifiers::ALT) => {
             vim.insert_char('\n');
-            InputResult::None
+            InputResult::TypingActivity
         }
         KeyCode::Enter => {
             let msg = vim.take_input();
@@ -27,11 +27,11 @@ pub fn handle_insert(key: KeyEvent, vim: &mut VimState) -> InputResult {
         }
         KeyCode::Backspace => {
             vim.backspace();
-            InputResult::None
+            InputResult::TypingActivity
         }
         KeyCode::Char(c) => {
             vim.insert_char(c);
-            InputResult::None
+            InputResult::TypingActivity
         }
         _ => InputResult::None,
     }
@@ -82,7 +82,7 @@ mod tests {
         let mut vim = VimState::new();
         vim.enter_insert();
         let result = handle_insert(key(KeyCode::Char('x')), &mut vim);
-        assert!(matches!(result, InputResult::None));
+        assert!(matches!(result, InputResult::TypingActivity));
         assert_eq!(vim.input_buffer, "x");
     }
 
@@ -93,7 +93,7 @@ mod tests {
         vim.insert_char('a');
         vim.insert_char('b');
         let result = handle_insert(key(KeyCode::Backspace), &mut vim);
-        assert!(matches!(result, InputResult::None));
+        assert!(matches!(result, InputResult::TypingActivity));
         assert_eq!(vim.input_buffer, "a");
     }
 
@@ -116,7 +116,7 @@ mod tests {
         vim.insert_char('h');
         vim.insert_char('i');
         let result = handle_insert(alt_enter(), &mut vim);
-        assert!(matches!(result, InputResult::None));
+        assert!(matches!(result, InputResult::TypingActivity));
         assert_eq!(vim.input_buffer, "hi\n");
     }
 
@@ -126,7 +126,7 @@ mod tests {
         vim.enter_insert();
         vim.insert_char('a');
         let result = handle_insert(alt_enter(), &mut vim);
-        assert!(matches!(result, InputResult::None));
+        assert!(matches!(result, InputResult::TypingActivity));
         // Buffer should still contain text (not sent)
         assert_eq!(vim.input_buffer, "a\n");
     }

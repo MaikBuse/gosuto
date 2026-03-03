@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
@@ -251,6 +252,10 @@ pub struct App {
     pub pending_recovery_reset: bool,
     pub pending_recovery_recover: Option<String>,
     clipboard: Option<arboard::Clipboard>,
+    // Typing indicators
+    pub typing_users: HashMap<String, Vec<String>>,
+    pub last_typing_sent: Option<Instant>,
+    pub pending_typing_notice: Option<(String, bool)>,
 }
 
 impl App {
@@ -314,6 +319,9 @@ impl App {
             pending_recovery_reset: false,
             pending_recovery_recover: None,
             clipboard: arboard::Clipboard::new().ok(),
+            typing_users: HashMap::new(),
+            last_typing_sent: None,
+            pending_typing_notice: None,
         }
     }
 
@@ -409,6 +417,9 @@ impl App {
                 self.sync_status = "disconnected".to_string();
                 self.self_verified = false;
                 self.recovery_enabled = false;
+                self.typing_users.clear();
+                self.last_typing_sent = None;
+                self.pending_typing_notice = None;
 
                 if self.pending_credential_clear {
                     self.pending_credential_clear = false;
@@ -747,6 +758,37 @@ impl App {
                     }
                 }
             }
+            // Typing events
+            AppEvent::TypingUsersUpdated { room_id, user_ids } => {
+                let own_id = match &self.auth {
+                    AuthState::LoggedIn { user_id, .. } => Some(user_id.as_str()),
+                    _ => None,
+                };
+                let display_names: Vec<String> = user_ids
+                    .iter()
+                    .filter(|uid| own_id.map_or(true, |own| uid.as_str() != own))
+                    .map(|uid| {
+                        // Resolve to display name from loaded members
+                        self.members_list
+                            .members
+                            .iter()
+                            .find(|m| m.user_id == *uid)
+                            .map(|m| m.display_name.clone())
+                            .unwrap_or_else(|| {
+                                // Fall back to localpart
+                                uid.strip_prefix('@')
+                                    .and_then(|s| s.split(':').next())
+                                    .unwrap_or(uid)
+                                    .to_string()
+                            })
+                    })
+                    .collect();
+                if display_names.is_empty() {
+                    self.typing_users.remove(&room_id);
+                } else {
+                    self.typing_users.insert(room_id, display_names);
+                }
+            }
         }
     }
 
@@ -888,7 +930,22 @@ impl App {
                     FocusPanel::Members => FocusPanel::Messages,
                 };
             }
+            InputResult::TypingActivity => {
+                let should_send = self
+                    .last_typing_sent
+                    .map_or(true, |t| t.elapsed() >= std::time::Duration::from_secs(4));
+                if should_send {
+                    if let Some(room_id) = self.messages.current_room_id.clone() {
+                        self.pending_typing_notice = Some((room_id, true));
+                        self.last_typing_sent = Some(Instant::now());
+                    }
+                }
+            }
             InputResult::SendMessage(msg) => {
+                if let Some(room_id) = self.messages.current_room_id.clone() {
+                    self.pending_typing_notice = Some((room_id, false));
+                    self.last_typing_sent = None;
+                }
                 self.send_message(msg);
                 self.vim.enter_normal();
             }
@@ -1250,6 +1307,10 @@ impl App {
 
     pub fn take_pending_verify(&mut self) -> Option<Option<String>> {
         self.pending_verify.take()
+    }
+
+    pub fn take_pending_typing_notice(&mut self) -> Option<(String, bool)> {
+        self.pending_typing_notice.take()
     }
 
     // ── Verification Modal ────────────────────────────

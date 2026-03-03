@@ -15,6 +15,7 @@ pub mod room_info;
 pub mod room_list;
 pub mod status_bar;
 pub mod theme;
+pub mod typing_indicator;
 pub mod verify_modal;
 pub mod which_key;
 
@@ -34,10 +35,19 @@ pub fn render(app: &App, frame: &mut Frame) {
         return;
     }
 
-    let layout = layout::compute_layout(frame, app.vim.input_line_count());
+    let has_typing = app
+        .messages
+        .current_room_id
+        .as_ref()
+        .and_then(|rid| app.typing_users.get(rid))
+        .is_some_and(|names| !names.is_empty());
+    let layout = layout::compute_layout(frame, app.vim.input_line_count(), has_typing);
 
     room_list::render(app, frame, layout.room_list);
     chat::render(app, frame, layout.chat_area);
+    if let Some(typing_area) = layout.typing_indicator {
+        typing_indicator::render(app, frame, typing_area);
+    }
     input_bar::render(app, frame, layout.input_bar);
     members::render(app, frame, layout.members_list);
     status_bar::render(app, frame, layout.status_bar);

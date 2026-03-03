@@ -6,6 +6,7 @@ use anyhow::Result;
 use matrix_sdk::Client;
 use matrix_sdk::encryption::verification::VerificationRequest;
 use matrix_sdk::ruma::events::room::message::{MessageType, OriginalSyncRoomMessageEvent};
+use matrix_sdk::ruma::events::typing::SyncTypingEvent;
 use tokio::sync::Mutex;
 use tokio::time::sleep;
 use tracing::{debug, info, warn};
@@ -59,6 +60,20 @@ pub async fn start_sync(
                     room_id,
                     message: msg,
                 });
+            }
+        },
+    );
+
+    // Register event handler for typing indicators
+    let typing_tx = tx.clone();
+    client.add_event_handler(
+        move |event: SyncTypingEvent, room: matrix_sdk::Room| {
+            let tx = typing_tx.clone();
+            async move {
+                let room_id = room.room_id().to_string();
+                let user_ids: Vec<String> =
+                    event.content.user_ids.iter().map(|u| u.to_string()).collect();
+                let _ = tx.send(AppEvent::TypingUsersUpdated { room_id, user_ids });
             }
         },
     );
