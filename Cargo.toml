@@ -4,6 +4,13 @@ version = "0.3.0"
 edition = "2024"
 description = "Gōsuto (ゴースト) — a cyberpunk terminal Matrix client with vim motions"
 license = "Apache-2.0 OR MIT"
+authors = ["Maik Buse"]
+repository = "https://github.com/MaikBuse/gosuto"
+homepage = "https://github.com/MaikBuse/gosuto"
+readme = "README.md"
+keywords = ["matrix", "tui", "chat", "terminal", "vim"]
+categories = ["command-line-utilities"]
+rust-version = "1.85"
 
 [dependencies]
 # TUI
@@ -51,3 +58,7 @@ keyring = { version = "3", features = ["sync-secret-service", "crypto-rust"] }
 url = "2.5.8"
 base64 = "0.22"
 arboard = "3"
+
+# Inline images
+ratatui-image = { version = "10", default-features = false, features = ["crossterm"] }
+image = "0.25"
