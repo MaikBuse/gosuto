@@ -131,23 +131,29 @@ impl GlitchEffect {
                 .map(|x| buf[(x, row)].clone())
                 .collect();
 
-            // Write cells back shifted by band.shift, clamped to panel bounds
+            // Write cells back shifted by band.shift, clamped to panel bounds.
+            // Skip cells marked by ratatui-image (iTerm2/Sixel/Kitty) are never
+            // shifted or overwritten, so the terminal image overlay is preserved.
             let shift = band.shift as i32;
             for (i, cell) in row_cells.into_iter().enumerate() {
+                if cell.skip {
+                    continue;
+                }
                 let dest_x = area.x as i32 + i as i32 + shift;
                 if dest_x >= area.x as i32
                     && dest_x < (area.x + area.width) as i32
                     && (dest_x as u16) < buf_area.x + buf_area.width
+                    && !buf[(dest_x as u16, row)].skip
                 {
                     buf[(dest_x as u16, row)] = cell;
                 }
             }
 
-            // Fill gap cells with colored blocks
+            // Fill gap cells with colored blocks (skip image cells)
             let tint_style = Style::default().fg(band.tint).bg(band.tint);
             if shift > 0 {
                 for gx in area.x..area.x + (shift as u16).min(area.width) {
-                    if gx < buf_area.x + buf_area.width {
+                    if gx < buf_area.x + buf_area.width && !buf[(gx, row)].skip {
                         let cell = &mut buf[(gx, row)];
                         cell.set_char('▌');
                         cell.set_style(tint_style);
@@ -157,7 +163,7 @@ impl GlitchEffect {
                 let abs_shift = (-shift) as u16;
                 let gap_start = area.x + area.width.saturating_sub(abs_shift);
                 for gx in gap_start..area.x + area.width {
-                    if gx < buf_area.x + buf_area.width {
+                    if gx < buf_area.x + buf_area.width && !buf[(gx, row)].skip {
                         let cell = &mut buf[(gx, row)];
                         cell.set_char('▐');
                         cell.set_style(tint_style);
@@ -165,10 +171,10 @@ impl GlitchEffect {
                 }
             }
 
-            // Corrupt random cells with glitch characters
+            // Corrupt random cells with glitch characters (skip image cells)
             for ci in 0..band.corrupt_count as usize {
                 let cx = area.x + (band.corrupt_positions[ci] % area.width);
-                if cx < buf_area.x + buf_area.width {
+                if cx < buf_area.x + buf_area.width && !buf[(cx, row)].skip {
                     let glyph_idx = (band.corrupt_positions[ci] as usize + ci) % GLITCH_CHARS.len();
                     let cell = &mut buf[(cx, row)];
                     cell.set_char(GLITCH_CHARS[glyph_idx]);

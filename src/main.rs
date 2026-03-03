@@ -47,6 +47,18 @@ async fn main() -> Result<()> {
     // Initialize terminal
     let mut tui = terminal::init()?;
 
+    // Detect terminal graphics capabilities for inline images.
+    // Must happen before keyboard enhancement flags are pushed, because those
+    // flags corrupt the picker's stdio-based protocol detection query.
+    let picker = terminal::init_picker();
+    info!(
+        "Image protocol: {:?}, font size: {:?}",
+        picker.protocol_type(),
+        picker.font_size()
+    );
+
+    terminal::init_keyboard_enhancement();
+
     // Restore terminal on panic so spawned-task panics produce readable output
     // instead of corrupting the raw-mode terminal.
     let default_hook = std::panic::take_hook();
@@ -61,7 +73,7 @@ async fn main() -> Result<()> {
 
     // Create app
     let accept_invalid_certs = gosuto_config.network.accept_invalid_certs;
-    let mut app = App::new(event_tx.clone(), gosuto_config);
+    let mut app = App::new(event_tx.clone(), gosuto_config, picker);
 
     // Shared Matrix client
     let matrix_client: Arc<Mutex<Option<matrix_sdk::Client>>> = Arc::new(Mutex::new(None));
@@ -199,9 +211,9 @@ async fn main() -> Result<()> {
 
                         // Fetch messages and members when room changes
                         if prev_room != new_room {
-                            // Clear stale members immediately so guards
-                            // don't use the previous room's member list.
+                            // Clear stale members and image cache immediately
                             app.members_list.clear();
+                            app.image_cache.clear();
 
                             if let Some(ref room_id) = new_room {
                                 // Fetch messages
@@ -873,7 +885,7 @@ async fn main() -> Result<()> {
                     .tick(dt, &ui::call_overlay::CallDisplayState::Ringing);
             }
 
-            tui.draw(|frame| ui::render(&app, frame))?;
+            tui.draw(|frame| ui::render(&mut app, frame))?;
         }
 
         if !app.running {

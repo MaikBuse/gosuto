@@ -140,10 +140,13 @@ impl EffectsState {
 }
 
 /// Composite effect buffer behind the UI: replace "transparent" UI cells with effect cells.
+/// Cells with `skip=true` (used by ratatui-image for iTerm2/Sixel/Kitty protocols) are
+/// never overwritten, so the terminal's image overlay is preserved.
 pub fn composite(frame_buf: &mut Buffer, effect_buf: &Buffer, area: Rect) {
     for y in area.y..area.y + area.height {
         for x in area.x..area.x + area.width {
-            if is_transparent_cell(&frame_buf[(x, y)]) {
+            let cell = &frame_buf[(x, y)];
+            if !cell.skip && is_transparent_cell(cell) {
                 frame_buf[(x, y)] = effect_buf[(x, y)].clone();
             }
         }
