@@ -187,13 +187,13 @@ impl CallManager {
             };
 
         // 3b. Send rtc.notification so other clients ring (MSC4075)
-        if let Some(ref event_id) = call_member_event_id {
-            if let Err(e) = matrixrtc::send_call_notify(&client, &room_id, event_id).await {
-                warn!(
-                    "Failed to send call notification (ringing may not work on other clients): {:#}",
-                    e
-                );
-            }
+        if let Some(ref event_id) = call_member_event_id
+            && let Err(e) = matrixrtc::send_call_notify(&client, &room_id, event_id).await
+        {
+            warn!(
+                "Failed to send call notification (ringing may not work on other clients): {:#}",
+                e
+            );
         }
 
         // 4. Get LiveKit credentials (JWT) — SFU can now see the call member event

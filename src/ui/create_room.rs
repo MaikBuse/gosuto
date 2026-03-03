@@ -47,16 +47,7 @@ pub fn render(state: &CreateRoomState, icons: &Icons, frame: &mut Frame) {
 
     // ── Field 0: NAME (editable) ──
     let name_selected = state.selected_field == 0;
-    render_field_label(
-        buf,
-        &bounds,
-        left,
-        label_x,
-        row,
-        "NAME",
-        name_selected,
-        icons,
-    );
+    render_field_label(buf, left, label_x, row, "NAME", name_selected, icons);
 
     let max_name_w = (right - value_x) as usize;
     if state.editing_name {
@@ -88,16 +79,7 @@ pub fn render(state: &CreateRoomState, icons: &Icons, frame: &mut Frame) {
 
     // ── Field 1: TOPIC (editable) ──
     let topic_selected = state.selected_field == 1;
-    render_field_label(
-        buf,
-        &bounds,
-        left,
-        label_x,
-        row,
-        "TOPIC",
-        topic_selected,
-        icons,
-    );
+    render_field_label(buf, left, label_x, row, "TOPIC", topic_selected, icons);
 
     let max_topic_w = (right - value_x) as usize;
     if state.editing_topic {
@@ -129,16 +111,7 @@ pub fn render(state: &CreateRoomState, icons: &Icons, frame: &mut Frame) {
 
     // ── Field 2: HISTORY (cycle selector) ──
     let hist_selected = state.selected_field == 2;
-    render_field_label(
-        buf,
-        &bounds,
-        left,
-        label_x,
-        row,
-        "HISTORY",
-        hist_selected,
-        icons,
-    );
+    render_field_label(buf, left, label_x, row, "HISTORY", hist_selected, icons);
 
     let arrow_color = if hist_selected {
         theme::CYAN
@@ -186,16 +159,7 @@ pub fn render(state: &CreateRoomState, icons: &Icons, frame: &mut Frame) {
 
     // ── Field 3: ENCRYPTED (toggle) ──
     let enc_selected = state.selected_field == 3;
-    render_field_label(
-        buf,
-        &bounds,
-        left,
-        label_x,
-        row,
-        "ENCRYPTED",
-        enc_selected,
-        icons,
-    );
+    render_field_label(buf, left, label_x, row, "ENCRYPTED", enc_selected, icons);
 
     let enc_arrow_color = if enc_selected {
         theme::CYAN
@@ -300,7 +264,6 @@ pub fn render(state: &CreateRoomState, icons: &Icons, frame: &mut Frame) {
 
 fn render_field_label(
     buf: &mut Buffer,
-    bounds: &Rect,
     left: u16,
     label_x: u16,
     row: u16,
@@ -308,6 +271,7 @@ fn render_field_label(
     selected: bool,
     icons: &Icons,
 ) {
+    let bounds = *buf.area();
     let marker_color = if selected { theme::CYAN } else { theme::DIM };
     let label_color = if selected { theme::CYAN } else { theme::TEXT };
     let marker = if selected {
@@ -326,16 +290,16 @@ fn render_field_label(
             Modifier::empty()
         });
 
-    write_str(buf, bounds, left, row, marker, marker_s);
+    write_str(buf, &bounds, left, row, marker, marker_s);
     set_cell(
         buf,
-        bounds,
+        &bounds,
         left + 1,
         row,
         ' ',
         Style::default().bg(theme::BG),
     );
-    write_str(buf, bounds, label_x, row, label, label_s);
+    write_str(buf, &bounds, label_x, row, label, label_s);
 }
 
 fn truncate_str(s: &str, max: usize) -> String {

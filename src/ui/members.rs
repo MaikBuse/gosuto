@@ -11,7 +11,7 @@ use crate::ui::icons::Icons;
 use crate::ui::theme;
 
 /// IRC-style power level prefix
-fn power_prefix<'a>(power_level: i64, icons: &'a Icons) -> &'a str {
+fn power_prefix(power_level: i64, icons: &Icons) -> &str {
     match power_level {
         100 => icons.power_owner,
         75..=99 => icons.power_admin,

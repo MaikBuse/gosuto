@@ -280,7 +280,7 @@ pub async fn ensure_call_member_permissions(client: &Client, room_id: &OwnedRoom
     let required_pl = call_member_pl.unwrap_or(state_default);
 
     // Check if m.call.member is already explicitly set to PL <= 0
-    let already_open = call_member_pl.map_or(false, |pl| pl <= 0);
+    let already_open = call_member_pl.is_some_and(|pl| pl <= 0);
 
     if already_open && user_pl >= required_pl {
         debug!(

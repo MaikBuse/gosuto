@@ -47,7 +47,7 @@ pub fn render(state: &AudioSettingsState, icons: &Icons, frame: &mut Frame) {
 
     for (vis_idx, &field_id) in visible.iter().enumerate() {
         let selected = vis_idx == state.selected_field;
-        render_field(buf, left, right, row, field_id, state, selected, icons);
+        render_field(buf, (left, right), row, field_id, state, selected, icons);
         row += 1;
 
         // Add a blank row after output device and output volume for visual grouping
@@ -76,14 +76,14 @@ pub fn render(state: &AudioSettingsState, icons: &Icons, frame: &mut Frame) {
 
 fn render_field(
     buf: &mut Buffer,
-    left: u16,
-    right: u16,
+    cols: (u16, u16),
     row: u16,
     field_id: usize,
     state: &AudioSettingsState,
     selected: bool,
     icons: &Icons,
 ) {
+    let (left, right) = cols;
     let bounds = *buf.area();
     let marker_color = if selected { theme::CYAN } else { theme::DIM };
     let label_color = if selected { theme::CYAN } else { theme::TEXT };
@@ -124,7 +124,7 @@ fn render_field(
                 .get(state.input_device_idx)
                 .map(|s| s.as_str())
                 .unwrap_or("Default");
-            render_device_selector(buf, &bounds, value_x, right, row, name, selected, icons);
+            render_device_selector(buf, value_x, right, row, name, selected, icons);
         }
         1 => {
             write_str(buf, &bounds, label_x, row, "OUTPUT DEVICE", label_s);
@@ -133,7 +133,7 @@ fn render_field(
                 .get(state.output_device_idx)
                 .map(|s| s.as_str())
                 .unwrap_or("Default");
-            render_device_selector(buf, &bounds, value_x, right, row, name, selected, icons);
+            render_device_selector(buf, value_x, right, row, name, selected, icons);
         }
         2 => {
             write_str(buf, &bounds, label_x, row, "INPUT VOLUME", label_s);
@@ -180,7 +180,6 @@ fn render_field(
 
 fn render_device_selector(
     buf: &mut Buffer,
-    bounds: &Rect,
     x: u16,
     right: u16,
     row: u16,
@@ -188,14 +187,15 @@ fn render_device_selector(
     selected: bool,
     icons: &Icons,
 ) {
+    let bounds = *buf.area();
     let arrow_color = if selected { theme::CYAN } else { theme::DIM };
     let name_color = if selected { theme::TEXT } else { theme::DIM };
 
     let arrow_s = Style::default().fg(arrow_color).bg(theme::BG);
     let name_s = Style::default().fg(name_color).bg(theme::BG);
 
-    write_str(buf, bounds, x, row, icons.arrow_left, arrow_s);
-    set_cell(buf, bounds, x + 1, row, ' ', Style::default().bg(theme::BG));
+    write_str(buf, &bounds, x, row, icons.arrow_left, arrow_s);
+    set_cell(buf, &bounds, x + 1, row, ' ', Style::default().bg(theme::BG));
 
     // Truncate name to fit
     let max_name_w = (right.saturating_sub(x + 4)) as usize;
@@ -204,11 +204,11 @@ fn render_device_selector(
     } else {
         name.to_string()
     };
-    write_str(buf, bounds, x + 2, row, &display, name_s);
+    write_str(buf, &bounds, x + 2, row, &display, name_s);
 
     let end_x = x + 2 + display.chars().count() as u16;
-    set_cell(buf, bounds, end_x, row, ' ', Style::default().bg(theme::BG));
-    write_str(buf, bounds, end_x + 1, row, icons.arrow_right, arrow_s);
+    set_cell(buf, &bounds, end_x, row, ' ', Style::default().bg(theme::BG));
+    write_str(buf, &bounds, end_x + 1, row, icons.arrow_right, arrow_s);
 }
 
 fn render_volume_bar(

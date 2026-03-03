@@ -186,7 +186,7 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
                     .bg(theme::BG)
                     .add_modifier(Modifier::BOLD);
                 let text = format!(" {} ", label);
-                write_str_clipped(buf, &bounds, inner.x + 1, y, &text, style, &inner, true);
+                write_str_clipped(buf, inner.x + 1, y, &text, style, &inner, true);
                 // Fill remaining with ─
                 let line_style = Style::default().fg(theme::DIM).bg(theme::BG);
                 let text_end = inner.x + 1 + text.len() as u16;
@@ -237,7 +237,6 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
                 };
                 write_str_clipped(
                     buf,
-                    &bounds,
                     inner.x + 1,
                     y,
                     &label,
@@ -251,7 +250,7 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
                     let badge = format!("({})", unread_count);
                     let badge_x = inner.x + inner.width - badge.len() as u16 - 1;
                     let badge_style = Style::default().fg(theme::CYAN).bg(theme::BG);
-                    write_str_clipped(buf, &bounds, badge_x, y, &badge, badge_style, &inner, false);
+                    write_str_clipped(buf, badge_x, y, &badge, badge_style, &inner, false);
                 }
             }
             DisplayRow::Room { room_index, indent } => {
@@ -289,7 +288,6 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
                     };
                     write_str_clipped(
                         buf,
-                        &bounds,
                         inner.x + indent_px + 1,
                         y,
                         &label,
@@ -305,7 +303,6 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
                         let badge_style = Style::default().fg(theme::CYAN).bg(theme::BG);
                         write_str_clipped(
                             buf,
-                            &bounds,
                             badge_x,
                             y,
                             &badge,
@@ -319,7 +316,7 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
             DisplayRow::CallParticipant { display_name } => {
                 let label = format!("    > {}", display_name);
                 let style = Style::default().fg(theme::GREEN).bg(theme::BG);
-                write_str_clipped(buf, &bounds, inner.x + 1, y, &label, style, &inner, true);
+                write_str_clipped(buf, inner.x + 1, y, &label, style, &inner, true);
             }
         }
     }
@@ -488,7 +485,6 @@ pub fn render_tooltip(app: &App, frame: &mut Frame, room_list_area: Rect) {
     let text_clip = Rect::new(tooltip_x + 1, mid_y, box_width.saturating_sub(2), 1);
     write_str_clipped(
         buf,
-        &bounds,
         tooltip_x + 2,
         mid_y,
         &label,
@@ -524,7 +520,6 @@ fn set_cell_if(buf: &mut Buffer, bounds: &Rect, x: u16, y: u16, ch: char, style:
 
 fn write_str_clipped(
     buf: &mut Buffer,
-    bounds: &Rect,
     x: u16,
     y: u16,
     text: &str,
@@ -532,6 +527,7 @@ fn write_str_clipped(
     clip: &Rect,
     ellipsis: bool,
 ) -> bool {
+    let bounds = *buf.area();
     let clip_end = clip.x + clip.width;
     let char_count = text.chars().count() as u16;
     let truncated = x + char_count > clip_end;

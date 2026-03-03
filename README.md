@@ -9,11 +9,11 @@
 
 **Gōsuto** (ゴースト) — _ghost_ — a cyberpunk terminal Matrix client with vim motions.
 
-## ═════════ why
+## ═══ why
 
 I switched from Discord to Matrix and couldn't find a native terminal client that did voice calls with push-to-talk. Element is Electron — 800MB of RAM to sit idle. I spend most of my day in a terminal anyway. So I built what I actually wanted: a single Rust binary that handles chat, E2EE, and voice without a browser engine underneath.
 
-## ═════════ what it does
+## ═══ what it does
 
 - Vim-first navigation — Normal, Insert, Command modes
 - Encrypted chat — rooms, spaces, DMs, full E2EE with automatic key forwarding
@@ -21,7 +21,7 @@ I switched from Discord to Matrix and couldn't find a native terminal client tha
 - Room management — create, join, leave, view member lists and power levels
 - Visual effects — matrix rain, glitch, text reveal animations (all togglable)
 
-## ═════════ install
+## ═══ install
 
 Pre-built binaries for **Linux** and **Windows** are available on the [releases page](https://github.com/maikbuse/gosuto/releases).
 
@@ -58,11 +58,22 @@ cargo build --release
 
 Run `gosuto` and log in with your Matrix homeserver, username, and password.
 
-## ═════════ finding your way around
+## ═══ supported terminals
 
-Gosuto has a which-key popup — press a key in normal mode and it shows you what's available. Command mode (`:`) has tab completion and suggestions. Between those two, you shouldn't need to memorize anything from a README.
+Gosuto works on any modern terminal emulator. Terminals that support the [Kitty keyboard protocol](https://sw.kovidgoyal.net/kitty/keyboard-protocol/) get full push-to-talk support (hold a key to talk, release to mute).
 
-## ═════════ config
+| Tier | Terminals | PTT key hold |
+|------|-----------|--------------|
+| Full support | Kitty, WezTerm, Ghostty, Foot | Yes |
+| Basic support | Alacritty, GNOME Terminal, Windows Terminal, and others | No — use toggle instead |
+
+Terminal multiplexers (tmux, screen) strip the Kitty protocol, so PTT key hold won't work inside them even if the outer terminal supports it.
+
+## ═══ finding your way around
+
+Gosuto has a which-key popup — press a key (e.g. the spacebar) in normal mode and it shows you what's available. Command mode (`:`) has tab completion and suggestions. Between those two, you shouldn't need to memorize anything from a README.
+
+## ═══ config
 
 Configuration is stored in `config.toml` inside the platform config directory:
 
@@ -73,7 +84,7 @@ Configuration is stored in `config.toml` inside the platform config directory:
 
 A default config file is created on first launch. Edit it to change network, audio, UI, and visual effect settings.
 
-## ═════════ data
+## ═══ data
 
 Session and runtime data live in the platform data directory:
 
@@ -98,7 +109,7 @@ GOSUTO_LOG=debug gosuto                        # Linux
 $env:GOSUTO_LOG="debug"; .\gosuto.exe          # Windows (PowerShell)
 ```
 
-## ═════════ license
+## ═══ license
 
 Licensed under either of
 
