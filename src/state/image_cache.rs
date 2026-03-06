@@ -5,6 +5,9 @@ use ratatui_image::protocol::StatefulProtocol;
 
 pub struct CachedImage {
     pub protocol: Option<StatefulProtocol>,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+    pub last_encoded_rect: Option<ratatui::layout::Rect>,
 }
 
 impl fmt::Debug for CachedImage {

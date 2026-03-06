@@ -8,6 +8,8 @@ use tracing::error;
 
 use ratatui_image::protocol::StatefulProtocol;
 
+pub type ImageDecodeResult = (String, Result<(StatefulProtocol, u32, u32), String>);
+
 use crate::config::GosutoConfig;
 use crate::event::{AppEvent, EventSender};
 use crate::input::{self, CommandAction, FocusPanel, InputResult, VimState};
@@ -261,9 +263,7 @@ pub struct App {
     // Inline images
     pub picker: ratatui_image::picker::Picker,
     pub image_cache: ImageCache,
-    pub image_decode_tx: std::sync::mpsc::Sender<(String, Result<StatefulProtocol, String>)>,
-    pub encode_tx:
-        tokio::sync::mpsc::UnboundedSender<(String, StatefulProtocol, ratatui::layout::Rect)>,
+    pub image_decode_tx: std::sync::mpsc::Sender<ImageDecodeResult>,
 }
 
 impl App {
@@ -271,12 +271,7 @@ impl App {
         event_tx: EventSender,
         config: GosutoConfig,
         picker: ratatui_image::picker::Picker,
-        image_decode_tx: std::sync::mpsc::Sender<(String, Result<StatefulProtocol, String>)>,
-        encode_tx: tokio::sync::mpsc::UnboundedSender<(
-            String,
-            StatefulProtocol,
-            ratatui::layout::Rect,
-        )>,
+        image_decode_tx: std::sync::mpsc::Sender<ImageDecodeResult>,
     ) -> Self {
         let rain_enabled = config.effects.rain;
         let glitch_enabled = config.effects.glitch;
@@ -343,7 +338,6 @@ impl App {
             picker,
             image_cache: ImageCache::new(),
             image_decode_tx,
-            encode_tx,
         }
     }
 
@@ -792,7 +786,10 @@ impl App {
                 let tx = self.image_decode_tx.clone();
                 tokio::task::spawn_blocking(move || {
                     let result = image::load_from_memory(&image_data)
-                        .map(|img| picker.new_resize_protocol(img))
+                        .map(|img| {
+                            let (w, h) = (img.width(), img.height());
+                            (picker.new_resize_protocol(img), w, h)
+                        })
                         .map_err(|e| e.to_string());
                     let _ = tx.send((event_id, result));
                 });

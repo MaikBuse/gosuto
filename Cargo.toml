@@ -10,7 +10,7 @@ homepage = "https://github.com/MaikBuse/gosuto"
 readme = "README.md"
 keywords = ["matrix", "tui", "chat", "terminal", "vim"]
 categories = ["command-line-utilities"]
-rust-version = "1.85"
+rust-version = "1.87"
 
 [dependencies]
 # TUI
@@ -24,10 +24,10 @@ futures = "0.3"
 
 # Matrix
 matrix-sdk = { version = "0.16", default-features = false, features = [
-    "e2e-encryption",
-    "automatic-room-key-forwarding",
-    "bundled-sqlite",
-    "rustls-tls",
+  "e2e-encryption",
+  "automatic-room-key-forwarding",
+  "bundled-sqlite",
+  "rustls-tls",
 ] }
 
 # Serialization
@@ -40,7 +40,10 @@ livekit = { version = "0.7", features = ["rustls-tls-native-roots"] }
 cpal = "0.17"
 rubato = "0.16"
 uuid = { version = "1", features = ["v4"] }
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+reqwest = { version = "0.12", default-features = false, features = [
+  "rustls-tls",
+  "json",
+] }
 
 # Crypto
 getrandom = "0.2"
@@ -60,5 +63,7 @@ base64 = "0.22"
 arboard = "3"
 
 # Inline images
-ratatui-image = { version = "10", default-features = false, features = ["crossterm"] }
+ratatui-image = { version = "10", default-features = false, features = [
+  "crossterm",
+] }
 image = "0.25"

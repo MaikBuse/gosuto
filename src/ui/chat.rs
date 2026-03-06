@@ -321,43 +321,37 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
                     let img_height = (*image_rows - img_clip).min(img_available);
 
                     if img_height > 0 {
+                        let default_w = max_img_cols.min(sub_rect.width.saturating_sub(6));
+                        let img_w = if let Some(cached) = app.image_cache.get_mut(event_id) {
+                            if let (Some(w), Some(h)) = (cached.width, cached.height) {
+                                // Each row = 2 pixels (halfblocks)
+                                let pixel_h = img_height as f64 * 2.0;
+                                let aspect = w as f64 / h as f64;
+                                let cols = (pixel_h * aspect).round() as u16;
+                                cols.min(default_w)
+                            } else {
+                                default_w
+                            }
+                        } else {
+                            default_w
+                        };
+
                         let img_rect = Rect {
                             x: sub_rect.x + 6, // indent past timestamp
                             y: img_render_y,
-                            width: max_img_cols.min(sub_rect.width.saturating_sub(6)),
+                            width: img_w,
                             height: img_height,
                         };
 
                         if *loaded {
                             if let Some(cached) = app.image_cache.get_mut(event_id) {
                                 if let Some(ref mut protocol) = cached.protocol {
-                                    let resize = ratatui_image::Resize::Fit(None);
-                                    if let Some(encode_rect) =
-                                        protocol.needs_resize(&resize, img_rect)
-                                    {
-                                        // Take protocol out for background encoding
-                                        let taken = cached.protocol.take().unwrap();
-                                        let _ = app.encode_tx.send((
-                                            event_id.to_string(),
-                                            taken,
-                                            encode_rect,
-                                        ));
-                                        let p = Paragraph::new(Line::from(Span::styled(
-                                            "[loading image...]",
-                                            theme::dim_style(),
-                                        )));
-                                        frame.render_widget(p, img_rect);
-                                    } else {
-                                        // Already encoded — cheap render
-                                        protocol.render(img_rect, frame.buffer_mut());
+                                    if cached.last_encoded_rect != Some(img_rect) {
+                                        let resize = ratatui_image::Resize::Fit(None);
+                                        protocol.resize_encode(&resize, img_rect);
+                                        cached.last_encoded_rect = Some(img_rect);
                                     }
-                                } else {
-                                    // Protocol is out for encoding
-                                    let p = Paragraph::new(Line::from(Span::styled(
-                                        "[loading image...]",
-                                        theme::dim_style(),
-                                    )));
-                                    frame.render_widget(p, img_rect);
+                                    protocol.render(img_rect, frame.buffer_mut());
                                 }
                             }
                         } else if *failed {
