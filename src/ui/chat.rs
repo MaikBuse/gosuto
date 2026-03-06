@@ -344,15 +344,15 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
                         };
 
                         if *loaded {
-                            if let Some(cached) = app.image_cache.get_mut(event_id) {
-                                if let Some(ref mut protocol) = cached.protocol {
-                                    if cached.last_encoded_rect != Some(img_rect) {
-                                        let resize = ratatui_image::Resize::Fit(None);
-                                        protocol.resize_encode(&resize, img_rect);
-                                        cached.last_encoded_rect = Some(img_rect);
-                                    }
-                                    protocol.render(img_rect, frame.buffer_mut());
+                            if let Some(cached) = app.image_cache.get_mut(event_id)
+                                && let Some(ref mut protocol) = cached.protocol
+                            {
+                                if cached.last_encoded_rect != Some(img_rect) {
+                                    let resize = ratatui_image::Resize::Fit(None);
+                                    protocol.resize_encode(&resize, img_rect);
+                                    cached.last_encoded_rect = Some(img_rect);
                                 }
+                                protocol.render(img_rect, frame.buffer_mut());
                             }
                         } else if *failed {
                             let placeholder = Paragraph::new(Line::from(Span::styled(

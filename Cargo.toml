@@ -10,7 +10,7 @@ homepage = "https://github.com/MaikBuse/gosuto"
 readme = "README.md"
 keywords = ["matrix", "tui", "chat", "terminal", "vim"]
 categories = ["command-line-utilities"]
-rust-version = "1.87"
+rust-version = "1.91"
 
 [dependencies]
 # TUI
