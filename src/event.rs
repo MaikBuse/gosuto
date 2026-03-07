@@ -105,6 +105,7 @@ pub enum AppEvent {
     UserConfigLoaded {
         display_name: Option<String>,
         verified: bool,
+        recovery_enabled: bool,
     },
     UserConfigUpdated,
     UserConfigError(String),

@@ -214,6 +214,23 @@ pub fn render(state: &UserConfigState, icons: &Icons, frame: &mut Frame) {
             Style::default().fg(theme::DIM).bg(theme::BG),
         );
     }
+    row += 1;
+
+    // ── RECOVERY (read-only) ──
+    write_str(buf, &bounds, label_x, row, "RECOVERY", label_s);
+    let (rec_text, rec_color) = if state.recovery_enabled {
+        ("enabled", theme::GREEN)
+    } else {
+        ("not set up", Color::Rgb(200, 60, 60))
+    };
+    write_str(
+        buf,
+        &bounds,
+        value_x,
+        row,
+        rec_text,
+        Style::default().fg(rec_color).bg(theme::BG),
+    );
 
     // Show saving indicator
     if state.saving {

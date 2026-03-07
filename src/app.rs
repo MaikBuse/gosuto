@@ -164,6 +164,7 @@ pub struct UserConfigState {
     pub display_name_buffer: String,
     pub editing_display_name: bool,
     pub verified: bool,
+    pub recovery_enabled: bool,
     pub selected_field: usize, // 0=display name, 1=verified
     pub loading: bool,
     pub saving: bool,
@@ -180,6 +181,7 @@ impl UserConfigState {
             display_name_buffer: String::new(),
             editing_display_name: false,
             verified: false,
+            recovery_enabled: false,
             selected_field: 0,
             loading: false,
             saving: false,
@@ -264,6 +266,7 @@ pub struct App {
     pub picker: ratatui_image::picker::Picker,
     pub image_cache: ImageCache,
     pub image_decode_tx: std::sync::mpsc::Sender<ImageDecodeResult>,
+    pub demo_mode: bool,
 }
 
 impl App {
@@ -338,6 +341,7 @@ impl App {
             picker,
             image_cache: ImageCache::new(),
             image_decode_tx,
+            demo_mode: false,
         }
     }
 
@@ -540,6 +544,9 @@ impl App {
                 self.sync_status = status;
             }
             AppEvent::SyncTokenUpdated(token) => {
+                if self.sync_token.is_none() {
+                    self.pending_user_config = true;
+                }
                 self.sync_token = Some(token);
             }
             // VoIP events (MatrixRTC)
@@ -665,10 +672,18 @@ impl App {
             AppEvent::UserConfigLoaded {
                 display_name,
                 verified,
+                recovery_enabled,
             } => {
+                if verified {
+                    self.self_verified = true;
+                }
+                if recovery_enabled {
+                    self.recovery_enabled = true;
+                }
                 if self.user_config.open {
                     self.user_config.display_name = display_name;
                     self.user_config.verified = verified || self.self_verified;
+                    self.user_config.recovery_enabled = recovery_enabled || self.recovery_enabled;
                     self.user_config.loading = false;
                 }
             }
@@ -755,6 +770,7 @@ impl App {
                 self.recovery_enabled = true;
                 self.self_verified = true;
                 self.user_config.verified = true;
+                self.user_config.recovery_enabled = true;
             }
             AppEvent::RecoveryRecovered => {
                 if let Some(ref mut modal) = self.recovery_modal {
@@ -763,6 +779,7 @@ impl App {
                 self.recovery_enabled = true;
                 self.self_verified = true;
                 self.user_config.verified = true;
+                self.user_config.recovery_enabled = true;
                 self.pending_refetch = true;
             }
             AppEvent::RecoveryError(err) => {
@@ -1171,6 +1188,7 @@ impl App {
                         display_name_buffer: String::new(),
                         editing_display_name: false,
                         verified: self.self_verified,
+                        recovery_enabled: self.recovery_enabled,
                         selected_field: 0,
                         loading: true,
                         saving: false,
@@ -2226,5 +2244,120 @@ fn key_event_name(key: &KeyEvent) -> String {
             .to_string()
         }
         _ => format!("{:?}", key.code),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::GosutoConfig;
+    use crate::event::AppEvent;
+
+    fn test_app() -> App {
+        let (event_tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let config = GosutoConfig::default();
+        let picker = ratatui_image::picker::Picker::halfblocks();
+        let (image_decode_tx, _image_decode_rx) = std::sync::mpsc::channel();
+        App::new(event_tx, config, picker, image_decode_tx)
+    }
+
+    #[test]
+    fn user_config_loaded_sets_self_verified_when_modal_closed() {
+        let mut app = test_app();
+        assert!(!app.self_verified);
+        assert!(!app.user_config.open);
+
+        app.handle_event(AppEvent::UserConfigLoaded {
+            display_name: None,
+            verified: true,
+            recovery_enabled: false,
+        });
+
+        assert!(app.self_verified);
+        // Modal was closed, so loading state should be unchanged
+        assert!(!app.user_config.loading);
+    }
+
+    #[test]
+    fn user_config_loaded_sets_modal_verified_when_open() {
+        let mut app = test_app();
+        app.user_config.open = true;
+        app.user_config.loading = true;
+
+        app.handle_event(AppEvent::UserConfigLoaded {
+            display_name: Some("Alice".to_string()),
+            verified: true,
+            recovery_enabled: false,
+        });
+
+        assert!(app.self_verified);
+        assert!(app.user_config.verified);
+        assert!(!app.user_config.loading);
+        assert_eq!(app.user_config.display_name, Some("Alice".to_string()));
+    }
+
+    #[test]
+    fn first_sync_token_triggers_user_config_fetch() {
+        let mut app = test_app();
+        assert!(app.sync_token.is_none());
+
+        app.handle_event(AppEvent::SyncTokenUpdated("tok1".to_string()));
+
+        assert!(app.pending_user_config);
+        assert_eq!(app.sync_token, Some("tok1".to_string()));
+    }
+
+    #[test]
+    fn subsequent_sync_token_does_not_trigger_fetch() {
+        let mut app = test_app();
+        app.sync_token = Some("tok1".to_string());
+        app.pending_user_config = false;
+
+        app.handle_event(AppEvent::SyncTokenUpdated("tok2".to_string()));
+
+        assert!(!app.pending_user_config);
+        assert_eq!(app.sync_token, Some("tok2".to_string()));
+    }
+
+    #[test]
+    fn full_restart_flow_sets_verified_before_modal_open() {
+        let mut app = test_app();
+        assert!(!app.self_verified);
+        assert!(app.sync_token.is_none());
+
+        // First sync triggers pending fetch
+        app.handle_event(AppEvent::SyncTokenUpdated("tok1".to_string()));
+        assert!(app.pending_user_config);
+
+        // Main loop consumes the flag
+        app.pending_user_config = false;
+
+        // SDK responds with verified=true
+        app.handle_event(AppEvent::UserConfigLoaded {
+            display_name: Some("Bob".to_string()),
+            verified: true,
+            recovery_enabled: false,
+        });
+        assert!(app.self_verified);
+
+        // User opens :configure — verified should propagate from self_verified
+        app.user_config = UserConfigState {
+            open: true,
+            verified: app.self_verified,
+            loading: true,
+            ..UserConfigState::new()
+        };
+        assert!(app.user_config.verified);
+    }
+
+    #[test]
+    fn logout_resets_self_verified() {
+        let mut app = test_app();
+        app.self_verified = true;
+        app.auto_login_attempted = true; // prevent auto-login side effects
+
+        app.handle_event(AppEvent::LoggedOut);
+
+        assert!(!app.self_verified);
     }
 }
