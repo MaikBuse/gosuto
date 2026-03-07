@@ -270,6 +270,54 @@ pub fn handle_command(key: KeyEvent, vim: &mut VimState) -> InputResult {
     }
 }
 
+fn parse_command(input: &str) -> InputResult {
+    let input = input.trim();
+    let mut parts = input.splitn(2, ' ');
+    let cmd = parts.next().unwrap_or("");
+    let arg = parts.next().unwrap_or("").trim();
+
+    match cmd {
+        "q" | "quit" => InputResult::Command(CommandAction::Quit),
+        "join" => {
+            if arg.is_empty() {
+                InputResult::None
+            } else {
+                InputResult::Command(CommandAction::Join(arg.to_string()))
+            }
+        }
+        "leave" => InputResult::Command(CommandAction::Leave),
+        "dm" => {
+            if arg.is_empty() {
+                InputResult::None
+            } else {
+                InputResult::Command(CommandAction::DirectMessage(arg.to_string()))
+            }
+        }
+        "logout" => InputResult::Command(CommandAction::Logout),
+        "call" => InputResult::Command(CommandAction::Call),
+        "answer" | "accept" => InputResult::Command(CommandAction::Answer),
+        "reject" | "decline" => InputResult::Command(CommandAction::Reject),
+        "hangup" | "end" => InputResult::Command(CommandAction::Hangup),
+        "rain" | "matrix" | "effects" => InputResult::Command(CommandAction::Rain),
+        "glitch" => InputResult::Command(CommandAction::Glitch),
+        "audio" | "sound" => InputResult::Command(CommandAction::AudioSettings),
+        "create" | "new" => InputResult::Command(CommandAction::CreateRoom),
+        "edit" | "roominfo" => InputResult::Command(CommandAction::RoomInfo),
+        "configure" | "config" | "profile" => InputResult::Command(CommandAction::Configure),
+        "verify" => {
+            let target = if arg.is_empty() {
+                None
+            } else {
+                Some(arg.to_string())
+            };
+            InputResult::Command(CommandAction::Verify(target))
+        }
+        "recovery" | "backup" => InputResult::Command(CommandAction::Recovery),
+        "nerdfonts" | "nerd" | "icons" => InputResult::Command(CommandAction::NerdFonts),
+        _ => InputResult::None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -589,53 +637,5 @@ mod tests {
         let result = handle_command(key(KeyCode::Enter), &mut vim);
         assert!(matches!(result, InputResult::Command(CommandAction::Quit)));
         assert_eq!(vim.mode, VimMode::Normal);
-    }
-}
-
-fn parse_command(input: &str) -> InputResult {
-    let input = input.trim();
-    let mut parts = input.splitn(2, ' ');
-    let cmd = parts.next().unwrap_or("");
-    let arg = parts.next().unwrap_or("").trim();
-
-    match cmd {
-        "q" | "quit" => InputResult::Command(CommandAction::Quit),
-        "join" => {
-            if arg.is_empty() {
-                InputResult::None
-            } else {
-                InputResult::Command(CommandAction::Join(arg.to_string()))
-            }
-        }
-        "leave" => InputResult::Command(CommandAction::Leave),
-        "dm" => {
-            if arg.is_empty() {
-                InputResult::None
-            } else {
-                InputResult::Command(CommandAction::DirectMessage(arg.to_string()))
-            }
-        }
-        "logout" => InputResult::Command(CommandAction::Logout),
-        "call" => InputResult::Command(CommandAction::Call),
-        "answer" | "accept" => InputResult::Command(CommandAction::Answer),
-        "reject" | "decline" => InputResult::Command(CommandAction::Reject),
-        "hangup" | "end" => InputResult::Command(CommandAction::Hangup),
-        "rain" | "matrix" | "effects" => InputResult::Command(CommandAction::Rain),
-        "glitch" => InputResult::Command(CommandAction::Glitch),
-        "audio" | "sound" => InputResult::Command(CommandAction::AudioSettings),
-        "create" | "new" => InputResult::Command(CommandAction::CreateRoom),
-        "edit" | "roominfo" => InputResult::Command(CommandAction::RoomInfo),
-        "configure" | "config" | "profile" => InputResult::Command(CommandAction::Configure),
-        "verify" => {
-            let target = if arg.is_empty() {
-                None
-            } else {
-                Some(arg.to_string())
-            };
-            InputResult::Command(CommandAction::Verify(target))
-        }
-        "recovery" | "backup" => InputResult::Command(CommandAction::Recovery),
-        "nerdfonts" | "nerd" | "icons" => InputResult::Command(CommandAction::NerdFonts),
-        _ => InputResult::None,
     }
 }
