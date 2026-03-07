@@ -10,6 +10,7 @@ pub mod input_bar;
 pub mod layout;
 pub mod login;
 pub mod members;
+pub mod recovery_modal;
 pub mod room_info;
 pub mod room_list;
 pub mod status_bar;
@@ -130,6 +131,11 @@ pub fn render(app: &mut App, frame: &mut Frame) {
     // User config modal overlay
     if app.user_config.open {
         configure::render(&app.user_config, icons, frame);
+    }
+
+    // Recovery modal
+    if let Some(ref state) = app.recovery {
+        recovery_modal::render(state, frame);
     }
 
     // Which-key leader popup

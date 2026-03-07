@@ -1,8 +1,31 @@
+use std::sync::{Arc, Mutex};
+
 use crossterm::event::KeyEvent;
 use tokio::sync::mpsc;
 
 use crate::state::{DisplayMessage, RoomMember, RoomSummary};
 use crate::voip::CallState;
+
+/// A oneshot sender wrapped so `AppEvent` can derive `Clone` + `Debug`.
+/// The first consumer calls `.take()` to extract the real sender.
+#[derive(Clone)]
+pub struct PasswordSender(pub Arc<Mutex<Option<tokio::sync::oneshot::Sender<String>>>>);
+
+impl PasswordSender {
+    pub fn new(tx: tokio::sync::oneshot::Sender<String>) -> Self {
+        Self(Arc::new(Mutex::new(Some(tx))))
+    }
+
+    pub fn take(&self) -> Option<tokio::sync::oneshot::Sender<String>> {
+        self.0.lock().ok()?.take()
+    }
+}
+
+impl std::fmt::Debug for PasswordSender {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("PasswordSender(..)")
+    }
+}
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -110,6 +133,13 @@ pub enum AppEvent {
     // Audio settings events
     MicLevel(f32),
     KeyRelease(KeyEvent),
+    // Recovery events
+    RecoveryStateChecked(crate::app::RecoveryStage),
+    RecoveryKeyReady(String),
+    RecoveryHealingProgress(crate::app::HealingStep),
+    RecoveryRecovered,
+    RecoveryNeedPassword(PasswordSender),
+    RecoveryError(String),
     // Image events
     ImageLoaded {
         event_id: String,

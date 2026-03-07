@@ -443,6 +443,10 @@ async fn main() -> Result<()> {
                             app.pending_set_room_topic.take();
                             app.pending_set_room_name.take();
                             app.pending_enable_encryption.take();
+                            if app.pending_recovery.take().is_some() {
+                                app.last_error = Some("Not available in demo mode".to_string());
+                                app.recovery = None;
+                            }
                         } else {
                         // Handle pending DM
                         if let Some(user_id_str) = app.take_pending_dm() {
@@ -674,6 +678,91 @@ async fn main() -> Result<()> {
                                     matrix::rooms::enable_encryption(&client, &room_id, &tx).await;
                                 }
                             });
+                        }
+
+                        // Handle recovery actions
+                        if let Some(action) = app.pending_recovery.take() {
+                            use app::RecoveryAction;
+                            match action {
+                                RecoveryAction::SubmitPassword(password) => {
+                                    if let Some(ref mut modal) = app.recovery
+                                        && let Some(tx) = modal.password_tx.take()
+                                    {
+                                        let _ = tx.send(password);
+                                    }
+                                }
+                                other => {
+                                    let client_holder = matrix_client.clone();
+                                    let tx = event_tx.clone();
+                                    tokio::spawn(async move {
+                                        let client = { client_holder.lock().await.clone() };
+                                        if let Some(client) = client {
+                                            match other {
+                                                RecoveryAction::Check => {
+                                                    client.encryption().wait_for_e2ee_initialization_tasks().await;
+                                                    let state = client.encryption().recovery().state();
+                                                    use matrix_sdk::encryption::recovery::RecoveryState;
+                                                    let stage = match state {
+                                                        RecoveryState::Enabled => app::RecoveryStage::Enabled,
+                                                        RecoveryState::Disabled => app::RecoveryStage::Disabled,
+                                                        RecoveryState::Incomplete => app::RecoveryStage::Incomplete,
+                                                        _ => app::RecoveryStage::Disabled,
+                                                    };
+                                                    let _ = tx.send(AppEvent::RecoveryStateChecked(stage));
+                                                }
+                                                RecoveryAction::Create => {
+                                                    match client.encryption().recovery()
+                                                        .enable().wait_for_backups_to_upload().await {
+                                                        Ok(key) => { let _ = tx.send(AppEvent::RecoveryKeyReady(key)); }
+                                                        Err(e) => { let _ = tx.send(AppEvent::RecoveryError(e.to_string())); }
+                                                    }
+                                                }
+                                                RecoveryAction::Recover(phrase) => {
+                                                    match client.encryption().recovery().recover(&phrase).await {
+                                                        Ok(()) => {
+                                                            let state = client.encryption().recovery().state();
+                                                            if matches!(state, matrix_sdk::encryption::recovery::RecoveryState::Incomplete) {
+                                                                match matrix::client::heal_recovery(&client, &tx).await {
+                                                                    Ok(new_key) => {
+                                                                        let _ = tx.send(AppEvent::RecoveryKeyReady(new_key));
+                                                                    }
+                                                                    Err(e) => {
+                                                                        let _ = tx.send(AppEvent::RecoveryError(
+                                                                            format!("Recovery succeeded but healing failed: {}", e),
+                                                                        ));
+                                                                    }
+                                                                }
+                                                            } else {
+                                                                let _ = tx.send(AppEvent::RecoveryRecovered);
+                                                            }
+                                                        }
+                                                        Err(e) => { let _ = tx.send(AppEvent::RecoveryError(e.to_string())); }
+                                                    }
+                                                }
+                                                RecoveryAction::Reset => {
+                                                    use matrix_sdk::encryption::recovery::RecoveryState;
+                                                    let is_incomplete = matches!(
+                                                        client.encryption().recovery().state(),
+                                                        RecoveryState::Incomplete
+                                                    );
+                                                    if is_incomplete {
+                                                        match matrix::client::heal_recovery(&client, &tx).await {
+                                                            Ok(key) => { let _ = tx.send(AppEvent::RecoveryKeyReady(key)); }
+                                                            Err(e) => { let _ = tx.send(AppEvent::RecoveryError(e.to_string())); }
+                                                        }
+                                                    } else {
+                                                        match client.encryption().recovery().reset_key().await {
+                                                            Ok(key) => { let _ = tx.send(AppEvent::RecoveryKeyReady(key)); }
+                                                            Err(e) => { let _ = tx.send(AppEvent::RecoveryError(e.to_string())); }
+                                                        }
+                                                    }
+                                                }
+                                                RecoveryAction::SubmitPassword(_) => unreachable!(),
+                                            }
+                                        }
+                                    });
+                                }
+                            }
                         }
 
                         } // !demo_mode

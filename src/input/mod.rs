@@ -48,4 +48,5 @@ pub enum CommandAction {
     RoomInfo,
     Configure,
     NerdFonts,
+    Recovery,
 }

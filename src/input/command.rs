@@ -123,6 +123,13 @@ pub const COMMANDS: &[CommandDef] = &[
         description: "Toggle Nerd Font icons",
         takes_arg: false,
     },
+    CommandDef {
+        name: "recovery",
+        aliases: &["recover"],
+        syntax: ":recovery",
+        description: "Manage recovery key",
+        takes_arg: false,
+    },
 ];
 
 pub fn filtered_commands(prefix: &str) -> Vec<&'static CommandDef> {
@@ -291,6 +298,7 @@ fn parse_command(input: &str) -> InputResult {
         "edit" | "roominfo" => InputResult::Command(CommandAction::RoomInfo),
         "configure" | "config" | "profile" => InputResult::Command(CommandAction::Configure),
         "nerdfonts" | "nerd" | "icons" => InputResult::Command(CommandAction::NerdFonts),
+        "recovery" | "recover" => InputResult::Command(CommandAction::Recovery),
         _ => InputResult::None,
     }
 }
@@ -514,6 +522,22 @@ mod tests {
         assert!(matches!(
             parse_command("profile"),
             InputResult::Command(CommandAction::Configure)
+        ));
+    }
+
+    #[test]
+    fn parse_recovery() {
+        assert!(matches!(
+            parse_command("recovery"),
+            InputResult::Command(CommandAction::Recovery)
+        ));
+    }
+
+    #[test]
+    fn parse_recover_alias() {
+        assert!(matches!(
+            parse_command("recover"),
+            InputResult::Command(CommandAction::Recovery)
         ));
     }
 

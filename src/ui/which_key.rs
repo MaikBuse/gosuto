@@ -12,6 +12,7 @@ pub enum WhichKeyCategory {
     Call,
     Effects,
     User,
+    Security,
 }
 
 struct Entry {
@@ -111,6 +112,11 @@ fn entries(cat: WhichKeyCategory) -> &'static [Entry] {
                 available: always,
             },
         ],
+        WhichKeyCategory::Security => &[Entry {
+            key: 'r',
+            label: "Recovery",
+            available: always,
+        }],
     }
 }
 
@@ -120,6 +126,7 @@ fn category_title(cat: WhichKeyCategory) -> &'static str {
         WhichKeyCategory::Call => "CALL",
         WhichKeyCategory::Effects => "EFFECTS",
         WhichKeyCategory::User => "USER",
+        WhichKeyCategory::Security => "SECURITY",
     }
 }
 
@@ -138,7 +145,7 @@ fn render_root(frame: &mut Frame) {
         return;
     }
 
-    let popup_h: u16 = 9;
+    let popup_h: u16 = 10;
     let popup = bottom_rect(popup_h, area);
     let popup_w = popup.width;
     let buf = frame.buffer_mut();
@@ -166,11 +173,16 @@ fn render_root(frame: &mut Frame) {
     write_str(buf, &bounds, col2 + 4, y, "Call", label_style);
     y += 1;
 
-    // Row 2: e Effects, u User
-    set_cell(buf, &bounds, left, y, 'e', key_style);
-    write_str(buf, &bounds, left + 4, y, "Effects", label_style);
-    set_cell(buf, &bounds, col2, y, 'u', key_style);
-    write_str(buf, &bounds, col2 + 4, y, "User", label_style);
+    // Row 2: s Security, e Effects
+    set_cell(buf, &bounds, left, y, 's', key_style);
+    write_str(buf, &bounds, left + 4, y, "Security", label_style);
+    set_cell(buf, &bounds, col2, y, 'e', key_style);
+    write_str(buf, &bounds, col2 + 4, y, "Effects", label_style);
+    y += 1;
+
+    // Row 3: u User
+    set_cell(buf, &bounds, left, y, 'u', key_style);
+    write_str(buf, &bounds, left + 4, y, "User", label_style);
     y += 1;
     y += 1;
 
