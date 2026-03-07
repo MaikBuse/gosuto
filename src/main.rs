@@ -4,6 +4,7 @@ mod app;
 mod config;
 mod demo;
 mod event;
+mod global_ptt;
 mod input;
 mod matrix;
 mod state;
@@ -187,6 +188,20 @@ async fn main() -> Result<()> {
         tokio::spawn(call_manager.run());
     }
 
+    // Spawn global PTT listener if configured
+    if app.config.audio.global_push_to_talk
+        && app.config.audio.push_to_talk
+        && let Some(ref ptt_key) = app.config.audio.push_to_talk_key
+    {
+        let global_ptt_active = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        global_ptt::spawn_global_ptt_listener(
+            app.ptt_transmitting.clone(),
+            ptt_key.clone(),
+            global_ptt_active.clone(),
+        );
+        app.global_ptt_active = Some(global_ptt_active);
+    }
+
     // Track login/registration state to avoid re-triggering
     let mut login_in_progress = false;
     let mut registration_in_progress = false;
@@ -269,6 +284,8 @@ async fn main() -> Result<()> {
                                     let client = { client_holder2.lock().await.clone() };
                                     if let Some(client) = client {
                                         matrix::rooms::fetch_room_members(&client, &rid2, &tx2).await;
+                                        // Check verification status for members
+                                        matrix::rooms::check_member_verification(&client, &rid2, &tx2).await;
                                     }
                                 });
 
@@ -606,6 +623,32 @@ async fn main() -> Result<()> {
                             });
                         }
 
+                        // Check own device verification status (once)
+                        if app.own_verified.is_none() && app.auth.is_logged_in() && app.sync_token.is_some() {
+                            app.own_verified = Some(false); // set to prevent re-checking
+                            let client_holder = matrix_client.clone();
+                            let tx = event_tx.clone();
+                            tokio::spawn(async move {
+                                let client = { client_holder.lock().await.clone() };
+                                if let Some(client) = client {
+                                    use matrix_sdk::encryption::VerificationState;
+                                    let vs = client.encryption().verification_state().get();
+                                    match vs {
+                                        VerificationState::Verified => {
+                                            // Signal verified state via event
+                                            let uid = client.user_id()
+                                                .map(|u| u.to_string())
+                                                .unwrap_or_default();
+                                            let _ = tx.send(AppEvent::VerificationCompleted { user_id: uid });
+                                        }
+                                        _ => {
+                                            tracing::info!("Own device is not verified");
+                                        }
+                                    }
+                                }
+                            });
+                        }
+
                         // Handle display name update
                         if let Some(name) = app.pending_set_display_name.take() {
                             let client_holder = matrix_client.clone();
@@ -767,6 +810,31 @@ async fn main() -> Result<()> {
                                                 }
                                                 RecoveryAction::SubmitPassword(_) => unreachable!(),
                                             }
+                                        }
+                                    });
+                                }
+                            }
+                        }
+
+                        // Handle verification actions
+                        if let Some(action) = app.pending_verification.take() {
+                            use app::VerificationAction;
+                            let client_holder = matrix_client.clone();
+                            let tx = event_tx.clone();
+                            match action {
+                                VerificationAction::StartSelf => {
+                                    tokio::spawn(async move {
+                                        let client = { client_holder.lock().await.clone() };
+                                        if let Some(client) = client {
+                                            matrix::verification::start_self_verification(client, tx).await;
+                                        }
+                                    });
+                                }
+                                VerificationAction::StartUser(user_id) => {
+                                    tokio::spawn(async move {
+                                        let client = { client_holder.lock().await.clone() };
+                                        if let Some(client) = client {
+                                            matrix::verification::start_user_verification(client, tx, user_id).await;
                                         }
                                     });
                                 }

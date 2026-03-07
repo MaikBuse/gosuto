@@ -366,6 +366,106 @@ pub fn recovery_key_action(
     }
 }
 
+// ── Verification Modal ─────────────────────────────────
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum VerificationStage {
+    WaitingForAccept,
+    IncomingRequest {
+        sender: String,
+    },
+    SasComparison {
+        descriptions: Vec<String>,
+        sender: String,
+    },
+    Completed {
+        sender: String,
+    },
+    Failed {
+        reason: String,
+    },
+}
+
+pub struct VerificationModalState {
+    pub stage: VerificationStage,
+    pub flow_id: String,
+    pub confirm_tx: Option<tokio::sync::oneshot::Sender<bool>>,
+    pub accept_tx: Option<tokio::sync::oneshot::Sender<bool>>,
+}
+
+impl VerificationModalState {
+    pub fn new() -> Self {
+        Self {
+            stage: VerificationStage::WaitingForAccept,
+            flow_id: String::new(),
+            confirm_tx: None,
+            accept_tx: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum VerificationAction {
+    StartSelf,
+    StartUser(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum VerificationTransition {
+    None,
+    Close,
+}
+
+pub fn verify_key_action(
+    state: &mut VerificationModalState,
+    code: KeyCode,
+) -> VerificationTransition {
+    match &state.stage {
+        VerificationStage::WaitingForAccept => {
+            if code == KeyCode::Esc {
+                return VerificationTransition::Close;
+            }
+            VerificationTransition::None
+        }
+        VerificationStage::IncomingRequest { .. } => match code {
+            KeyCode::Char('y') => {
+                if let Some(tx) = state.accept_tx.take() {
+                    let _ = tx.send(true);
+                }
+                state.stage = VerificationStage::WaitingForAccept;
+                VerificationTransition::None
+            }
+            KeyCode::Char('n') | KeyCode::Esc => {
+                if let Some(tx) = state.accept_tx.take() {
+                    let _ = tx.send(false);
+                }
+                VerificationTransition::Close
+            }
+            _ => VerificationTransition::None,
+        },
+        VerificationStage::SasComparison { .. } => match code {
+            KeyCode::Char('y') => {
+                if let Some(tx) = state.confirm_tx.take() {
+                    let _ = tx.send(true);
+                }
+                state.stage = VerificationStage::WaitingForAccept;
+                VerificationTransition::None
+            }
+            KeyCode::Char('n') | KeyCode::Esc => {
+                if let Some(tx) = state.confirm_tx.take() {
+                    let _ = tx.send(false);
+                }
+                VerificationTransition::Close
+            }
+            _ => VerificationTransition::None,
+        },
+        VerificationStage::Completed { .. } | VerificationStage::Failed { .. } => match code {
+            KeyCode::Enter | KeyCode::Esc => VerificationTransition::Close,
+            _ => VerificationTransition::None,
+        },
+    }
+}
+
 impl UserConfigState {
     pub fn new() -> Self {
         Self {
@@ -436,6 +536,7 @@ pub struct App {
     // Audio settings
     pub audio_settings: AudioSettingsState,
     pub ptt_transmitting: Arc<AtomicBool>,
+    pub global_ptt_active: Option<Arc<AtomicBool>>,
     pub sync_token: Option<String>,
     // Which-key leader popup
     pub which_key: Option<Option<crate::ui::which_key::WhichKeyCategory>>,
@@ -452,6 +553,10 @@ pub struct App {
     // Recovery
     pub recovery: Option<RecoveryModalState>,
     pub pending_recovery: Option<RecoveryAction>,
+    // Verification
+    pub verification: Option<VerificationModalState>,
+    pub pending_verification: Option<VerificationAction>,
+    pub own_verified: Option<bool>,
 }
 
 impl App {
@@ -507,6 +612,7 @@ impl App {
             pending_set_display_name: None,
             audio_settings: AudioSettingsState::new(),
             ptt_transmitting: Arc::new(AtomicBool::new(true)), // default: always transmit (no PTT)
+            global_ptt_active: None,
             sync_token: None,
             which_key: None,
             clipboard: arboard::Clipboard::new().ok(),
@@ -519,6 +625,9 @@ impl App {
             demo_mode: false,
             recovery: None,
             pending_recovery: None,
+            verification: None,
+            pending_verification: None,
+            own_verified: None,
         }
     }
 
@@ -540,6 +649,8 @@ impl App {
                     self.handle_create_room_key(key);
                 } else if self.audio_settings.open {
                     self.handle_audio_settings_key(key);
+                } else if self.verification.is_some() {
+                    self.handle_verification_key(key);
                 } else if self.recovery.is_some() {
                     self.handle_recovery_key(key);
                 } else if self.which_key.is_some() {
@@ -865,9 +976,11 @@ impl App {
             AppEvent::CallError(err) => {
                 self.last_error = Some(err);
                 self.call_info = None;
+                self.set_global_ptt_active(false);
             }
             AppEvent::CallEnded => {
                 self.call_info = None;
+                self.set_global_ptt_active(false);
             }
             // Recovery events
             AppEvent::RecoveryStateChecked(stage) => {
@@ -903,6 +1016,82 @@ impl App {
             AppEvent::RecoveryError(err) => {
                 if let Some(ref mut modal) = self.recovery {
                     modal.stage = RecoveryStage::Error(err);
+                }
+            }
+            // Verification events
+            AppEvent::VerificationIncomingRequest {
+                sender,
+                flow_id,
+                accept_tx,
+            } => {
+                self.verification = Some(VerificationModalState {
+                    stage: VerificationStage::IncomingRequest {
+                        sender: sender.clone(),
+                    },
+                    flow_id,
+                    confirm_tx: None,
+                    accept_tx: accept_tx.take(),
+                });
+            }
+            AppEvent::VerificationSasEmoji {
+                descriptions,
+                flow_id,
+                confirm_tx,
+            } => {
+                let sender = flow_id.clone();
+                if let Some(ref mut modal) = self.verification {
+                    modal.stage = VerificationStage::SasComparison {
+                        descriptions,
+                        sender,
+                    };
+                    modal.flow_id = flow_id;
+                    modal.confirm_tx = confirm_tx.take();
+                } else {
+                    self.verification = Some(VerificationModalState {
+                        stage: VerificationStage::SasComparison {
+                            descriptions,
+                            sender,
+                        },
+                        flow_id,
+                        confirm_tx: confirm_tx.take(),
+                        accept_tx: None,
+                    });
+                }
+            }
+            AppEvent::VerificationCompleted { user_id } => {
+                if let Some(ref mut modal) = self.verification {
+                    modal.stage = VerificationStage::Completed {
+                        sender: user_id.clone(),
+                    };
+                }
+                // Update own verification status if it's our user
+                if let AuthState::LoggedIn {
+                    user_id: ref own_id,
+                    ..
+                } = self.auth
+                    && user_id == *own_id
+                {
+                    self.own_verified = Some(true);
+                }
+            }
+            AppEvent::VerificationFailed { reason } => {
+                if let Some(ref mut modal) = self.verification {
+                    modal.stage = VerificationStage::Failed { reason };
+                }
+            }
+            AppEvent::MemberVerificationStatus {
+                room_id,
+                user_id,
+                verified,
+            } => {
+                if self.members_list.current_room_id.as_deref() == Some(&room_id)
+                    && let Some(member) = self
+                        .members_list
+                        .members
+                        .iter_mut()
+                        .find(|m| m.user_id == user_id)
+                {
+                    member.verified = Some(verified);
                 }
             }
             // Image events
@@ -1129,6 +1318,13 @@ impl App {
             InputResult::ShowWhichKey => {
                 self.which_key = Some(None);
             }
+            InputResult::VerifyMember => {
+                if let Some(member) = self.members_list.selected_member() {
+                    let uid = member.user_id.clone();
+                    self.verification = Some(VerificationModalState::new());
+                    self.pending_verification = Some(VerificationAction::StartUser(uid));
+                }
+            }
         }
     }
 
@@ -1211,6 +1407,7 @@ impl App {
                         .find(|r| r.id == room_id)
                         .map(|r| r.name.clone());
                     self.call_info = Some(CallInfo::new_outgoing(room_id.clone(), room_name));
+                    self.set_global_ptt_active(true);
                     if let Some(ref tx) = self.call_cmd_tx {
                         let _ = tx.send(CallCommand::Initiate { room_id });
                     }
@@ -1224,6 +1421,7 @@ impl App {
                     let room_name = self.incoming_call_room_name.take();
                     self.call_info =
                         Some(CallInfo::new_incoming(room_id.clone(), caller, room_name));
+                    self.set_global_ptt_active(true);
                     if let Some(ref tx) = self.call_cmd_tx {
                         let _ = tx.send(CallCommand::Initiate { room_id });
                     }
@@ -1246,6 +1444,7 @@ impl App {
                         let _ = tx.send(CallCommand::Leave);
                     }
                     self.call_info = None;
+                    self.set_global_ptt_active(false);
                 } else {
                     self.last_error = Some("No active call".to_string());
                 }
@@ -1330,6 +1529,13 @@ impl App {
                 self.recovery = Some(RecoveryModalState::new());
                 self.pending_recovery = Some(RecoveryAction::Check);
             }
+            CommandAction::Verify(user) => {
+                self.verification = Some(VerificationModalState::new());
+                self.pending_verification = Some(match user {
+                    Some(uid) => VerificationAction::StartUser(uid),
+                    None => VerificationAction::StartSelf,
+                });
+            }
         }
     }
 
@@ -1355,6 +1561,28 @@ impl App {
             }
             RecoveryTransition::Pending(action) => {
                 self.pending_recovery = Some(action);
+            }
+        }
+    }
+
+    // ── Verification Modal ─────────────────────────
+
+    fn handle_verification_key(&mut self, key: KeyEvent) {
+        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
+            self.verification = None;
+            self.running = false;
+            return;
+        }
+
+        let Some(ref mut modal) = self.verification else {
+            return;
+        };
+
+        let transition = verify_key_action(modal, key.code);
+        match transition {
+            VerificationTransition::None => {}
+            VerificationTransition::Close => {
+                self.verification = None;
             }
         }
     }
@@ -1432,11 +1660,11 @@ impl App {
                 'a' => self.handle_command(CommandAction::AudioSettings),
                 _ => {}
             },
-            WhichKeyCategory::Security => {
-                if key == 'r' {
-                    self.handle_command(CommandAction::Recovery);
-                }
-            }
+            WhichKeyCategory::Security => match key {
+                'r' => self.handle_command(CommandAction::Recovery),
+                'v' => self.handle_command(CommandAction::Verify(None)),
+                _ => {}
+            },
         }
     }
 
@@ -2087,6 +2315,12 @@ impl App {
                 }
             }
             _ => {}
+        }
+    }
+
+    fn set_global_ptt_active(&self, active: bool) {
+        if let Some(ref flag) = self.global_ptt_active {
+            flag.store(active, Ordering::Relaxed);
         }
     }
 
