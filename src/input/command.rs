@@ -117,20 +117,6 @@ pub const COMMANDS: &[CommandDef] = &[
         takes_arg: false,
     },
     CommandDef {
-        name: "verify",
-        aliases: &[],
-        syntax: ":verify [@user:server]",
-        description: "Verify device (self or user)",
-        takes_arg: true,
-    },
-    CommandDef {
-        name: "recovery",
-        aliases: &["backup"],
-        syntax: ":recovery",
-        description: "Manage recovery key",
-        takes_arg: false,
-    },
-    CommandDef {
         name: "nerdfonts",
         aliases: &["nerd", "icons"],
         syntax: ":nerdfonts",
@@ -304,15 +290,6 @@ fn parse_command(input: &str) -> InputResult {
         "create" | "new" => InputResult::Command(CommandAction::CreateRoom),
         "edit" | "roominfo" => InputResult::Command(CommandAction::RoomInfo),
         "configure" | "config" | "profile" => InputResult::Command(CommandAction::Configure),
-        "verify" => {
-            let target = if arg.is_empty() {
-                None
-            } else {
-                Some(arg.to_string())
-            };
-            InputResult::Command(CommandAction::Verify(target))
-        }
-        "recovery" | "backup" => InputResult::Command(CommandAction::Recovery),
         "nerdfonts" | "nerd" | "icons" => InputResult::Command(CommandAction::NerdFonts),
         _ => InputResult::None,
     }
@@ -360,8 +337,8 @@ mod tests {
 
     #[test]
     fn filtered_commands_multiple_matches() {
-        let result = filtered_commands("re");
-        // "reject" and "recovery" both start with "re"
+        let result = filtered_commands("c");
+        // "call", "configure", "create" all start with "c"
         assert!(result.len() >= 2);
     }
 
@@ -537,35 +514,6 @@ mod tests {
         assert!(matches!(
             parse_command("profile"),
             InputResult::Command(CommandAction::Configure)
-        ));
-    }
-
-    #[test]
-    fn parse_verify_no_arg() {
-        let result = parse_command("verify");
-        assert!(matches!(
-            result,
-            InputResult::Command(CommandAction::Verify(None))
-        ));
-    }
-
-    #[test]
-    fn parse_verify_with_arg() {
-        let result = parse_command("verify @user:matrix.org");
-        assert!(
-            matches!(result, InputResult::Command(CommandAction::Verify(Some(ref u))) if u == "@user:matrix.org")
-        );
-    }
-
-    #[test]
-    fn parse_recovery_alias_backup() {
-        assert!(matches!(
-            parse_command("recovery"),
-            InputResult::Command(CommandAction::Recovery)
-        ));
-        assert!(matches!(
-            parse_command("backup"),
-            InputResult::Command(CommandAction::Recovery)
         ));
     }
 

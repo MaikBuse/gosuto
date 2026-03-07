@@ -104,31 +104,12 @@ pub enum AppEvent {
     // User config events
     UserConfigLoaded {
         display_name: Option<String>,
-        verified: bool,
-        recovery_enabled: bool,
     },
     UserConfigUpdated,
     UserConfigError(String),
     // Audio settings events
     MicLevel(f32),
     KeyRelease(KeyEvent),
-    // Verification events
-    VerificationRequestReceived {
-        sender: String,
-        flow_id: String,
-    },
-    VerificationSasEmoji {
-        emojis: Vec<(String, String)>,
-        flow_id: String,
-        sender: String,
-    },
-    VerificationCompleted {
-        sender: String,
-    },
-    VerificationCancelled {
-        reason: String,
-    },
-    VerificationError(String),
     // Image events
     ImageLoaded {
         event_id: String,
@@ -138,11 +119,6 @@ pub enum AppEvent {
         event_id: String,
         error: String,
     },
-    // Recovery events
-    RecoveryState(String),
-    RecoveryKeyReady(String),
-    RecoveryError(String),
-    RecoveryRecovered,
 }
 
 pub type EventSender = mpsc::UnboundedSender<AppEvent>;

@@ -10,7 +10,6 @@ use crate::ui::theme;
 pub enum WhichKeyCategory {
     Room,
     Call,
-    Security,
     Effects,
     User,
 }
@@ -88,18 +87,6 @@ fn entries(cat: WhichKeyCategory) -> &'static [Entry] {
                 available: active_call,
             },
         ],
-        WhichKeyCategory::Security => &[
-            Entry {
-                key: 'v',
-                label: "Verify",
-                available: always,
-            },
-            Entry {
-                key: 'r',
-                label: "Recovery",
-                available: always,
-            },
-        ],
         WhichKeyCategory::Effects => &[
             Entry {
                 key: 'r',
@@ -131,7 +118,6 @@ fn category_title(cat: WhichKeyCategory) -> &'static str {
     match cat {
         WhichKeyCategory::Room => "ROOM",
         WhichKeyCategory::Call => "CALL",
-        WhichKeyCategory::Security => "SECURITY",
         WhichKeyCategory::Effects => "EFFECTS",
         WhichKeyCategory::User => "USER",
     }
@@ -152,7 +138,7 @@ fn render_root(frame: &mut Frame) {
         return;
     }
 
-    let popup_h: u16 = 10;
+    let popup_h: u16 = 9;
     let popup = bottom_rect(popup_h, area);
     let popup_w = popup.width;
     let buf = frame.buffer_mut();
@@ -180,17 +166,13 @@ fn render_root(frame: &mut Frame) {
     write_str(buf, &bounds, col2 + 4, y, "Call", label_style);
     y += 1;
 
-    // Row 2: s Security, e Effects
-    set_cell(buf, &bounds, left, y, 's', key_style);
-    write_str(buf, &bounds, left + 4, y, "Security", label_style);
-    set_cell(buf, &bounds, col2, y, 'e', key_style);
-    write_str(buf, &bounds, col2 + 4, y, "Effects", label_style);
+    // Row 2: e Effects, u User
+    set_cell(buf, &bounds, left, y, 'e', key_style);
+    write_str(buf, &bounds, left + 4, y, "Effects", label_style);
+    set_cell(buf, &bounds, col2, y, 'u', key_style);
+    write_str(buf, &bounds, col2 + 4, y, "User", label_style);
     y += 1;
-
-    // Row 3: u User
-    set_cell(buf, &bounds, left, y, 'u', key_style);
-    write_str(buf, &bounds, left + 4, y, "User", label_style);
-    y += 2;
+    y += 1;
 
     // Actions row: q Quit, l Logout
     set_cell(buf, &bounds, left, y, 'q', key_style);
@@ -272,7 +254,7 @@ fn render_category(cat: WhichKeyCategory, app: &App, frame: &mut Frame) {
     );
 }
 
-// ── Helpers (same as recovery_modal) ──────────────────
+// ── Helpers ───────────────────────────────────────────
 
 fn bottom_rect(h: u16, area: Rect) -> Rect {
     let h = h.min(area.height.saturating_sub(1));

@@ -80,9 +80,6 @@ async fn main() -> Result<()> {
     // Shared Matrix client
     let matrix_client: Arc<Mutex<Option<matrix_sdk::Client>>> = Arc::new(Mutex::new(None));
 
-    // Shared state for incoming verification requests
-    let incoming_verification: matrix::sync::IncomingVerification = Arc::new(Mutex::new(None));
-
     if demo_mode {
         info!("Starting in demo mode");
         app.demo_mode = true;
@@ -95,9 +92,8 @@ async fn main() -> Result<()> {
             Ok(Some(client)) => {
                 *matrix_client.lock().await = Some(client.clone());
                 let tx = event_tx.clone();
-                let iv = incoming_verification.clone();
                 tokio::spawn(async move {
-                    if let Err(e) = matrix::sync::start_sync(client, tx.clone(), iv).await {
+                    if let Err(e) = matrix::sync::start_sync(client, tx.clone()).await {
                         error!("Sync error: {}", e);
                         let _ = tx.send(AppEvent::SyncError(e.to_string()));
                     }
@@ -289,7 +285,7 @@ async fn main() -> Result<()> {
                             }
                         }
 
-                        // Re-fetch messages after verification/recovery
+                        // Re-fetch messages after verification
                         if app.pending_refetch {
                             app.pending_refetch = false;
                             if !demo_mode
@@ -416,7 +412,7 @@ async fn main() -> Result<()> {
                         }
 
                         // Handle pending DM, room creation, leave, user config,
-                        // room info, visibility, topic, name, encryption, verification, recovery
+                        // room info, visibility, topic, name, encryption, verification
                         if demo_mode {
                             // In demo mode, consume and discard server-dependent pending actions
                             if app.take_pending_dm().is_some()
@@ -429,8 +425,6 @@ async fn main() -> Result<()> {
                                 app.pending_user_config = false;
                                 let _ = event_tx.send(AppEvent::UserConfigLoaded {
                                     display_name: Some("Ghost".to_string()),
-                                    verified: true,
-                                    recovery_enabled: false,
                                 });
                             }
                             app.pending_set_display_name.take();
@@ -449,11 +443,6 @@ async fn main() -> Result<()> {
                             app.pending_set_room_topic.take();
                             app.pending_set_room_name.take();
                             app.pending_enable_encryption.take();
-                            app.take_pending_verify();
-                            app.pending_recovery = false;
-                            app.pending_recovery_create = false;
-                            app.pending_recovery_reset = false;
-                            app.pending_recovery_recover.take();
                         } else {
                         // Handle pending DM
                         if let Some(user_id_str) = app.take_pending_dm() {
@@ -687,162 +676,6 @@ async fn main() -> Result<()> {
                             });
                         }
 
-                        // Handle outgoing verification (:verify command)
-                        if let Some(target) = app.take_pending_verify() {
-                            let client_holder = matrix_client.clone();
-                            let tx = event_tx.clone();
-                            let (confirm_tx, confirm_rx) = tokio::sync::oneshot::channel();
-                            app.verify_confirm_tx = Some(confirm_tx);
-
-                            tokio::spawn(async move {
-                                let client = { client_holder.lock().await.clone() };
-                                if let Some(client) = client {
-                                    match target {
-                                        None => {
-                                            matrix::verification::start_self_verification(
-                                                client, tx, confirm_rx,
-                                            )
-                                            .await;
-                                        }
-                                        Some(user_id) => {
-                                            matrix::verification::start_user_verification(
-                                                client, &user_id, tx, confirm_rx,
-                                            )
-                                            .await;
-                                        }
-                                    }
-                                }
-                            });
-                        }
-
-                        // Handle recovery state check
-                        if app.pending_recovery {
-                            app.pending_recovery = false;
-                            app.recovery_modal = Some(crate::state::RecoveryModalState {
-                                stage: crate::state::RecoveryStage::Checking,
-                                confirm_buffer: String::new(),
-                                key_buffer: String::new(),
-                                copied: false,
-                            });
-                            let client = matrix_client.clone();
-                            let tx = event_tx.clone();
-                            tokio::spawn(async move {
-                                let client = client.lock().await.clone();
-                                if let Some(client) = client {
-                                    client.encryption().wait_for_e2ee_initialization_tasks().await;
-                                    let state = client.encryption().recovery().state();
-                                    let state_str = format!("{state:?}");
-                                    // Incomplete means recovery is set up on the server but private
-                                    // keys aren't cached locally — treat as Enabled.
-                                    let state_str = if state_str == "Incomplete" {
-                                        "Enabled".to_owned()
-                                    } else {
-                                        state_str
-                                    };
-                                    let _ = tx.send(AppEvent::RecoveryState(state_str));
-                                }
-                            });
-                        }
-
-                        // Handle recovery key creation
-                        if app.pending_recovery_create {
-                            app.pending_recovery_create = false;
-                            let client = matrix_client.clone();
-                            let tx = event_tx.clone();
-                            tokio::spawn(async move {
-                                let client = client.lock().await.clone();
-                                if let Some(client) = client {
-                                    match client
-                                        .encryption()
-                                        .recovery()
-                                        .enable()
-                                        .wait_for_backups_to_upload()
-                                        .await
-                                    {
-                                        Ok(key) => {
-                                            let _ = tx.send(AppEvent::RecoveryKeyReady(key));
-                                        }
-                                        Err(e) => {
-                                            let _ =
-                                                tx.send(AppEvent::RecoveryError(e.to_string()));
-                                        }
-                                    }
-                                }
-                            });
-                        }
-
-                        // Handle recovery key reset
-                        if app.pending_recovery_reset {
-                            app.pending_recovery_reset = false;
-                            let client = matrix_client.clone();
-                            let tx = event_tx.clone();
-                            tokio::spawn(async move {
-                                let client = client.lock().await.clone();
-                                if let Some(client) = client {
-                                    match client
-                                        .encryption()
-                                        .recovery()
-                                        .reset_key()
-                                        .await
-                                    {
-                                        Ok(key) => {
-                                            let _ = tx.send(AppEvent::RecoveryKeyReady(key));
-                                        }
-                                        Err(e) => {
-                                            let _ =
-                                                tx.send(AppEvent::RecoveryError(e.to_string()));
-                                        }
-                                    }
-                                }
-                            });
-                        }
-
-                        // Handle recovery key import
-                        if let Some(recovery_key) = app.pending_recovery_recover.take() {
-                            let client = matrix_client.clone();
-                            let tx = event_tx.clone();
-                            tokio::spawn(async move {
-                                let client = client.lock().await.clone();
-                                if let Some(client) = client {
-                                    match client
-                                        .encryption()
-                                        .recovery()
-                                        .recover(&recovery_key)
-                                        .await
-                                    {
-                                        Ok(()) => {
-                                            let _ = tx.send(AppEvent::RecoveryRecovered);
-                                            let state =
-                                                client.encryption().recovery().state();
-                                            let _ = tx.send(AppEvent::RecoveryState(
-                                                format!("{:?}", state),
-                                            ));
-                                        }
-                                        Err(e) => {
-                                            let _ =
-                                                tx.send(AppEvent::RecoveryError(e.to_string()));
-                                        }
-                                    }
-                                }
-                            });
-                        }
-
-                        // Handle incoming verification requests
-                        {
-                            let mut iv_guard = incoming_verification.lock().await;
-                            if let Some(request) = iv_guard.take() {
-                                let tx = event_tx.clone();
-                                let (confirm_tx, confirm_rx) = tokio::sync::oneshot::channel();
-                                app.verify_confirm_tx = Some(confirm_tx);
-
-                                tokio::spawn(async move {
-                                    matrix::verification::handle_incoming_verification(
-                                        request, tx, confirm_rx,
-                                    )
-                                    .await;
-                                });
-                            }
-                        }
                         } // !demo_mode
                     }
                     None => break,
@@ -866,7 +699,6 @@ async fn main() -> Result<()> {
                 let (homeserver, username, password) = app.login_credentials();
                 let tx = event_tx.clone();
                 let client_holder = matrix_client.clone();
-                let iv = incoming_verification.clone();
                 tokio::spawn(async move {
                     match matrix::client::login(
                         &homeserver,
@@ -882,7 +714,7 @@ async fn main() -> Result<()> {
                             let sync_tx = tx.clone();
                             tokio::spawn(async move {
                                 if let Err(e) =
-                                    matrix::sync::start_sync(client, sync_tx.clone(), iv).await
+                                    matrix::sync::start_sync(client, sync_tx.clone()).await
                                 {
                                     error!("Sync error: {}", e);
                                     let _ = sync_tx.send(AppEvent::SyncError(e.to_string()));
@@ -909,7 +741,6 @@ async fn main() -> Result<()> {
             let (homeserver, username, password, token) = app.registration_credentials();
             let tx = event_tx.clone();
             let client_holder = matrix_client.clone();
-            let iv = incoming_verification.clone();
             tokio::spawn(async move {
                 match matrix::client::register(
                     &homeserver,
@@ -925,8 +756,7 @@ async fn main() -> Result<()> {
                         *client_holder.lock().await = Some(client.clone());
                         let sync_tx = tx.clone();
                         tokio::spawn(async move {
-                            if let Err(e) =
-                                matrix::sync::start_sync(client, sync_tx.clone(), iv).await
+                            if let Err(e) = matrix::sync::start_sync(client, sync_tx.clone()).await
                             {
                                 error!("Sync error: {}", e);
                                 let _ = sync_tx.send(AppEvent::SyncError(e.to_string()));

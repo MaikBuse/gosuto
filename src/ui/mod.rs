@@ -10,13 +10,11 @@ pub mod input_bar;
 pub mod layout;
 pub mod login;
 pub mod members;
-pub mod recovery_modal;
 pub mod room_info;
 pub mod room_list;
 pub mod status_bar;
 pub mod theme;
 pub mod typing_indicator;
-pub mod verify_modal;
 pub mod which_key;
 
 use ratatui::Frame;
@@ -132,16 +130,6 @@ pub fn render(app: &mut App, frame: &mut Frame) {
     // User config modal overlay
     if app.user_config.open {
         configure::render(&app.user_config, icons, frame);
-    }
-
-    // Verification modal overlay
-    if let Some(ref verify_state) = app.verification_modal {
-        verify_modal::render(verify_state, frame);
-    }
-
-    // Recovery modal overlay
-    if let Some(ref recovery_state) = app.recovery_modal {
-        recovery_modal::render(recovery_state, icons, frame);
     }
 
     // Which-key leader popup

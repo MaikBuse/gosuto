@@ -163,9 +163,7 @@ pub struct UserConfigState {
     pub display_name: Option<String>,
     pub display_name_buffer: String,
     pub editing_display_name: bool,
-    pub verified: bool,
-    pub recovery_enabled: bool,
-    pub selected_field: usize, // 0=display name, 1=verified
+    pub selected_field: usize,
     pub loading: bool,
     pub saving: bool,
 }
@@ -180,8 +178,6 @@ impl UserConfigState {
             display_name: None,
             display_name_buffer: String::new(),
             editing_display_name: false,
-            verified: false,
-            recovery_enabled: false,
             selected_field: 0,
             loading: false,
             saving: false,
@@ -243,20 +239,8 @@ pub struct App {
     pub audio_settings: AudioSettingsState,
     pub ptt_transmitting: Arc<AtomicBool>,
     pub sync_token: Option<String>,
-    // Verification
-    pub verification_modal: Option<crate::state::VerificationModalState>,
-    pub pending_verify: Option<Option<String>>,
-    pub verify_confirm_tx: Option<tokio::sync::oneshot::Sender<bool>>,
-    pub self_verified: bool,
-    pub recovery_enabled: bool,
     // Which-key leader popup
     pub which_key: Option<Option<crate::ui::which_key::WhichKeyCategory>>,
-    // Recovery
-    pub recovery_modal: Option<crate::state::RecoveryModalState>,
-    pub pending_recovery: bool,
-    pub pending_recovery_create: bool,
-    pub pending_recovery_reset: bool,
-    pub pending_recovery_recover: Option<String>,
     clipboard: Option<arboard::Clipboard>,
     // Typing indicators
     pub typing_users: HashMap<String, Vec<String>>,
@@ -323,17 +307,7 @@ impl App {
             audio_settings: AudioSettingsState::new(),
             ptt_transmitting: Arc::new(AtomicBool::new(true)), // default: always transmit (no PTT)
             sync_token: None,
-            verification_modal: None,
-            pending_verify: None,
-            verify_confirm_tx: None,
-            self_verified: false,
-            recovery_enabled: false,
             which_key: None,
-            recovery_modal: None,
-            pending_recovery: false,
-            pending_recovery_create: false,
-            pending_recovery_reset: false,
-            pending_recovery_recover: None,
             clipboard: arboard::Clipboard::new().ok(),
             typing_users: HashMap::new(),
             last_typing_sent: None,
@@ -355,10 +329,6 @@ impl App {
             AppEvent::Key(key) => {
                 if !self.auth.is_logged_in() {
                     self.handle_login_key(key);
-                } else if self.verification_modal.is_some() {
-                    self.handle_verify_modal_key(key);
-                } else if self.recovery_modal.is_some() {
-                    self.handle_recovery_modal_key(key);
                 } else if self.user_config.open {
                     self.handle_user_config_key(key);
                 } else if self.room_info.open {
@@ -435,8 +405,6 @@ impl App {
                 self.members_list = MemberListState::new();
                 self.login = LoginState::new();
                 self.sync_status = "disconnected".to_string();
-                self.self_verified = false;
-                self.recovery_enabled = false;
                 self.typing_users.clear();
                 self.last_typing_sent = None;
                 self.pending_typing_notice = None;
@@ -669,21 +637,9 @@ impl App {
                 self.last_error = Some(error);
             }
             // User config events
-            AppEvent::UserConfigLoaded {
-                display_name,
-                verified,
-                recovery_enabled,
-            } => {
-                if verified {
-                    self.self_verified = true;
-                }
-                if recovery_enabled {
-                    self.recovery_enabled = true;
-                }
+            AppEvent::UserConfigLoaded { display_name } => {
                 if self.user_config.open {
                     self.user_config.display_name = display_name;
-                    self.user_config.verified = verified || self.self_verified;
-                    self.user_config.recovery_enabled = recovery_enabled || self.recovery_enabled;
                     self.user_config.loading = false;
                 }
             }
@@ -707,89 +663,6 @@ impl App {
             }
             AppEvent::CallEnded => {
                 self.call_info = None;
-            }
-            // Verification events
-            AppEvent::VerificationRequestReceived { sender, flow_id: _ } => {
-                self.verification_modal = Some(crate::state::VerificationModalState {
-                    stage: crate::state::VerificationStage::WaitingForOtherDevice,
-                    sender,
-                    emojis: vec![],
-                });
-            }
-            AppEvent::VerificationSasEmoji {
-                emojis,
-                flow_id: _,
-                sender,
-            } => {
-                self.verification_modal = Some(crate::state::VerificationModalState {
-                    stage: crate::state::VerificationStage::EmojiConfirmation,
-                    sender,
-                    emojis,
-                });
-            }
-            AppEvent::VerificationCompleted { sender: _ } => {
-                if let Some(ref mut modal) = self.verification_modal {
-                    modal.stage = crate::state::VerificationStage::Completed;
-                }
-                self.self_verified = true;
-                self.pending_refetch = true;
-                self.user_config.verified = true;
-            }
-            AppEvent::VerificationCancelled { reason } => {
-                if let Some(ref mut modal) = self.verification_modal {
-                    modal.stage = crate::state::VerificationStage::Failed(reason);
-                }
-            }
-            AppEvent::VerificationError(err) => {
-                if self.verification_modal.is_some() {
-                    if let Some(ref mut modal) = self.verification_modal {
-                        modal.stage = crate::state::VerificationStage::Failed(err);
-                    }
-                } else {
-                    self.last_error = Some(err);
-                }
-            }
-            // Recovery events
-            AppEvent::RecoveryState(state_str) => {
-                let stage = if state_str.contains("Enabled") || self.recovery_enabled {
-                    crate::state::RecoveryStage::Enabled
-                } else if state_str.contains("Incomplete") {
-                    crate::state::RecoveryStage::Incomplete
-                } else {
-                    crate::state::RecoveryStage::Setup
-                };
-                if let Some(ref mut modal) = self.recovery_modal {
-                    modal.stage = stage;
-                }
-            }
-            AppEvent::RecoveryKeyReady(key) => {
-                if let Some(ref mut modal) = self.recovery_modal {
-                    modal.stage = crate::state::RecoveryStage::ShowKey(key);
-                    modal.copied = false;
-                }
-                self.recovery_enabled = true;
-                self.self_verified = true;
-                self.user_config.verified = true;
-                self.user_config.recovery_enabled = true;
-            }
-            AppEvent::RecoveryRecovered => {
-                if let Some(ref mut modal) = self.recovery_modal {
-                    modal.stage = crate::state::RecoveryStage::Enabled;
-                }
-                self.recovery_enabled = true;
-                self.self_verified = true;
-                self.user_config.verified = true;
-                self.user_config.recovery_enabled = true;
-                self.pending_refetch = true;
-            }
-            AppEvent::RecoveryError(err) => {
-                if let Some(ref mut modal) = self.recovery_modal {
-                    if err.contains("backup already exists") {
-                        modal.stage = crate::state::RecoveryStage::Incomplete;
-                    } else {
-                        modal.stage = crate::state::RecoveryStage::Failed(err);
-                    }
-                }
             }
             // Image events
             AppEvent::ImageLoaded {
@@ -1166,12 +1039,6 @@ impl App {
                     creating: false,
                 };
             }
-            CommandAction::Verify(target) => {
-                self.pending_verify = Some(target);
-            }
-            CommandAction::Recovery => {
-                self.pending_recovery = true;
-            }
             CommandAction::Configure => {
                 if let AuthState::LoggedIn {
                     ref user_id,
@@ -1187,8 +1054,6 @@ impl App {
                         display_name: None,
                         display_name_buffer: String::new(),
                         editing_display_name: false,
-                        verified: self.self_verified,
-                        recovery_enabled: self.recovery_enabled,
                         selected_field: 0,
                         loading: true,
                         saving: false,
@@ -1234,7 +1099,6 @@ impl App {
                 match key.code {
                     KeyCode::Char('r') => self.which_key = Some(Some(WhichKeyCategory::Room)),
                     KeyCode::Char('c') => self.which_key = Some(Some(WhichKeyCategory::Call)),
-                    KeyCode::Char('s') => self.which_key = Some(Some(WhichKeyCategory::Security)),
                     KeyCode::Char('e') => self.which_key = Some(Some(WhichKeyCategory::Effects)),
                     KeyCode::Char('u') => self.which_key = Some(Some(WhichKeyCategory::User)),
                     KeyCode::Char('q') => {
@@ -1284,11 +1148,6 @@ impl App {
                 'a' => self.handle_command(CommandAction::Answer),
                 'd' => self.handle_command(CommandAction::Reject),
                 'h' => self.handle_command(CommandAction::Hangup),
-                _ => {}
-            },
-            WhichKeyCategory::Security => match key {
-                'v' => self.handle_command(CommandAction::Verify(None)),
-                'r' => self.handle_command(CommandAction::Recovery),
                 _ => {}
             },
             WhichKeyCategory::Effects => match key {
@@ -1361,229 +1220,8 @@ impl App {
         self.pending_create_room.take()
     }
 
-    pub fn take_pending_verify(&mut self) -> Option<Option<String>> {
-        self.pending_verify.take()
-    }
-
     pub fn take_pending_typing_notice(&mut self) -> Option<(String, bool)> {
         self.pending_typing_notice.take()
-    }
-
-    // ── Verification Modal ────────────────────────────
-
-    fn handle_verify_modal_key(&mut self, key: KeyEvent) {
-        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
-            self.verification_modal = None;
-            self.verify_confirm_tx = None;
-            self.running = false;
-            return;
-        }
-
-        let stage = self.verification_modal.as_ref().map(|m| &m.stage);
-
-        match stage {
-            Some(crate::state::VerificationStage::EmojiConfirmation) => {
-                match key.code {
-                    KeyCode::Char('y') | KeyCode::Char('Y') => {
-                        if let Some(tx) = self.verify_confirm_tx.take() {
-                            let _ = tx.send(true);
-                        }
-                        if let Some(ref mut modal) = self.verification_modal {
-                            modal.stage = crate::state::VerificationStage::WaitingForOtherDevice;
-                        }
-                    }
-                    KeyCode::Char('n') | KeyCode::Char('N') => {
-                        if let Some(tx) = self.verify_confirm_tx.take() {
-                            let _ = tx.send(false);
-                        }
-                    }
-                    KeyCode::Esc => {
-                        // Drop the sender to cancel verification
-                        self.verify_confirm_tx = None;
-                        self.verification_modal = None;
-                    }
-                    _ => {}
-                }
-            }
-            Some(crate::state::VerificationStage::Completed)
-            | Some(crate::state::VerificationStage::Failed(_)) => match key.code {
-                KeyCode::Enter | KeyCode::Esc => {
-                    self.verification_modal = None;
-                    self.verify_confirm_tx = None;
-                }
-                _ => {}
-            },
-            Some(crate::state::VerificationStage::WaitingForOtherDevice) => {
-                if key.code == KeyCode::Esc {
-                    self.verify_confirm_tx = None;
-                    self.verification_modal = None;
-                }
-            }
-            None => {}
-        }
-    }
-
-    // ── Recovery Modal ─────────────────────────────────
-
-    fn handle_recovery_modal_key(&mut self, key: KeyEvent) {
-        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
-            self.recovery_modal = None;
-            self.running = false;
-            return;
-        }
-
-        let stage = self.recovery_modal.as_ref().map(|m| &m.stage);
-
-        match stage {
-            Some(crate::state::RecoveryStage::Checking) => {
-                if key.code == KeyCode::Esc {
-                    self.recovery_modal = None;
-                }
-            }
-            Some(crate::state::RecoveryStage::Setup) => match key.code {
-                KeyCode::Enter => {
-                    if let Some(ref mut modal) = self.recovery_modal {
-                        modal.stage = crate::state::RecoveryStage::Creating;
-                    }
-                    self.pending_recovery_create = true;
-                }
-                KeyCode::Esc => {
-                    self.recovery_modal = None;
-                }
-                _ => {}
-            },
-            Some(crate::state::RecoveryStage::Creating)
-            | Some(crate::state::RecoveryStage::Resetting)
-            | Some(crate::state::RecoveryStage::Recovering) => {
-                // In progress — no keys accepted
-            }
-            Some(crate::state::RecoveryStage::ShowKey(_)) => match key.code {
-                KeyCode::Char('c') => {
-                    if let Some(crate::state::RecoveryStage::ShowKey(key_str)) =
-                        self.recovery_modal.as_ref().map(|m| &m.stage)
-                    {
-                        let key_clone = key_str.clone();
-                        if let Some(clipboard) = self.clipboard.as_mut()
-                            && clipboard.set_text(key_clone).is_ok()
-                            && let Some(ref mut modal) = self.recovery_modal
-                        {
-                            modal.copied = true;
-                        }
-                    }
-                }
-                KeyCode::Enter | KeyCode::Esc => {
-                    self.recovery_modal = None;
-                }
-                _ => {}
-            },
-            Some(crate::state::RecoveryStage::Incomplete) => match key.code {
-                KeyCode::Char('e') => {
-                    if let Some(ref mut modal) = self.recovery_modal {
-                        modal.key_buffer.clear();
-                        modal.stage = crate::state::RecoveryStage::EnterKey;
-                    }
-                }
-                KeyCode::Char('r') => {
-                    if let Some(ref mut modal) = self.recovery_modal {
-                        modal.confirm_buffer.clear();
-                        modal.stage = crate::state::RecoveryStage::ConfirmReset;
-                    }
-                }
-                KeyCode::Esc => {
-                    self.recovery_modal = None;
-                }
-                _ => {}
-            },
-            Some(crate::state::RecoveryStage::EnterKey) => match key.code {
-                KeyCode::Backspace => {
-                    if let Some(ref mut modal) = self.recovery_modal {
-                        modal.key_buffer.pop();
-                    }
-                }
-                KeyCode::Char('v') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                    if let Some(ref mut modal) = self.recovery_modal
-                        && let Some(clipboard) = self.clipboard.as_mut()
-                        && let Ok(text) = clipboard.get_text()
-                    {
-                        modal.key_buffer.push_str(text.trim());
-                    }
-                }
-                KeyCode::Char(c)
-                    if !key.modifiers.contains(KeyModifiers::CONTROL)
-                        && !key.modifiers.contains(KeyModifiers::ALT) =>
-                {
-                    if let Some(ref mut modal) = self.recovery_modal {
-                        modal.key_buffer.push(c);
-                    }
-                }
-                KeyCode::Enter => {
-                    let key_input = self
-                        .recovery_modal
-                        .as_ref()
-                        .map(|m| m.key_buffer.trim().to_string())
-                        .unwrap_or_default();
-                    if !key_input.is_empty() {
-                        if let Some(ref mut modal) = self.recovery_modal {
-                            modal.stage = crate::state::RecoveryStage::Recovering;
-                        }
-                        self.pending_recovery_recover = Some(key_input);
-                    }
-                }
-                KeyCode::Esc => {
-                    self.recovery_modal = None;
-                }
-                _ => {}
-            },
-            Some(crate::state::RecoveryStage::Enabled) => match key.code {
-                KeyCode::Char('r') => {
-                    if let Some(ref mut modal) = self.recovery_modal {
-                        modal.confirm_buffer.clear();
-                        modal.stage = crate::state::RecoveryStage::ConfirmReset;
-                    }
-                }
-                KeyCode::Esc => {
-                    self.recovery_modal = None;
-                }
-                _ => {}
-            },
-            Some(crate::state::RecoveryStage::ConfirmReset) => match key.code {
-                KeyCode::Backspace => {
-                    if let Some(ref mut modal) = self.recovery_modal {
-                        modal.confirm_buffer.pop();
-                    }
-                }
-                KeyCode::Char(c) => {
-                    if let Some(ref mut modal) = self.recovery_modal {
-                        modal.confirm_buffer.push(c);
-                    }
-                }
-                KeyCode::Enter => {
-                    let confirmed = self
-                        .recovery_modal
-                        .as_ref()
-                        .map(|m| m.confirm_buffer == "yes")
-                        .unwrap_or(false);
-                    if confirmed {
-                        if let Some(ref mut modal) = self.recovery_modal {
-                            modal.stage = crate::state::RecoveryStage::Resetting;
-                        }
-                        self.pending_recovery_reset = true;
-                        self.recovery_enabled = false;
-                    }
-                }
-                KeyCode::Esc => {
-                    self.recovery_modal = None;
-                }
-                _ => {}
-            },
-            Some(crate::state::RecoveryStage::Failed(_)) => match key.code {
-                KeyCode::Enter | KeyCode::Esc => {
-                    self.recovery_modal = None;
-                }
-                _ => {}
-            },
-            None => {}
-        }
     }
 
     // ── Room Info ───────────────────────────────────────
@@ -1929,31 +1567,11 @@ impl App {
             KeyCode::Esc => {
                 self.user_config.open = false;
             }
-            KeyCode::Char('j') | KeyCode::Down => {
-                if self.user_config.selected_field < 1 {
-                    self.user_config.selected_field += 1;
-                }
-            }
-            KeyCode::Char('k') | KeyCode::Up => {
-                if self.user_config.selected_field > 0 {
-                    self.user_config.selected_field -= 1;
-                }
-            }
             KeyCode::Enter => {
-                match self.user_config.selected_field {
-                    0 => {
-                        // Enter display name editing mode
-                        self.user_config.editing_display_name = true;
-                        self.user_config.display_name_buffer =
-                            self.user_config.display_name.clone().unwrap_or_default();
-                    }
-                    1 => {
-                        // Trigger self-verification and close modal
-                        self.pending_verify = Some(None);
-                        self.user_config.open = false;
-                    }
-                    _ => {}
-                }
+                // Enter display name editing mode
+                self.user_config.editing_display_name = true;
+                self.user_config.display_name_buffer =
+                    self.user_config.display_name.clone().unwrap_or_default();
             }
             _ => {}
         }
@@ -2262,36 +1880,15 @@ mod tests {
     }
 
     #[test]
-    fn user_config_loaded_sets_self_verified_when_modal_closed() {
-        let mut app = test_app();
-        assert!(!app.self_verified);
-        assert!(!app.user_config.open);
-
-        app.handle_event(AppEvent::UserConfigLoaded {
-            display_name: None,
-            verified: true,
-            recovery_enabled: false,
-        });
-
-        assert!(app.self_verified);
-        // Modal was closed, so loading state should be unchanged
-        assert!(!app.user_config.loading);
-    }
-
-    #[test]
-    fn user_config_loaded_sets_modal_verified_when_open() {
+    fn user_config_loaded_sets_display_name_when_open() {
         let mut app = test_app();
         app.user_config.open = true;
         app.user_config.loading = true;
 
         app.handle_event(AppEvent::UserConfigLoaded {
             display_name: Some("Alice".to_string()),
-            verified: true,
-            recovery_enabled: false,
         });
 
-        assert!(app.self_verified);
-        assert!(app.user_config.verified);
         assert!(!app.user_config.loading);
         assert_eq!(app.user_config.display_name, Some("Alice".to_string()));
     }
@@ -2317,47 +1914,5 @@ mod tests {
 
         assert!(!app.pending_user_config);
         assert_eq!(app.sync_token, Some("tok2".to_string()));
-    }
-
-    #[test]
-    fn full_restart_flow_sets_verified_before_modal_open() {
-        let mut app = test_app();
-        assert!(!app.self_verified);
-        assert!(app.sync_token.is_none());
-
-        // First sync triggers pending fetch
-        app.handle_event(AppEvent::SyncTokenUpdated("tok1".to_string()));
-        assert!(app.pending_user_config);
-
-        // Main loop consumes the flag
-        app.pending_user_config = false;
-
-        // SDK responds with verified=true
-        app.handle_event(AppEvent::UserConfigLoaded {
-            display_name: Some("Bob".to_string()),
-            verified: true,
-            recovery_enabled: false,
-        });
-        assert!(app.self_verified);
-
-        // User opens :configure — verified should propagate from self_verified
-        app.user_config = UserConfigState {
-            open: true,
-            verified: app.self_verified,
-            loading: true,
-            ..UserConfigState::new()
-        };
-        assert!(app.user_config.verified);
-    }
-
-    #[test]
-    fn logout_resets_self_verified() {
-        let mut app = test_app();
-        app.self_verified = true;
-        app.auto_login_attempted = true; // prevent auto-login side effects
-
-        app.handle_event(AppEvent::LoggedOut);
-
-        assert!(!app.self_verified);
     }
 }

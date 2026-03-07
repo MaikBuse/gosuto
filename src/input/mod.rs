@@ -47,7 +47,5 @@ pub enum CommandAction {
     CreateRoom,
     RoomInfo,
     Configure,
-    Verify(Option<String>),
-    Recovery,
     NerdFonts,
 }

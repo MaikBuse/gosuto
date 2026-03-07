@@ -148,90 +148,6 @@ pub fn render(state: &UserConfigState, icons: &Icons, frame: &mut Frame) {
     }
     row += 1;
 
-    // ── Field 1: VERIFIED (actionable) ──
-    let ver_selected = state.selected_field == 1;
-    let ver_marker_color = if ver_selected {
-        theme::CYAN
-    } else {
-        theme::DIM
-    };
-    let ver_label_color = if ver_selected {
-        theme::CYAN
-    } else {
-        theme::TEXT
-    };
-    let ver_marker = if ver_selected {
-        icons.selected
-    } else {
-        icons.unselected
-    };
-
-    let ver_marker_s = Style::default().fg(ver_marker_color).bg(theme::BG);
-    let ver_label_s = Style::default()
-        .fg(ver_label_color)
-        .bg(theme::BG)
-        .add_modifier(if ver_selected {
-            Modifier::BOLD
-        } else {
-            Modifier::empty()
-        });
-
-    write_str(buf, &bounds, left, row, ver_marker, ver_marker_s);
-    set_cell(
-        buf,
-        &bounds,
-        left + 1,
-        row,
-        ' ',
-        Style::default().bg(theme::BG),
-    );
-    write_str(buf, &bounds, label_x, row, "VERIFIED", ver_label_s);
-
-    let (ver_text, ver_color) = if state.verified {
-        ("yes", theme::GREEN)
-    } else {
-        ("no", Color::Rgb(200, 60, 60))
-    };
-    write_str(
-        buf,
-        &bounds,
-        value_x,
-        row,
-        ver_text,
-        Style::default().fg(ver_color).bg(theme::BG),
-    );
-
-    // Show "Enter to verify" hint when selected and not verified
-    if ver_selected && !state.verified {
-        let hint = "(Enter to verify)";
-        let hx = value_x + ver_text.len() as u16 + 2;
-        write_str(
-            buf,
-            &bounds,
-            hx,
-            row,
-            hint,
-            Style::default().fg(theme::DIM).bg(theme::BG),
-        );
-    }
-    row += 1;
-
-    // ── RECOVERY (read-only) ──
-    write_str(buf, &bounds, label_x, row, "RECOVERY", label_s);
-    let (rec_text, rec_color) = if state.recovery_enabled {
-        ("enabled", theme::GREEN)
-    } else {
-        ("not set up", Color::Rgb(200, 60, 60))
-    };
-    write_str(
-        buf,
-        &bounds,
-        value_x,
-        row,
-        rec_text,
-        Style::default().fg(rec_color).bg(theme::BG),
-    );
-
     // Show saving indicator
     if state.saving {
         row += 2;
@@ -252,7 +168,7 @@ pub fn render(state: &UserConfigState, icons: &Icons, frame: &mut Frame) {
 
     // Hints
     let hint_row = popup.y + popup.height.saturating_sub(2);
-    let hint = "j/k navigate  Enter edit  Esc close";
+    let hint = "Enter edit  Esc close";
     let hx = left + (inner_w.saturating_sub(hint.chars().count())) as u16 / 2;
     write_str(
         buf,
