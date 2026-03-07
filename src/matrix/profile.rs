@@ -22,7 +22,6 @@ pub async fn fetch_user_config(client: &Client, tx: &EventSender) {
         .await;
 
     let cross_signing = client.encryption().cross_signing_status().await;
-    tracing::info!("cross_signing_status: {:?}", cross_signing);
 
     let verified = match cross_signing {
         Some(ref status) => status.is_complete(),
@@ -33,25 +32,20 @@ pub async fn fetch_user_config(client: &Client, tx: &EventSender) {
     // persist across restarts. Fall back to the SDK's verification_state
     // which checks if our device is cross-signed (persisted in crypto store).
     let vs = client.encryption().verification_state().get();
-    tracing::info!("verification_state: {:?}", vs);
 
     let verified = verified || {
         use matrix_sdk::encryption::VerificationState;
         matches!(vs, VerificationState::Verified)
     };
-    tracing::info!("final verified: {}", verified);
 
     let recovery_state = client.encryption().recovery().state();
-    tracing::info!("recovery_state: {:?}", recovery_state);
-
+    // Incomplete means recovery is set up on the server but private
+    // keys aren't cached locally — treat as enabled.
     let recovery_enabled = matches!(
         recovery_state,
         matrix_sdk::encryption::recovery::RecoveryState::Enabled
-    ) || (matches!(
-        recovery_state,
-        matrix_sdk::encryption::recovery::RecoveryState::Incomplete
-    ) && verified);
-    tracing::info!("recovery_enabled: {}", recovery_enabled);
+            | matrix_sdk::encryption::recovery::RecoveryState::Incomplete
+    );
 
     let _ = tx.send(AppEvent::UserConfigLoaded {
         display_name,

@@ -731,23 +731,14 @@ async fn main() -> Result<()> {
                                 if let Some(client) = client {
                                     client.encryption().wait_for_e2ee_initialization_tasks().await;
                                     let state = client.encryption().recovery().state();
-                                    tracing::info!("recovery dialog: recovery().state() = {:?}", state);
-                                    let vs = client.encryption().verification_state().get();
-                                    tracing::info!("recovery dialog: verification_state() = {:?}", vs);
-                                    let cross_signing = client.encryption().cross_signing_status().await;
-                                    tracing::info!("recovery dialog: cross_signing_status() = {:?}", cross_signing);
-                                    let state_str = match state {
-                                        matrix_sdk::encryption::recovery::RecoveryState::Incomplete => {
-                                            use matrix_sdk::encryption::VerificationState;
-                                            if matches!(vs, VerificationState::Verified) {
-                                                "Enabled".to_owned()
-                                            } else {
-                                                format!("{state:?}")
-                                            }
-                                        }
-                                        _ => format!("{state:?}"),
+                                    let state_str = format!("{state:?}");
+                                    // Incomplete means recovery is set up on the server but private
+                                    // keys aren't cached locally — treat as Enabled.
+                                    let state_str = if state_str == "Incomplete" {
+                                        "Enabled".to_owned()
+                                    } else {
+                                        state_str
                                     };
-                                    tracing::info!("recovery dialog: final state_str = {}", state_str);
                                     let _ = tx.send(AppEvent::RecoveryState(state_str));
                                 }
                             });
