@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.4.0](https://github.com/MaikBuse/gosuto/compare/v0.3.0...v0.4.0) (2026-03-07)
+
+
+### Features
+
+* add demo mode for offline UI exploration ([11a40d6](https://github.com/MaikBuse/gosuto/commit/11a40d69944fe20d08d564ea5b26f4ce404d1965))
+* add ellipsis and tooltip for truncated room names ([c705da7](https://github.com/MaikBuse/gosuto/commit/c705da7165f7ad2050a8d6465cc351149b7a825c))
+* add inline image display with background encoding ([4cb40b9](https://github.com/MaikBuse/gosuto/commit/4cb40b9cb9bb896c9dc7f73d80414f279a9732c6))
+* add multi-line chat message support with Alt+Enter ([6455f53](https://github.com/MaikBuse/gosuto/commit/6455f53872b808c42c4c9b1b09c30d42300fbf44))
+* add Nerd Font icons with :nerdfonts toggle command ([2aaf07e](https://github.com/MaikBuse/gosuto/commit/2aaf07eee4a72875dfbd58d9acd87bbebe69b46f))
+* add typing indicators (send and receive) ([4aff290](https://github.com/MaikBuse/gosuto/commit/4aff2903156b0dcba8d0ad7e8fcfce589e1bee64))
+* format code ([285890e](https://github.com/MaikBuse/gosuto/commit/285890eb46d3a356924887acdee90d49fbbaee58))
+* rewrite demo chat messages and add demo video to README ([cb2347e](https://github.com/MaikBuse/gosuto/commit/cb2347e924451240a7c4ac325b4185bffe6d8ecb))
+* support modifier-only keys (Ctrl, Shift, Alt) as PTT keys ([bdf9639](https://github.com/MaikBuse/gosuto/commit/bdf9639af0e5545ef4e649e84707eb80230ab9d5))
+
+
+### Bug Fixes
+
+* apply sqrt scaling to mic level meter for better visibility ([25d9f4a](https://github.com/MaikBuse/gosuto/commit/25d9f4a5fc55ea6cc6ddcb04b424ea99a545a509))
+* clear persistent unread badge on encrypted DM rooms ([285890e](https://github.com/MaikBuse/gosuto/commit/285890eb46d3a356924887acdee90d49fbbaee58))
+* make encryption key publish non-fatal for PL 0 users ([ff59f20](https://github.com/MaikBuse/gosuto/commit/ff59f20404b7f033d3323871ee866d091b8fc4e2))
+* make voice activity and push-to-talk mutually exclusive ([76b802c](https://github.com/MaikBuse/gosuto/commit/76b802c9f60d45761eb140c87cc6e4124712a40e))
+* persist recovery state and mark user as verified after recovery ([78edf03](https://github.com/MaikBuse/gosuto/commit/78edf03cc7b3c0f3bb04b5b496aeaad873d8b306))
+* pin Rust toolchain to 1.93.1 to avoid matrix-sdk query depth overflow ([8e42b77](https://github.com/MaikBuse/gosuto/commit/8e42b77f8cfc5face4c3c2a638d91792895683e6))
+* prevent effects from overwriting ratatui-image skip cells ([6468486](https://github.com/MaikBuse/gosuto/commit/64684864312613fa0dff2ce30b36352b4d693631))
+* replace needs_resize with deterministic rect tracking to eliminate per-frame re-encoding ([1b79b38](https://github.com/MaikBuse/gosuto/commit/1b79b382ef5aba2ea6e045ff4e702c643626ad08))
+* resolve clippy warnings for MSRV and collapsible if ([c301b4e](https://github.com/MaikBuse/gosuto/commit/c301b4efc51dbb69e5c386eba36e4bf264c6f4cc))
+* treat Incomplete recovery state as enabled and remove diagnostic logging ([e775f70](https://github.com/MaikBuse/gosuto/commit/e775f70e6d80c56822392dc6c84632ea719900d6))
+
 ## [0.3.0](https://github.com/MaikBuse/gosuto/compare/v0.2.0...v0.3.0) (2026-03-02)
 
 
