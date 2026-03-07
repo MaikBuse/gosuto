@@ -880,6 +880,7 @@ impl App {
                     modal.stage = RecoveryStage::ShowKey(key);
                     modal.copied = false;
                 }
+                self.pending_refetch = true;
             }
             AppEvent::RecoveryHealingProgress(step) => {
                 if let Some(ref mut modal) = self.recovery {
@@ -890,6 +891,7 @@ impl App {
                 if let Some(ref mut modal) = self.recovery {
                     modal.stage = RecoveryStage::Enabled;
                 }
+                self.pending_refetch = true;
             }
             AppEvent::RecoveryNeedPassword(sender) => {
                 if let Some(ref mut modal) = self.recovery {
@@ -2520,5 +2522,111 @@ mod tests {
         assert_eq!(modal.stage, RecoveryStage::NeedPassword);
         assert!(modal.password_tx.is_some());
         assert!(modal.password_buffer.is_empty());
+    }
+
+    // ── Tests for heal_recovery skip-cross-signing path ──
+
+    #[test]
+    fn healing_skips_cross_signing_starts_at_backup() {
+        // When cross-signing is already complete, heal_recovery sends Backup
+        // as the first progress event (skipping CrossSigning).
+        let mut app = test_app();
+        app.recovery = Some(RecoveryModalState::new());
+        app.recovery.as_mut().unwrap().stage = RecoveryStage::Recovering;
+
+        // First healing event is Backup (cross-signing was skipped)
+        app.handle_event(AppEvent::RecoveryHealingProgress(HealingStep::Backup));
+        assert_eq!(
+            app.recovery.as_ref().unwrap().stage,
+            RecoveryStage::Healing(HealingStep::Backup)
+        );
+    }
+
+    #[test]
+    fn healing_backup_then_export_without_cross_signing() {
+        // Simulates the full skip-cross-signing heal path:
+        // Backup → ExportSecrets → ShowKey
+        let mut app = test_app();
+        app.recovery = Some(RecoveryModalState::new());
+
+        app.handle_event(AppEvent::RecoveryHealingProgress(HealingStep::Backup));
+        assert_eq!(
+            app.recovery.as_ref().unwrap().stage,
+            RecoveryStage::Healing(HealingStep::Backup)
+        );
+
+        app.handle_event(AppEvent::RecoveryHealingProgress(
+            HealingStep::ExportSecrets,
+        ));
+        assert_eq!(
+            app.recovery.as_ref().unwrap().stage,
+            RecoveryStage::Healing(HealingStep::ExportSecrets)
+        );
+
+        app.handle_event(AppEvent::RecoveryKeyReady("newkey123".to_string()));
+        assert_eq!(
+            app.recovery.as_ref().unwrap().stage,
+            RecoveryStage::ShowKey("newkey123".to_string())
+        );
+    }
+
+    #[test]
+    fn healing_full_path_with_cross_signing() {
+        // Simulates the full heal path when cross-signing IS needed:
+        // CrossSigning → (password) → Backup → ExportSecrets → ShowKey
+        let mut app = test_app();
+        app.recovery = Some(RecoveryModalState::new());
+
+        app.handle_event(AppEvent::RecoveryHealingProgress(HealingStep::CrossSigning));
+        assert_eq!(
+            app.recovery.as_ref().unwrap().stage,
+            RecoveryStage::Healing(HealingStep::CrossSigning)
+        );
+
+        // Password prompt interrupts healing
+        let (tx, _rx) = tokio::sync::oneshot::channel();
+        app.handle_event(AppEvent::RecoveryNeedPassword(
+            crate::event::PasswordSender::new(tx),
+        ));
+        assert_eq!(
+            app.recovery.as_ref().unwrap().stage,
+            RecoveryStage::NeedPassword
+        );
+
+        // After password submitted, healing resumes at Backup
+        app.handle_event(AppEvent::RecoveryHealingProgress(HealingStep::Backup));
+        assert_eq!(
+            app.recovery.as_ref().unwrap().stage,
+            RecoveryStage::Healing(HealingStep::Backup)
+        );
+
+        app.handle_event(AppEvent::RecoveryHealingProgress(
+            HealingStep::ExportSecrets,
+        ));
+        assert_eq!(
+            app.recovery.as_ref().unwrap().stage,
+            RecoveryStage::Healing(HealingStep::ExportSecrets)
+        );
+
+        app.handle_event(AppEvent::RecoveryKeyReady("abc".to_string()));
+        assert_eq!(
+            app.recovery.as_ref().unwrap().stage,
+            RecoveryStage::ShowKey("abc".to_string())
+        );
+    }
+
+    #[test]
+    fn healing_from_resetting_stage() {
+        // When Reset triggers heal_recovery (Incomplete state), the stage
+        // transitions from Resetting → Healing
+        let mut app = test_app();
+        app.recovery = Some(RecoveryModalState::new());
+        app.recovery.as_mut().unwrap().stage = RecoveryStage::Resetting;
+
+        app.handle_event(AppEvent::RecoveryHealingProgress(HealingStep::Backup));
+        assert_eq!(
+            app.recovery.as_ref().unwrap().stage,
+            RecoveryStage::Healing(HealingStep::Backup)
+        );
     }
 }

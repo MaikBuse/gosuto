@@ -733,6 +733,14 @@ async fn main() -> Result<()> {
                                                                     }
                                                                 }
                                                             } else {
+                                                                // Download room keys from backup so messages can be decrypted
+                                                                let rooms: Vec<_> = client.joined_rooms().iter()
+                                                                    .map(|r| r.room_id().to_owned())
+                                                                    .collect();
+                                                                for room_id in &rooms {
+                                                                    let _ = client.encryption().backups()
+                                                                        .download_room_keys_for_room(room_id).await;
+                                                                }
                                                                 let _ = tx.send(AppEvent::RecoveryRecovered);
                                                             }
                                                         }

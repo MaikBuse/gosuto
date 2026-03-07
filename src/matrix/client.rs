@@ -446,8 +446,8 @@ pub async fn logout(client: &Client) -> Result<()> {
 /// encrypted with a different secret storage key).
 ///
 /// The healing sequence:
-/// 1. Reset cross-signing keys (uses UIA — may prompt for password)
-/// 2. Create a backup if none is enabled
+/// 1. Reset cross-signing keys if incomplete (uses UIA — may prompt for password)
+/// 2. Delete any stale server-side backup and create a fresh one
 /// 3. Reset the secret storage key, which re-exports all locally-available
 ///    secrets into a fresh key
 ///
@@ -456,67 +456,79 @@ pub async fn heal_recovery(client: &Client, tx: &EventSender) -> Result<String> 
     use crate::app::HealingStep;
     use crate::event::PasswordSender;
 
-    // Step 1: Reset cross-signing keys
-    let _ = tx.send(AppEvent::RecoveryHealingProgress(HealingStep::CrossSigning));
-    let handle = client
+    // Step 1: Reset cross-signing keys (only if incomplete)
+    let needs_cross_signing = client
         .encryption()
-        .reset_cross_signing()
+        .cross_signing_status()
         .await
-        .context("Failed to reset cross-signing")?;
+        .is_none_or(|status| !status.is_complete());
 
-    if let Some(handle) = handle {
-        // Server requires UIA — ask user for password
-        match handle.auth_type() {
-            matrix_sdk::encryption::CrossSigningResetAuthType::Uiaa(uiaa) => {
-                let session = uiaa.session.clone();
-                let (password_tx, password_rx) = tokio::sync::oneshot::channel();
-                let _ = tx.send(AppEvent::RecoveryNeedPassword(PasswordSender::new(
-                    password_tx,
-                )));
+    if needs_cross_signing {
+        let _ = tx.send(AppEvent::RecoveryHealingProgress(HealingStep::CrossSigning));
+        let handle = client
+            .encryption()
+            .reset_cross_signing()
+            .await
+            .context("Failed to reset cross-signing")?;
 
-                let password = password_rx
-                    .await
-                    .map_err(|_| anyhow::anyhow!("Password prompt was cancelled"))?;
+        if let Some(handle) = handle {
+            // Server requires UIA — ask user for password
+            match handle.auth_type() {
+                matrix_sdk::encryption::CrossSigningResetAuthType::Uiaa(uiaa) => {
+                    let session = uiaa.session.clone();
+                    let (password_tx, password_rx) = tokio::sync::oneshot::channel();
+                    let _ = tx.send(AppEvent::RecoveryNeedPassword(PasswordSender::new(
+                        password_tx,
+                    )));
 
-                let user_id = client
-                    .user_id()
-                    .ok_or_else(|| anyhow::anyhow!("No user ID"))?;
-                let identifier =
-                    matrix_sdk::ruma::api::client::uiaa::UserIdentifier::UserIdOrLocalpart(
-                        user_id.to_string(),
-                    );
-                let mut pw =
-                    matrix_sdk::ruma::api::client::uiaa::Password::new(identifier, password);
-                pw.session = session;
+                    let password = password_rx
+                        .await
+                        .map_err(|_| anyhow::anyhow!("Password prompt was cancelled"))?;
 
-                handle
-                    .auth(Some(
-                        matrix_sdk::ruma::api::client::uiaa::AuthData::Password(pw),
-                    ))
-                    .await
-                    .context("Cross-signing auth failed")?;
-            }
-            _ => {
-                // OIDC or other — try without auth
-                handle
-                    .auth(None)
-                    .await
-                    .context("Cross-signing auth failed (unsupported auth type)")?;
+                    let user_id = client
+                        .user_id()
+                        .ok_or_else(|| anyhow::anyhow!("No user ID"))?;
+                    let identifier =
+                        matrix_sdk::ruma::api::client::uiaa::UserIdentifier::UserIdOrLocalpart(
+                            user_id.to_string(),
+                        );
+                    let mut pw =
+                        matrix_sdk::ruma::api::client::uiaa::Password::new(identifier, password);
+                    pw.session = session;
+
+                    handle
+                        .auth(Some(
+                            matrix_sdk::ruma::api::client::uiaa::AuthData::Password(pw),
+                        ))
+                        .await
+                        .context("Cross-signing auth failed")?;
+                }
+                _ => {
+                    // OIDC or other — try without auth
+                    handle
+                        .auth(None)
+                        .await
+                        .context("Cross-signing auth failed (unsupported auth type)")?;
+                }
             }
         }
+        // If handle is None, no UIA needed — keys uploaded successfully
     }
-    // If handle is None, no UIA needed — keys uploaded successfully
 
-    // Step 2: Ensure backup is enabled
+    // Step 2: Delete stale backup from server and create fresh one
     let _ = tx.send(AppEvent::RecoveryHealingProgress(HealingStep::Backup));
-    if !client.encryption().backups().are_enabled().await {
-        client
-            .encryption()
-            .backups()
-            .create()
-            .await
-            .context("Failed to create backup")?;
-    }
+    client
+        .encryption()
+        .backups()
+        .disable_and_delete()
+        .await
+        .context("Failed to delete old backup")?;
+    client
+        .encryption()
+        .backups()
+        .create()
+        .await
+        .context("Failed to create backup")?;
 
     // Step 3: Re-export all secrets into a new secret storage key
     let _ = tx.send(AppEvent::RecoveryHealingProgress(
