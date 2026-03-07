@@ -65,6 +65,16 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
         Span::raw("")
     };
 
+    let icons = app.config.icons();
+    let verify_span = if app.self_verified {
+        Span::styled(
+            format!(" {} ", icons.checkmark),
+            ratatui::style::Style::default().fg(theme::GREEN),
+        )
+    } else {
+        Span::raw("")
+    };
+
     let error_span = if let Some(ref err) = app.last_error {
         Span::styled(format!(" {} ", err), theme::error_style())
     } else {
@@ -78,6 +88,7 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
         Span::styled(" \u{2502} ", theme::dim_style()),
         Span::styled(sync_status, theme::dim_style()),
         call_span,
+        verify_span,
         error_span,
     ]);
 

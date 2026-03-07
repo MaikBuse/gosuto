@@ -3,6 +3,7 @@ pub struct RoomMember {
     pub user_id: String,
     pub display_name: String,
     pub power_level: i64,
+    pub verified: Option<bool>,
 }
 
 #[derive(Debug)]
@@ -75,6 +76,7 @@ mod tests {
             user_id: user_id.to_string(),
             display_name: name.to_string(),
             power_level: power,
+            verified: None,
         }
     }
 

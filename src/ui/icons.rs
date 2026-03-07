@@ -21,6 +21,7 @@ pub struct Icons {
     pub voice: &'static str,
     pub home: &'static str,
     pub participant: &'static str,
+    pub checkmark: &'static str,
 }
 
 pub const UNICODE: Icons = Icons {
@@ -42,6 +43,7 @@ pub const UNICODE: Icons = Icons {
     voice: "\u{25C9}",
     home: "\u{2302}",
     participant: "\u{25B6}",
+    checkmark: "\u{2713}",
 };
 
 pub const NERD: Icons = Icons {
@@ -63,6 +65,7 @@ pub const NERD: Icons = Icons {
     voice: "\u{f130}",
     home: "\u{f015}",
     participant: "\u{f007}",
+    checkmark: "\u{f058}",
 };
 
 pub fn icons(use_nerd_fonts: bool) -> &'static Icons {
@@ -93,6 +96,7 @@ mod tests {
         assert!(!i.voice.is_empty());
         assert!(!i.home.is_empty());
         assert!(!i.participant.is_empty());
+        assert!(!i.checkmark.is_empty());
     }
 
     #[test]
@@ -115,12 +119,14 @@ mod tests {
         assert!(!i.voice.is_empty());
         assert!(!i.home.is_empty());
         assert!(!i.participant.is_empty());
+        assert!(!i.checkmark.is_empty());
     }
 
     #[test]
     fn sets_differ() {
         assert_ne!(UNICODE.room, NERD.room);
         assert_ne!(UNICODE.selected, NERD.selected);
+        assert_ne!(UNICODE.checkmark, NERD.checkmark);
     }
 
     #[test]

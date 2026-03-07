@@ -1,9 +1,78 @@
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 
 use rdev::{EventType, Key};
-use tokio::task::JoinHandle;
 use tracing::warn;
+
+use crate::event::{AppEvent, EventSender};
+
+pub struct GlobalPttHandle {
+    pub active: Arc<AtomicBool>,
+    pub capturing: Arc<AtomicBool>,
+    pub ptt_key: Arc<Mutex<String>>,
+}
+
+pub fn spawn_listener(
+    ptt_transmitting: Arc<AtomicBool>,
+    ptt_key: String,
+    event_tx: EventSender,
+) -> GlobalPttHandle {
+    let active = Arc::new(AtomicBool::new(false));
+    let capturing = Arc::new(AtomicBool::new(false));
+    let ptt_key_shared = Arc::new(Mutex::new(ptt_key));
+
+    let handle = GlobalPttHandle {
+        active: active.clone(),
+        capturing: capturing.clone(),
+        ptt_key: ptt_key_shared.clone(),
+    };
+
+    tokio::task::spawn_blocking(move || {
+        let result = rdev::listen(move |event| match event.event_type {
+            EventType::KeyPress(key) => {
+                let Some(name) = rdev_key_to_name(key) else {
+                    return;
+                };
+                if capturing.load(Ordering::Relaxed) {
+                    let _ = event_tx.send(AppEvent::PttKeyCaptured(name));
+                    capturing.store(false, Ordering::Relaxed);
+                } else if active.load(Ordering::Relaxed) {
+                    let current_key = ptt_key_shared.lock().unwrap().clone();
+                    if !current_key.is_empty() && name == current_key {
+                        ptt_transmitting.store(true, Ordering::Relaxed);
+                    }
+                }
+            }
+            EventType::KeyRelease(key) => {
+                if let Some(name) = rdev_key_to_name(key) {
+                    let current_key = ptt_key_shared.lock().unwrap().clone();
+                    if !current_key.is_empty() && name == current_key {
+                        ptt_transmitting.store(false, Ordering::Relaxed);
+                    }
+                }
+            }
+            _ => {}
+        });
+
+        if let Err(e) = result {
+            if cfg!(target_os = "linux") {
+                warn!(
+                    "Global PTT listener failed: {:?}. Try adding your user to the `input` group.",
+                    e
+                );
+            } else if cfg!(target_os = "macos") {
+                warn!(
+                    "Global PTT listener failed: {:?}. Grant Accessibility permission in System Settings.",
+                    e
+                );
+            } else {
+                warn!("Global PTT listener failed: {:?}", e);
+            }
+        }
+    });
+
+    handle
+}
 
 fn rdev_key_to_name(key: Key) -> Option<String> {
     let name = match key {
@@ -77,51 +146,6 @@ fn rdev_key_to_name(key: Key) -> Option<String> {
         _ => return None,
     };
     Some(name.to_string())
-}
-
-pub fn spawn_global_ptt_listener(
-    ptt_transmitting: Arc<AtomicBool>,
-    ptt_key: String,
-    active: Arc<AtomicBool>,
-) -> Option<JoinHandle<()>> {
-    let handle = tokio::task::spawn_blocking(move || {
-        let result = rdev::listen(move |event| match event.event_type {
-            EventType::KeyPress(key) => {
-                if active.load(Ordering::Relaxed)
-                    && let Some(name) = rdev_key_to_name(key)
-                    && name == ptt_key
-                {
-                    ptt_transmitting.store(true, Ordering::Relaxed);
-                }
-            }
-            EventType::KeyRelease(key) => {
-                if let Some(name) = rdev_key_to_name(key)
-                    && name == ptt_key
-                {
-                    ptt_transmitting.store(false, Ordering::Relaxed);
-                }
-            }
-            _ => {}
-        });
-
-        if let Err(e) = result {
-            if cfg!(target_os = "linux") {
-                warn!(
-                    "Global PTT listener failed: {:?}. Try adding your user to the `input` group.",
-                    e
-                );
-            } else if cfg!(target_os = "macos") {
-                warn!(
-                    "Global PTT listener failed: {:?}. Grant Accessibility permission in System Settings.",
-                    e
-                );
-            } else {
-                warn!("Global PTT listener failed: {:?}", e);
-            }
-        }
-    });
-
-    Some(handle)
 }
 
 #[cfg(test)]

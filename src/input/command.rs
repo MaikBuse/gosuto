@@ -130,6 +130,13 @@ pub const COMMANDS: &[CommandDef] = &[
         description: "Manage recovery key",
         takes_arg: false,
     },
+    CommandDef {
+        name: "verify",
+        aliases: &["v"],
+        syntax: ":verify [user]",
+        description: "Start verification",
+        takes_arg: true,
+    },
 ];
 
 pub fn filtered_commands(prefix: &str) -> Vec<&'static CommandDef> {
@@ -299,6 +306,14 @@ fn parse_command(input: &str) -> InputResult {
         "configure" | "config" | "profile" => InputResult::Command(CommandAction::Configure),
         "nerdfonts" | "nerd" | "icons" => InputResult::Command(CommandAction::NerdFonts),
         "recovery" | "recover" => InputResult::Command(CommandAction::Recovery),
+        "verify" | "v" => {
+            let user = if arg.is_empty() {
+                None
+            } else {
+                Some(arg.to_string())
+            };
+            InputResult::Command(CommandAction::Verify(user))
+        }
         _ => InputResult::None,
     }
 }
@@ -538,6 +553,32 @@ mod tests {
         assert!(matches!(
             parse_command("recover"),
             InputResult::Command(CommandAction::Recovery)
+        ));
+    }
+
+    #[test]
+    fn parse_verify_no_arg() {
+        let result = parse_command("verify");
+        assert!(matches!(
+            result,
+            InputResult::Command(CommandAction::Verify(None))
+        ));
+    }
+
+    #[test]
+    fn parse_verify_with_arg() {
+        let result = parse_command("verify @alice:matrix.org");
+        assert!(
+            matches!(result, InputResult::Command(CommandAction::Verify(Some(ref u))) if u == "@alice:matrix.org")
+        );
+    }
+
+    #[test]
+    fn parse_verify_alias_v() {
+        let result = parse_command("v");
+        assert!(matches!(
+            result,
+            InputResult::Command(CommandAction::Verify(None))
         ));
     }
 

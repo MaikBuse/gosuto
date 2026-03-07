@@ -49,8 +49,6 @@ pub struct AudioConfig {
     pub push_to_talk: bool,
     #[serde(default)]
     pub push_to_talk_key: Option<String>,
-    #[serde(default)]
-    pub global_push_to_talk: bool,
 }
 
 impl Default for AudioConfig {
@@ -64,7 +62,6 @@ impl Default for AudioConfig {
             sensitivity: 0.15,
             push_to_talk: false,
             push_to_talk_key: None,
-            global_push_to_talk: false,
         }
     }
 }

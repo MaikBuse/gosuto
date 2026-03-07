@@ -379,31 +379,37 @@ pub fn demo_members_for_room(room_id: &str) -> Vec<RoomMember> {
         user_id: USER_GHOST.to_string(),
         display_name: "Ghost".to_string(),
         power_level: 100,
+        verified: None,
     };
     let alice = RoomMember {
         user_id: USER_ALICE.to_string(),
         display_name: "Alice".to_string(),
         power_level: 50,
+        verified: None,
     };
     let bob = RoomMember {
         user_id: USER_BOB.to_string(),
         display_name: "Bob".to_string(),
         power_level: 50,
+        verified: None,
     };
     let carol = RoomMember {
         user_id: USER_CAROL.to_string(),
         display_name: "Carol".to_string(),
         power_level: 0,
+        verified: None,
     };
     let dave = RoomMember {
         user_id: USER_DAVE.to_string(),
         display_name: "Dave".to_string(),
         power_level: 0,
+        verified: None,
     };
     let eve = RoomMember {
         user_id: USER_EVE.to_string(),
         display_name: "Eve".to_string(),
         power_level: 0,
+        verified: None,
     };
 
     match room_id {

@@ -127,12 +127,15 @@ pub enum AppEvent {
     // User config events
     UserConfigLoaded {
         display_name: Option<String>,
+        verified: bool,
+        recovery_enabled: bool,
     },
     UserConfigUpdated,
     UserConfigError(String),
     // Audio settings events
     MicLevel(f32),
     KeyRelease(KeyEvent),
+    PttKeyCaptured(String),
     // Recovery events
     RecoveryStateChecked(crate::app::RecoveryStage),
     RecoveryKeyReady(String),
@@ -140,6 +143,29 @@ pub enum AppEvent {
     RecoveryRecovered,
     RecoveryNeedPassword(PasswordSender),
     RecoveryError(String),
+    // Verification events
+    VerificationRequestReceived {
+        sender: String,
+        flow_id: String,
+    },
+    VerificationSasEmoji {
+        emojis: Vec<(String, String)>,
+        flow_id: String,
+        sender: String,
+    },
+    VerificationCompleted {
+        sender: String,
+    },
+    VerificationCancelled {
+        reason: String,
+    },
+    VerificationError(String),
+    // Member verification status
+    MemberVerificationStatus {
+        room_id: String,
+        user_id: String,
+        verified: bool,
+    },
     // Image events
     ImageLoaded {
         event_id: String,

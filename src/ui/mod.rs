@@ -16,6 +16,7 @@ pub mod room_list;
 pub mod status_bar;
 pub mod theme;
 pub mod typing_indicator;
+pub mod verify_modal;
 pub mod which_key;
 
 use ratatui::Frame;
@@ -136,6 +137,11 @@ pub fn render(app: &mut App, frame: &mut Frame) {
     // Recovery modal
     if let Some(ref state) = app.recovery {
         recovery_modal::render(state, frame);
+    }
+
+    // Verification modal
+    if let Some(ref verify_state) = app.verification_modal {
+        verify_modal::render(verify_state, frame);
     }
 
     // Which-key leader popup

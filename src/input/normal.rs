@@ -1,6 +1,6 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use super::{InputResult, VimState};
+use super::{FocusPanel, InputResult, VimState};
 
 pub fn handle_normal(key: KeyEvent, vim: &mut VimState) -> InputResult {
     // Ctrl+C always quits
@@ -31,6 +31,7 @@ pub fn handle_normal(key: KeyEvent, vim: &mut VimState) -> InputResult {
             InputResult::None
         }
         KeyCode::Char('G') => InputResult::MoveBottom,
+        KeyCode::Char('v') if vim.focus == FocusPanel::Members => InputResult::VerifyMember,
         KeyCode::Char('c') => InputResult::CallMember,
         KeyCode::Char('a') => InputResult::AnswerCall,
         KeyCode::Char('r') => InputResult::RejectCall,

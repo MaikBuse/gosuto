@@ -112,11 +112,18 @@ fn entries(cat: WhichKeyCategory) -> &'static [Entry] {
                 available: always,
             },
         ],
-        WhichKeyCategory::Security => &[Entry {
-            key: 'r',
-            label: "Recovery",
-            available: always,
-        }],
+        WhichKeyCategory::Security => &[
+            Entry {
+                key: 'r',
+                label: "Recovery",
+                available: always,
+            },
+            Entry {
+                key: 'v',
+                label: "Verify",
+                available: always,
+            },
+        ],
     }
 }
 

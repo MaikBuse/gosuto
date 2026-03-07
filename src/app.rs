@@ -163,7 +163,9 @@ pub struct UserConfigState {
     pub display_name: Option<String>,
     pub display_name_buffer: String,
     pub editing_display_name: bool,
-    pub selected_field: usize,
+    pub verified: bool,
+    pub recovery_enabled: bool,
+    pub selected_field: usize, // 0=display name, 1=verified
     pub loading: bool,
     pub saving: bool,
 }
@@ -366,106 +368,6 @@ pub fn recovery_key_action(
     }
 }
 
-// ── Verification Modal ─────────────────────────────────
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum VerificationStage {
-    WaitingForAccept,
-    IncomingRequest {
-        sender: String,
-    },
-    SasComparison {
-        descriptions: Vec<String>,
-        sender: String,
-    },
-    Completed {
-        sender: String,
-    },
-    Failed {
-        reason: String,
-    },
-}
-
-pub struct VerificationModalState {
-    pub stage: VerificationStage,
-    pub flow_id: String,
-    pub confirm_tx: Option<tokio::sync::oneshot::Sender<bool>>,
-    pub accept_tx: Option<tokio::sync::oneshot::Sender<bool>>,
-}
-
-impl VerificationModalState {
-    pub fn new() -> Self {
-        Self {
-            stage: VerificationStage::WaitingForAccept,
-            flow_id: String::new(),
-            confirm_tx: None,
-            accept_tx: None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum VerificationAction {
-    StartSelf,
-    StartUser(String),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum VerificationTransition {
-    None,
-    Close,
-}
-
-pub fn verify_key_action(
-    state: &mut VerificationModalState,
-    code: KeyCode,
-) -> VerificationTransition {
-    match &state.stage {
-        VerificationStage::WaitingForAccept => {
-            if code == KeyCode::Esc {
-                return VerificationTransition::Close;
-            }
-            VerificationTransition::None
-        }
-        VerificationStage::IncomingRequest { .. } => match code {
-            KeyCode::Char('y') => {
-                if let Some(tx) = state.accept_tx.take() {
-                    let _ = tx.send(true);
-                }
-                state.stage = VerificationStage::WaitingForAccept;
-                VerificationTransition::None
-            }
-            KeyCode::Char('n') | KeyCode::Esc => {
-                if let Some(tx) = state.accept_tx.take() {
-                    let _ = tx.send(false);
-                }
-                VerificationTransition::Close
-            }
-            _ => VerificationTransition::None,
-        },
-        VerificationStage::SasComparison { .. } => match code {
-            KeyCode::Char('y') => {
-                if let Some(tx) = state.confirm_tx.take() {
-                    let _ = tx.send(true);
-                }
-                state.stage = VerificationStage::WaitingForAccept;
-                VerificationTransition::None
-            }
-            KeyCode::Char('n') | KeyCode::Esc => {
-                if let Some(tx) = state.confirm_tx.take() {
-                    let _ = tx.send(false);
-                }
-                VerificationTransition::Close
-            }
-            _ => VerificationTransition::None,
-        },
-        VerificationStage::Completed { .. } | VerificationStage::Failed { .. } => match code {
-            KeyCode::Enter | KeyCode::Esc => VerificationTransition::Close,
-            _ => VerificationTransition::None,
-        },
-    }
-}
-
 impl UserConfigState {
     pub fn new() -> Self {
         Self {
@@ -476,6 +378,8 @@ impl UserConfigState {
             display_name: None,
             display_name_buffer: String::new(),
             editing_display_name: false,
+            verified: false,
+            recovery_enabled: false,
             selected_field: 0,
             loading: false,
             saving: false,
@@ -536,7 +440,7 @@ pub struct App {
     // Audio settings
     pub audio_settings: AudioSettingsState,
     pub ptt_transmitting: Arc<AtomicBool>,
-    pub global_ptt_active: Option<Arc<AtomicBool>>,
+    pub global_ptt: Option<crate::global_ptt::GlobalPttHandle>,
     pub sync_token: Option<String>,
     // Which-key leader popup
     pub which_key: Option<Option<crate::ui::which_key::WhichKeyCategory>>,
@@ -554,9 +458,11 @@ pub struct App {
     pub recovery: Option<RecoveryModalState>,
     pub pending_recovery: Option<RecoveryAction>,
     // Verification
-    pub verification: Option<VerificationModalState>,
-    pub pending_verification: Option<VerificationAction>,
-    pub own_verified: Option<bool>,
+    pub verification_modal: Option<crate::state::VerificationModalState>,
+    pub pending_verify: Option<Option<String>>,
+    pub verify_confirm_tx: Option<tokio::sync::oneshot::Sender<bool>>,
+    pub self_verified: bool,
+    pub recovery_enabled: bool,
 }
 
 impl App {
@@ -612,7 +518,7 @@ impl App {
             pending_set_display_name: None,
             audio_settings: AudioSettingsState::new(),
             ptt_transmitting: Arc::new(AtomicBool::new(true)), // default: always transmit (no PTT)
-            global_ptt_active: None,
+            global_ptt: None,
             sync_token: None,
             which_key: None,
             clipboard: arboard::Clipboard::new().ok(),
@@ -625,9 +531,11 @@ impl App {
             demo_mode: false,
             recovery: None,
             pending_recovery: None,
-            verification: None,
-            pending_verification: None,
-            own_verified: None,
+            verification_modal: None,
+            pending_verify: None,
+            verify_confirm_tx: None,
+            self_verified: false,
+            recovery_enabled: false,
         }
     }
 
@@ -649,8 +557,8 @@ impl App {
                     self.handle_create_room_key(key);
                 } else if self.audio_settings.open {
                     self.handle_audio_settings_key(key);
-                } else if self.verification.is_some() {
-                    self.handle_verification_key(key);
+                } else if self.verification_modal.is_some() {
+                    self.handle_verify_modal_key(key);
                 } else if self.recovery.is_some() {
                     self.handle_recovery_key(key);
                 } else if self.which_key.is_some() {
@@ -674,6 +582,15 @@ impl App {
                     && self.key_matches_ptt(&key)
                 {
                     self.ptt_transmitting.store(false, Ordering::Relaxed);
+                }
+            }
+            AppEvent::PttKeyCaptured(name) => {
+                if self.audio_settings.capturing_ptt_key {
+                    self.audio_settings.push_to_talk_key = Some(name.clone());
+                    self.audio_settings.capturing_ptt_key = false;
+                    if let Some(ref handle) = self.global_ptt {
+                        *handle.ptt_key.lock().unwrap() = name;
+                    }
                 }
             }
             AppEvent::MicLevel(level) => {
@@ -721,6 +638,8 @@ impl App {
                 self.members_list = MemberListState::new();
                 self.login = LoginState::new();
                 self.sync_status = "disconnected".to_string();
+                self.self_verified = false;
+                self.recovery_enabled = false;
                 self.typing_users.clear();
                 self.last_typing_sent = None;
                 self.pending_typing_notice = None;
@@ -953,9 +872,21 @@ impl App {
                 self.last_error = Some(error);
             }
             // User config events
-            AppEvent::UserConfigLoaded { display_name } => {
+            AppEvent::UserConfigLoaded {
+                display_name,
+                verified,
+                recovery_enabled,
+            } => {
+                if verified {
+                    self.self_verified = true;
+                }
+                if recovery_enabled {
+                    self.recovery_enabled = true;
+                }
                 if self.user_config.open {
                     self.user_config.display_name = display_name;
+                    self.user_config.verified = verified || self.self_verified;
+                    self.user_config.recovery_enabled = recovery_enabled || self.recovery_enabled;
                     self.user_config.loading = false;
                 }
             }
@@ -1019,64 +950,44 @@ impl App {
                 }
             }
             // Verification events
-            AppEvent::VerificationIncomingRequest {
-                sender,
-                flow_id,
-                accept_tx,
-            } => {
-                self.verification = Some(VerificationModalState {
-                    stage: VerificationStage::IncomingRequest {
-                        sender: sender.clone(),
-                    },
-                    flow_id,
-                    confirm_tx: None,
-                    accept_tx: accept_tx.take(),
+            AppEvent::VerificationRequestReceived { sender, flow_id: _ } => {
+                self.verification_modal = Some(crate::state::VerificationModalState {
+                    stage: crate::state::VerificationStage::WaitingForOtherDevice,
+                    sender,
+                    emojis: vec![],
                 });
             }
             AppEvent::VerificationSasEmoji {
-                descriptions,
-                flow_id,
-                confirm_tx,
+                emojis,
+                flow_id: _,
+                sender,
             } => {
-                let sender = flow_id.clone();
-                if let Some(ref mut modal) = self.verification {
-                    modal.stage = VerificationStage::SasComparison {
-                        descriptions,
-                        sender,
-                    };
-                    modal.flow_id = flow_id;
-                    modal.confirm_tx = confirm_tx.take();
+                self.verification_modal = Some(crate::state::VerificationModalState {
+                    stage: crate::state::VerificationStage::EmojiConfirmation,
+                    sender,
+                    emojis,
+                });
+            }
+            AppEvent::VerificationCompleted { sender: _ } => {
+                if let Some(ref mut modal) = self.verification_modal {
+                    modal.stage = crate::state::VerificationStage::Completed;
+                }
+                self.self_verified = true;
+                self.pending_refetch = true;
+                self.user_config.verified = true;
+            }
+            AppEvent::VerificationCancelled { reason } => {
+                if let Some(ref mut modal) = self.verification_modal {
+                    modal.stage = crate::state::VerificationStage::Failed(reason);
+                }
+            }
+            AppEvent::VerificationError(err) => {
+                if self.verification_modal.is_some() {
+                    if let Some(ref mut modal) = self.verification_modal {
+                        modal.stage = crate::state::VerificationStage::Failed(err);
+                    }
                 } else {
-                    self.verification = Some(VerificationModalState {
-                        stage: VerificationStage::SasComparison {
-                            descriptions,
-                            sender,
-                        },
-                        flow_id,
-                        confirm_tx: confirm_tx.take(),
-                        accept_tx: None,
-                    });
-                }
-            }
-            AppEvent::VerificationCompleted { user_id } => {
-                if let Some(ref mut modal) = self.verification {
-                    modal.stage = VerificationStage::Completed {
-                        sender: user_id.clone(),
-                    };
-                }
-                // Update own verification status if it's our user
-                if let AuthState::LoggedIn {
-                    user_id: ref own_id,
-                    ..
-                } = self.auth
-                    && user_id == *own_id
-                {
-                    self.own_verified = Some(true);
-                }
-            }
-            AppEvent::VerificationFailed { reason } => {
-                if let Some(ref mut modal) = self.verification {
-                    modal.stage = VerificationStage::Failed { reason };
+                    self.last_error = Some(err);
                 }
             }
             AppEvent::MemberVerificationStatus {
@@ -1321,8 +1232,7 @@ impl App {
             InputResult::VerifyMember => {
                 if let Some(member) = self.members_list.selected_member() {
                     let uid = member.user_id.clone();
-                    self.verification = Some(VerificationModalState::new());
-                    self.pending_verification = Some(VerificationAction::StartUser(uid));
+                    self.pending_verify = Some(Some(uid));
                 }
             }
         }
@@ -1494,6 +1404,8 @@ impl App {
                         display_name: None,
                         display_name_buffer: String::new(),
                         editing_display_name: false,
+                        verified: self.self_verified,
+                        recovery_enabled: self.recovery_enabled,
                         selected_field: 0,
                         loading: true,
                         saving: false,
@@ -1529,12 +1441,8 @@ impl App {
                 self.recovery = Some(RecoveryModalState::new());
                 self.pending_recovery = Some(RecoveryAction::Check);
             }
-            CommandAction::Verify(user) => {
-                self.verification = Some(VerificationModalState::new());
-                self.pending_verification = Some(match user {
-                    Some(uid) => VerificationAction::StartUser(uid),
-                    None => VerificationAction::StartSelf,
-                });
+            CommandAction::Verify(target) => {
+                self.pending_verify = Some(target);
             }
         }
     }
@@ -1565,26 +1473,59 @@ impl App {
         }
     }
 
-    // ── Verification Modal ─────────────────────────
+    // ── Verification Modal ────────────────────────────
 
-    fn handle_verification_key(&mut self, key: KeyEvent) {
+    fn handle_verify_modal_key(&mut self, key: KeyEvent) {
         if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
-            self.verification = None;
+            self.verification_modal = None;
+            self.verify_confirm_tx = None;
             self.running = false;
             return;
         }
 
-        let Some(ref mut modal) = self.verification else {
-            return;
-        };
+        let stage = self.verification_modal.as_ref().map(|m| &m.stage);
 
-        let transition = verify_key_action(modal, key.code);
-        match transition {
-            VerificationTransition::None => {}
-            VerificationTransition::Close => {
-                self.verification = None;
+        match stage {
+            Some(crate::state::VerificationStage::EmojiConfirmation) => match key.code {
+                KeyCode::Char('y') | KeyCode::Char('Y') => {
+                    if let Some(tx) = self.verify_confirm_tx.take() {
+                        let _ = tx.send(true);
+                    }
+                    if let Some(ref mut modal) = self.verification_modal {
+                        modal.stage = crate::state::VerificationStage::WaitingForOtherDevice;
+                    }
+                }
+                KeyCode::Char('n') | KeyCode::Char('N') => {
+                    if let Some(tx) = self.verify_confirm_tx.take() {
+                        let _ = tx.send(false);
+                    }
+                }
+                KeyCode::Esc => {
+                    self.verify_confirm_tx = None;
+                    self.verification_modal = None;
+                }
+                _ => {}
+            },
+            Some(crate::state::VerificationStage::Completed)
+            | Some(crate::state::VerificationStage::Failed(_)) => match key.code {
+                KeyCode::Enter | KeyCode::Esc => {
+                    self.verification_modal = None;
+                    self.verify_confirm_tx = None;
+                }
+                _ => {}
+            },
+            Some(crate::state::VerificationStage::WaitingForOtherDevice) => {
+                if key.code == KeyCode::Esc {
+                    self.verify_confirm_tx = None;
+                    self.verification_modal = None;
+                }
             }
+            None => {}
         }
+    }
+
+    pub fn take_pending_verify(&mut self) -> Option<Option<String>> {
+        self.pending_verify.take()
     }
 
     // ── Which-Key Leader Popup ────────────────────────
@@ -2072,11 +2013,31 @@ impl App {
             KeyCode::Esc => {
                 self.user_config.open = false;
             }
+            KeyCode::Char('j') | KeyCode::Down => {
+                if self.user_config.selected_field < 1 {
+                    self.user_config.selected_field += 1;
+                }
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                if self.user_config.selected_field > 0 {
+                    self.user_config.selected_field -= 1;
+                }
+            }
             KeyCode::Enter => {
-                // Enter display name editing mode
-                self.user_config.editing_display_name = true;
-                self.user_config.display_name_buffer =
-                    self.user_config.display_name.clone().unwrap_or_default();
+                match self.user_config.selected_field {
+                    0 => {
+                        // Enter display name editing mode
+                        self.user_config.editing_display_name = true;
+                        self.user_config.display_name_buffer =
+                            self.user_config.display_name.clone().unwrap_or_default();
+                    }
+                    1 => {
+                        // Trigger self-verification and close modal
+                        self.pending_verify = Some(None);
+                        self.user_config.open = false;
+                    }
+                    _ => {}
+                }
             }
             _ => {}
         }
@@ -2159,6 +2120,16 @@ impl App {
             self.ptt_transmitting.store(true, Ordering::Relaxed);
         } else {
             self.ptt_transmitting.store(false, Ordering::Relaxed);
+        }
+
+        // Sync PTT key to global listener
+        if let Some(ref handle) = self.global_ptt {
+            *handle.ptt_key.lock().unwrap() = self
+                .config
+                .audio
+                .push_to_talk_key
+                .clone()
+                .unwrap_or_default();
         }
 
         crate::config::save_config(&self.config);
@@ -2247,7 +2218,12 @@ impl App {
                             self.audio_settings.voice_activity = false;
                         }
                     }
-                    7 => self.audio_settings.capturing_ptt_key = true,
+                    7 => {
+                        self.audio_settings.capturing_ptt_key = true;
+                        if let Some(ref handle) = self.global_ptt {
+                            handle.capturing.store(true, Ordering::Relaxed);
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -2319,8 +2295,8 @@ impl App {
     }
 
     fn set_global_ptt_active(&self, active: bool) {
-        if let Some(ref flag) = self.global_ptt_active {
-            flag.store(active, Ordering::Relaxed);
+        if let Some(ref handle) = self.global_ptt {
+            handle.active.store(active, Ordering::Relaxed);
         }
     }
 
@@ -2398,10 +2374,72 @@ mod tests {
 
         app.handle_event(AppEvent::UserConfigLoaded {
             display_name: Some("Alice".to_string()),
+            verified: true,
+            recovery_enabled: false,
         });
 
         assert!(!app.user_config.loading);
         assert_eq!(app.user_config.display_name, Some("Alice".to_string()));
+        assert!(app.self_verified);
+        assert!(app.user_config.verified);
+    }
+
+    #[test]
+    fn user_config_loaded_sets_self_verified_when_modal_closed() {
+        let mut app = test_app();
+        assert!(!app.self_verified);
+        assert!(!app.user_config.open);
+
+        app.handle_event(AppEvent::UserConfigLoaded {
+            display_name: None,
+            verified: true,
+            recovery_enabled: false,
+        });
+
+        assert!(app.self_verified);
+        assert!(!app.user_config.loading);
+    }
+
+    #[test]
+    fn full_restart_flow_sets_verified_before_modal_open() {
+        let mut app = test_app();
+        assert!(!app.self_verified);
+        assert!(app.sync_token.is_none());
+
+        // First sync triggers pending fetch
+        app.handle_event(AppEvent::SyncTokenUpdated("tok1".to_string()));
+        assert!(app.pending_user_config);
+
+        // Main loop consumes the flag
+        app.pending_user_config = false;
+
+        // SDK responds with verified=true
+        app.handle_event(AppEvent::UserConfigLoaded {
+            display_name: Some("Bob".to_string()),
+            verified: true,
+            recovery_enabled: false,
+        });
+        assert!(app.self_verified);
+
+        // User opens :configure — verified should propagate from self_verified
+        app.user_config = UserConfigState {
+            open: true,
+            verified: app.self_verified,
+            loading: true,
+            ..UserConfigState::new()
+        };
+        assert!(app.user_config.verified);
+    }
+
+    #[test]
+    fn logout_resets_self_verified() {
+        let mut app = test_app();
+        app.self_verified = true;
+        app.auto_login_attempted = true; // prevent auto-login side effects
+
+        app.handle_event(AppEvent::LoggedOut);
+
+        assert!(!app.self_verified);
     }
 
     #[test]

@@ -4,8 +4,10 @@ use std::time::Duration;
 
 use anyhow::Result;
 use matrix_sdk::Client;
+use matrix_sdk::encryption::verification::VerificationRequest;
 use matrix_sdk::ruma::events::room::message::{MessageType, OriginalSyncRoomMessageEvent};
 use matrix_sdk::ruma::events::typing::SyncTypingEvent;
+use tokio::sync::Mutex;
 use tokio::time::sleep;
 use tracing::{debug, info, warn};
 
@@ -13,7 +15,13 @@ use crate::config;
 use crate::event::{AppEvent, EventSender};
 use crate::matrix::{rooms, session};
 
-pub async fn start_sync(client: Client, tx: EventSender) -> Result<()> {
+pub type IncomingVerification = Arc<Mutex<Option<VerificationRequest>>>;
+
+pub async fn start_sync(
+    client: Client,
+    tx: EventSender,
+    incoming_verification: IncomingVerification,
+) -> Result<()> {
     // Register event handler for messages
     let msg_tx = tx.clone();
     client.add_event_handler(
@@ -78,6 +86,7 @@ pub async fn start_sync(client: Client, tx: EventSender) -> Result<()> {
                             false,
                         )
                     }
+                    MessageType::VerificationRequest(_) => return,
                     _ => (
                         crate::state::MessageContent::Text(
                             "[unsupported message type]".to_string(),
@@ -122,6 +131,35 @@ pub async fn start_sync(client: Client, tx: EventSender) -> Result<()> {
         }
     });
 
+    // Register event handler for incoming verification requests
+    let verify_tx = tx.clone();
+    let incoming_verify = incoming_verification.clone();
+    client.add_event_handler(
+        move |event: matrix_sdk::ruma::events::ToDeviceEvent<
+            matrix_sdk::ruma::events::key::verification::request::ToDeviceKeyVerificationRequestEventContent,
+        >,
+              client: matrix_sdk::Client| {
+            let tx = verify_tx.clone();
+            let incoming_verify = incoming_verify.clone();
+            async move {
+                let request = client
+                    .encryption()
+                    .get_verification_request(&event.sender, event.content.transaction_id.as_str())
+                    .await;
+
+                if let Some(request) = request {
+                    info!("Incoming verification request from {}", event.sender);
+                    // Store the request for main.rs to drive
+                    *incoming_verify.lock().await = Some(request);
+                    let _ = tx.send(crate::event::AppEvent::VerificationRequestReceived {
+                        sender: event.sender.to_string(),
+                        flow_id: event.content.transaction_id.to_string(),
+                    });
+                }
+            }
+        },
+    );
+
     // Register event handlers for MatrixRTC call member events
     register_matrixrtc_handlers(&client, &tx);
 
@@ -151,9 +189,13 @@ pub async fn start_sync(client: Client, tx: EventSender) -> Result<()> {
                         let _ = tx.send(AppEvent::SyncTokenUpdated(response.next_batch.clone()));
                         let _ = tx.send(AppEvent::SyncStatus("synced".to_string()));
 
-                        // Update room list after each sync
-                        let room_list = rooms::get_room_list(&client).await;
-                        let _ = tx.send(AppEvent::RoomListUpdated(room_list));
+                        // Update room list in background so sync loop isn't blocked
+                        let room_list_client = client.clone();
+                        let room_list_tx = tx.clone();
+                        tokio::spawn(async move {
+                            let room_list = rooms::get_room_list(&room_list_client).await;
+                            let _ = room_list_tx.send(AppEvent::RoomListUpdated(room_list));
+                        });
 
                         matrix_sdk::LoopCtrl::Continue
                     }

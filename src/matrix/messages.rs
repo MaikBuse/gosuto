@@ -88,6 +88,7 @@ pub async fn fetch_messages(
                             false,
                         )
                     }
+                    MessageType::VerificationRequest(_) => continue,
                     _ => (
                         MessageContent::Text("[unsupported message type]".to_string()),
                         false,

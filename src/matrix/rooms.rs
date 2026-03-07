@@ -124,6 +124,7 @@ pub async fn fetch_room_members(client: &Client, room_id: &str, tx: &EventSender
                             ) => i64::from(i),
                             _ => i64::MAX,
                         },
+                        verified: None,
                     }
                 })
                 .collect();
@@ -136,6 +137,35 @@ pub async fn fetch_room_members(client: &Client, room_id: &str, tx: &EventSender
         Err(e) => {
             error!("Failed to fetch room members: {}", e);
         }
+    }
+}
+
+pub async fn check_member_verification(client: &Client, room_id: &str, tx: &EventSender) {
+    let room_id_parsed: Result<matrix_sdk::ruma::OwnedRoomId, _> = room_id.try_into();
+    let Ok(rid) = room_id_parsed else {
+        return;
+    };
+
+    let Some(room) = client.get_room(&rid) else {
+        return;
+    };
+
+    let members = match room.members(RoomMemberships::JOIN).await {
+        Ok(m) => m,
+        Err(_) => return,
+    };
+
+    for member in &members {
+        let uid = member.user_id();
+        let verified = match client.encryption().get_user_identity(uid).await {
+            Ok(Some(identity)) => identity.is_verified(),
+            _ => false,
+        };
+        let _ = tx.send(AppEvent::MemberVerificationStatus {
+            room_id: room_id.to_string(),
+            user_id: uid.to_string(),
+            verified,
+        });
     }
 }
 

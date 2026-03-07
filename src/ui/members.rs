@@ -76,10 +76,19 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
             let name_color = theme::sender_color(&member.user_id);
             let name_style = ratatui::style::Style::default().fg(name_color);
 
-            ListItem::new(Line::from(vec![
+            let mut spans = vec![
                 Span::styled(prefix, prefix_style),
                 Span::styled(&member.display_name, name_style),
-            ]))
+            ];
+
+            if member.verified == Some(true) {
+                spans.push(Span::styled(
+                    format!(" {}", icons.checkmark),
+                    ratatui::style::Style::default().fg(theme::GREEN),
+                ));
+            }
+
+            ListItem::new(Line::from(spans))
         })
         .collect();
 

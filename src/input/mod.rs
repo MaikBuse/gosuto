@@ -28,6 +28,7 @@ pub enum InputResult {
     RejectCall,
     ShowWhichKey,
     TypingActivity,
+    VerifyMember,
 }
 
 #[derive(Debug, Clone)]
@@ -49,4 +50,5 @@ pub enum CommandAction {
     Configure,
     NerdFonts,
     Recovery,
+    Verify(Option<String>),
 }
