@@ -9,6 +9,8 @@
 
 **Gōsuto** (ゴースト) — _ghost_ — a cyberpunk terminal Matrix client with vim motions.
 
+https://github.com/user-attachments/assets/c58be922-67d6-400c-aebc-69db3c62a24f
+
 ## ═══ why
 
 I switched from Discord to Matrix and couldn't find a native terminal client that did voice calls with push-to-talk. Element is Electron — 800MB of RAM to sit idle. I spend most of my day in a terminal anyway. So I built what I actually wanted: a single Rust binary that handles chat, E2EE, and voice without a browser engine underneath.
