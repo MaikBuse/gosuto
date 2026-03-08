@@ -113,6 +113,7 @@ pub struct AudioSettingsState {
     pub push_to_talk_key: Option<String>,
     pub capturing_ptt_key: bool,
     pub ptt_error: Option<String>,
+    pub vad_hold_ms: u64,
     pub mic_level: f32,
     pub mic_test_running: Arc<AtomicBool>,
 }
@@ -134,6 +135,7 @@ impl AudioSettingsState {
             push_to_talk_key: None,
             capturing_ptt_key: false,
             ptt_error: None,
+            vad_hold_ms: 300,
             mic_level: 0.0,
             mic_test_running: Arc::new(AtomicBool::new(false)),
         }
@@ -142,7 +144,8 @@ impl AudioSettingsState {
     pub fn visible_fields(&self) -> Vec<usize> {
         let mut fields = vec![0, 1, 2, 3, 4];
         if self.voice_activity {
-            fields.push(5);
+            fields.push(5); // sensitivity
+            fields.push(8); // vad hold
         }
         fields.push(6);
         if self.push_to_talk {
@@ -467,6 +470,7 @@ pub struct App {
     // Audio settings
     pub audio_settings: AudioSettingsState,
     pub ptt_transmitting: Arc<AtomicBool>,
+    pub mic_active: Arc<AtomicBool>,
     pub global_ptt: Option<crate::global_ptt::GlobalPttHandle>,
     pub sync_token: Option<String>,
     // Which-key leader popup
@@ -501,6 +505,7 @@ impl App {
     ) -> Self {
         let rain_enabled = config.effects.rain;
         let glitch_enabled = config.effects.glitch;
+        let ptt_enabled = config.audio.push_to_talk;
         Self {
             running: true,
             vim: VimState::new(),
@@ -546,7 +551,8 @@ impl App {
             change_password: ChangePasswordState::new(),
             pending_change_password: None,
             audio_settings: AudioSettingsState::new(),
-            ptt_transmitting: Arc::new(AtomicBool::new(true)), // default: always transmit (no PTT)
+            ptt_transmitting: Arc::new(AtomicBool::new(!ptt_enabled)),
+            mic_active: Arc::new(AtomicBool::new(false)),
             global_ptt: None,
             sync_token: None,
             which_key: None,
@@ -2182,6 +2188,7 @@ impl App {
             push_to_talk_key: self.config.audio.push_to_talk_key.clone(),
             capturing_ptt_key: false,
             ptt_error: None,
+            vad_hold_ms: self.config.audio.vad_hold_ms,
             mic_level: 0.0,
             mic_test_running: Arc::new(AtomicBool::new(false)),
         };
@@ -2214,6 +2221,7 @@ impl App {
         self.config.audio.sensitivity = s.sensitivity;
         self.config.audio.push_to_talk = s.push_to_talk;
         self.config.audio.push_to_talk_key = s.push_to_talk_key.clone();
+        self.config.audio.vad_hold_ms = s.vad_hold_ms;
 
         // Update PTT transmitting default
         if !self.config.audio.push_to_talk {
@@ -2391,6 +2399,13 @@ impl App {
                 if self.audio_settings.push_to_talk {
                     self.audio_settings.voice_activity = false;
                 }
+            }
+            8 => {
+                // VAD hold ms
+                let step: i64 = 50;
+                let new_val =
+                    (self.audio_settings.vad_hold_ms as i64 + i64::from(dir) * step).clamp(0, 1000);
+                self.audio_settings.vad_hold_ms = new_val as u64;
             }
             _ => {}
         }

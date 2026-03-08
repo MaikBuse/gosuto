@@ -65,6 +65,7 @@ pub struct CallManager {
     active_call: Option<ActiveCall>,
     audio_config: Arc<std::sync::Mutex<AudioConfig>>,
     transmitting: Arc<AtomicBool>,
+    mic_active: Arc<AtomicBool>,
 }
 
 impl CallManager {
@@ -74,6 +75,7 @@ impl CallManager {
         client: Arc<Mutex<Option<Client>>>,
         audio_config: Arc<std::sync::Mutex<AudioConfig>>,
         transmitting: Arc<AtomicBool>,
+        mic_active: Arc<AtomicBool>,
     ) -> Self {
         Self {
             cmd_rx,
@@ -82,6 +84,7 @@ impl CallManager {
             active_call: None,
             audio_config,
             transmitting,
+            mic_active,
         }
     }
 
@@ -377,7 +380,11 @@ impl CallManager {
         // 6. Start audio capture
         let mut audio = AudioPipeline::new();
         let audio_cfg = self.audio_config.lock().unwrap().clone();
-        let source = match audio.start_capture(&audio_cfg, self.transmitting.clone()) {
+        let source = match audio.start_capture(
+            &audio_cfg,
+            self.transmitting.clone(),
+            self.mic_active.clone(),
+        ) {
             Ok(s) => s,
             Err(e) => {
                 error!("Failed to start audio capture: {:#}", e);

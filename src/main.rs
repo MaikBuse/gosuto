@@ -184,6 +184,7 @@ async fn main() -> Result<()> {
     // Shared audio config for CallManager
     let shared_audio_config = Arc::new(std::sync::Mutex::new(app.config.audio.clone()));
     let ptt_transmitting = app.ptt_transmitting.clone();
+    let mic_active = app.mic_active.clone();
 
     // Spawn CallManager
     if !demo_mode {
@@ -193,6 +194,7 @@ async fn main() -> Result<()> {
             matrix_client.clone(),
             shared_audio_config.clone(),
             ptt_transmitting,
+            mic_active,
         );
         tokio::spawn(call_manager.run());
     }

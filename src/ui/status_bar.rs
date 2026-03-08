@@ -1,3 +1,5 @@
+use std::sync::atomic::Ordering;
+
 use ratatui::{
     Frame,
     layout::Rect,
@@ -65,12 +67,21 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
         Span::raw("")
     };
 
-    let icons = app.config.icons();
-    let verify_span = if app.self_verified {
-        Span::styled(
-            format!(" {} ", icons.checkmark),
-            ratatui::style::Style::default().fg(theme::GREEN),
-        )
+    let mic_span = if let Some(ref info) = app.call_info {
+        if matches!(info.state, CallState::Active) {
+            if app.mic_active.load(Ordering::Relaxed) {
+                Span::styled(
+                    " \u{25cf} MIC",
+                    ratatui::style::Style::default()
+                        .fg(theme::GREEN)
+                        .add_modifier(Modifier::BOLD),
+                )
+            } else {
+                Span::styled(" \u{25cb} MIC", theme::dim_style())
+            }
+        } else {
+            Span::raw("")
+        }
     } else {
         Span::raw("")
     };
@@ -88,7 +99,7 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
         Span::styled(" \u{2502} ", theme::dim_style()),
         Span::styled(sync_status, theme::dim_style()),
         call_span,
-        verify_span,
+        mic_span,
         error_span,
     ]);
 

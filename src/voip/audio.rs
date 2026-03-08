@@ -264,7 +264,8 @@ impl AudioPipeline {
     pub fn start_capture(
         &mut self,
         config: &AudioConfig,
-        transmitting: Arc<AtomicBool>,
+        ptt_transmitting: Arc<AtomicBool>,
+        mic_active: Arc<AtomicBool>,
     ) -> Result<NativeAudioSource> {
         self.running.store(true, Ordering::Relaxed);
 
@@ -275,8 +276,13 @@ impl AudioPipeline {
             FRAME_SIZE as u32,
         );
 
-        match Self::build_capture_stream(source.clone(), self.running.clone(), config, transmitting)
-        {
+        match Self::build_capture_stream(
+            source.clone(),
+            self.running.clone(),
+            config,
+            ptt_transmitting,
+            mic_active,
+        ) {
             Ok((stream, task)) => {
                 self.capture_stream = Some(SendStream(stream));
                 self.capture_task = Some(task);
@@ -407,7 +413,8 @@ impl AudioPipeline {
         source: NativeAudioSource,
         running: Arc<AtomicBool>,
         audio_config: &AudioConfig,
-        transmitting: Arc<AtomicBool>,
+        ptt_transmitting: Arc<AtomicBool>,
+        mic_active: Arc<AtomicBool>,
     ) -> Result<(cpal::Stream, tokio::task::JoinHandle<()>)> {
         let device = resolve_input_device(audio_config)?;
 
@@ -419,7 +426,9 @@ impl AudioPipeline {
         let running_flag = running.clone();
         let input_volume = audio_config.input_volume;
         let voice_activity = audio_config.voice_activity;
+        let push_to_talk = audio_config.push_to_talk;
         let sensitivity = audio_config.sensitivity;
+        let vad_hold_duration = Duration::from_millis(audio_config.vad_hold_ms);
 
         // Channel for raw audio from cpal callback → processing task
         let (raw_tx, mut raw_rx) = mpsc::unbounded_channel::<Vec<f32>>();
@@ -430,12 +439,9 @@ impl AudioPipeline {
                     &config,
                     {
                         let running = running_flag.clone();
-                        let transmitting = transmitting.clone();
                         let raw_tx = raw_tx.clone();
                         move |data: &[$T], _: &cpal::InputCallbackInfo| {
-                            if !running.load(Ordering::Relaxed)
-                                || !transmitting.load(Ordering::Relaxed)
-                            {
+                            if !running.load(Ordering::Relaxed) {
                                 return;
                             }
                             let f32_data: Vec<f32> = data.iter().map($convert).collect();
@@ -467,16 +473,23 @@ impl AudioPipeline {
             let mut resampler = create_resampler(device_rate, SAMPLE_RATE, FRAME_SIZE);
             let mut mono_buffer: Vec<f32> = Vec::with_capacity(FRAME_SIZE * 2);
             let mut sample_buffer: Vec<i16> = Vec::with_capacity(FRAME_SIZE * 2);
+            let mut last_voice_at: Option<std::time::Instant> = None;
 
             while let Some(raw_data) = raw_rx.recv().await {
-                // 1. Downmix to mono
+                // 1. PTT gate
+                if push_to_talk && !ptt_transmitting.load(Ordering::Relaxed) {
+                    mic_active.store(false, Ordering::Relaxed);
+                    continue;
+                }
+
+                // 2. Downmix to mono
                 let mono_samples = if device_channels > 1 {
                     downmix_to_mono(&raw_data, device_channels)
                 } else {
                     raw_data
                 };
 
-                // 2. Resample to 48kHz via rubato (if needed)
+                // 3. Resample to 48kHz via rubato (if needed)
                 let resampled = if let Some(ref mut resampler) = resampler {
                     mono_buffer.extend_from_slice(&mono_samples);
                     let mut output = Vec::new();
@@ -495,7 +508,7 @@ impl AudioPipeline {
                     mono_samples
                 };
 
-                // 3. Voice activity gate (on 48kHz data)
+                // 4. Voice activity gate with hold/decay (on 48kHz data)
                 if voice_activity {
                     let sum_sq: f32 = resampled
                         .iter()
@@ -505,10 +518,22 @@ impl AudioPipeline {
                         })
                         .sum();
                     let rms = (sum_sq / resampled.len().max(1) as f32).sqrt();
-                    if rms < sensitivity {
+                    if rms >= sensitivity {
+                        last_voice_at = Some(std::time::Instant::now());
+                    } else if let Some(last) = last_voice_at {
+                        if last.elapsed() >= vad_hold_duration {
+                            mic_active.store(false, Ordering::Relaxed);
+                            continue;
+                        }
+                        // Within hold period — keep sending
+                    } else {
+                        // No voice detected yet
+                        mic_active.store(false, Ordering::Relaxed);
                         continue;
                     }
                 }
+
+                mic_active.store(true, Ordering::Relaxed);
 
                 // 4. Convert f32 → i16 with volume
                 let samples: Vec<i16> = resampled

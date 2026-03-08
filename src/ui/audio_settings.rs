@@ -138,6 +138,11 @@ fn render_field(
             popup::write_str(buf, &bounds, label_x, row, "PUSH TO TALK", label_s);
             render_toggle(buf, &bounds, value_x, row, state.push_to_talk, selected);
         }
+        8 => {
+            popup::write_str(buf, &bounds, label_x, row, "VAD HOLD", label_s);
+            let value = state.vad_hold_ms as f32 / 1000.0;
+            render_volume_bar(buf, &bounds, value_x, row, value, selected);
+        }
         7 => {
             popup::write_str(buf, &bounds, label_x, row, "PTT KEY", label_s);
             if state.capturing_ptt_key {

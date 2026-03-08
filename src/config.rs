@@ -51,6 +51,8 @@ pub struct AudioConfig {
     pub push_to_talk_key: Option<String>,
     #[serde(default = "default_true")]
     pub e2ee: bool,
+    #[serde(default = "default_vad_hold_ms")]
+    pub vad_hold_ms: u64,
 }
 
 impl Default for AudioConfig {
@@ -65,6 +67,7 @@ impl Default for AudioConfig {
             push_to_talk: false,
             push_to_talk_key: None,
             e2ee: true,
+            vad_hold_ms: 300,
         }
     }
 }
@@ -75,6 +78,10 @@ fn default_volume() -> f32 {
 
 fn default_sensitivity() -> f32 {
     0.15
+}
+
+fn default_vad_hold_ms() -> u64 {
+    300
 }
 
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
@@ -291,6 +298,7 @@ mod tests {
         assert!(audio.input_device.is_none());
         assert!(audio.output_device.is_none());
         assert!(audio.e2ee);
+        assert_eq!(audio.vad_hold_ms, 300);
     }
 
     #[test]
