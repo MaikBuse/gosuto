@@ -7,7 +7,7 @@ use crate::ui::popup;
 use crate::ui::theme;
 
 const POPUP_WIDTH: u16 = 54;
-const POPUP_HEIGHT: u16 = 20;
+const POPUP_HEIGHT: u16 = 22;
 
 pub fn render(state: &UserConfigState, icons: &Icons, frame: &mut Frame) {
     let area = frame.area();
@@ -165,6 +165,52 @@ pub fn render(state: &UserConfigState, icons: &Icons, frame: &mut Frame) {
         let name_val_s = Style::default().fg(name_val_color).bg(theme::BG);
         popup::write_str(buf, &bounds, value_x, row, &name_display, name_val_s);
     }
+    row += 1;
+
+    // ── Field 1: PASSWORD (action) ──
+    let pw_selected = state.selected_field == 1;
+    let pw_marker_color = if pw_selected { theme::CYAN } else { theme::DIM };
+    let pw_label_color = if pw_selected {
+        theme::CYAN
+    } else {
+        theme::TEXT
+    };
+    let pw_marker = if pw_selected {
+        icons.selected
+    } else {
+        icons.unselected
+    };
+
+    let pw_marker_s = Style::default().fg(pw_marker_color).bg(theme::BG);
+    let pw_label_s = Style::default()
+        .fg(pw_label_color)
+        .bg(theme::BG)
+        .add_modifier(if pw_selected {
+            Modifier::BOLD
+        } else {
+            Modifier::empty()
+        });
+
+    popup::write_str(buf, &bounds, left, row, pw_marker, pw_marker_s);
+    popup::set_cell(
+        buf,
+        &bounds,
+        left + 1,
+        row,
+        ' ',
+        Style::default().bg(theme::BG),
+    );
+    popup::write_str(buf, &bounds, label_x, row, "PASSWORD", pw_label_s);
+
+    let pw_hint_color = if pw_selected { theme::TEXT } else { theme::DIM };
+    popup::write_str(
+        buf,
+        &bounds,
+        value_x,
+        row,
+        "change...",
+        Style::default().fg(pw_hint_color).bg(theme::BG),
+    );
     row += 1;
 
     // Show saving indicator

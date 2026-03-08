@@ -112,6 +112,7 @@ pub struct AudioSettingsState {
     pub push_to_talk: bool,
     pub push_to_talk_key: Option<String>,
     pub capturing_ptt_key: bool,
+    pub ptt_error: Option<String>,
     pub mic_level: f32,
     pub mic_test_running: Arc<AtomicBool>,
 }
@@ -132,6 +133,7 @@ impl AudioSettingsState {
             push_to_talk: false,
             push_to_talk_key: None,
             capturing_ptt_key: false,
+            ptt_error: None,
             mic_level: 0.0,
             mic_test_running: Arc::new(AtomicBool::new(false)),
         }
@@ -165,7 +167,7 @@ pub struct UserConfigState {
     pub editing_display_name: bool,
     pub verified: bool,
     pub recovery_enabled: bool,
-    pub selected_field: usize, // 0=display name, 1=verified
+    pub selected_field: usize, // 0=display name
     pub loading: bool,
     pub saving: bool,
 }
@@ -368,6 +370,28 @@ pub fn recovery_key_action(
     }
 }
 
+pub struct ChangePasswordState {
+    pub open: bool,
+    pub selected_field: usize, // 0=current, 1=new, 2=confirm
+    pub current_buffer: String,
+    pub new_buffer: String,
+    pub confirm_buffer: String,
+    pub saving: bool,
+}
+
+impl ChangePasswordState {
+    pub fn new() -> Self {
+        Self {
+            open: false,
+            selected_field: 0,
+            current_buffer: String::new(),
+            new_buffer: String::new(),
+            confirm_buffer: String::new(),
+            saving: false,
+        }
+    }
+}
+
 impl UserConfigState {
     pub fn new() -> Self {
         Self {
@@ -437,6 +461,9 @@ pub struct App {
     pub user_config: UserConfigState,
     pub pending_user_config: bool,
     pub pending_set_display_name: Option<String>,
+    // Change password
+    pub change_password: ChangePasswordState,
+    pub pending_change_password: Option<(String, String)>,
     // Audio settings
     pub audio_settings: AudioSettingsState,
     pub ptt_transmitting: Arc<AtomicBool>,
@@ -516,6 +543,8 @@ impl App {
             user_config: UserConfigState::new(),
             pending_user_config: false,
             pending_set_display_name: None,
+            change_password: ChangePasswordState::new(),
+            pending_change_password: None,
             audio_settings: AudioSettingsState::new(),
             ptt_transmitting: Arc::new(AtomicBool::new(true)), // default: always transmit (no PTT)
             global_ptt: None,
@@ -549,6 +578,8 @@ impl App {
             AppEvent::Key(key) => {
                 if !self.auth.is_logged_in() {
                     self.handle_login_key(key);
+                } else if self.change_password.open {
+                    self.handle_change_password_key(key);
                 } else if self.user_config.open {
                     self.handle_user_config_key(key);
                 } else if self.room_info.open {
@@ -564,26 +595,11 @@ impl App {
                 } else if self.which_key.is_some() {
                     self.handle_which_key(key);
                 } else {
-                    // PTT: key press sets transmitting
-                    if self.config.audio.push_to_talk
-                        && self.call_info.is_some()
-                        && self.key_matches_ptt(&key)
-                    {
-                        self.ptt_transmitting.store(true, Ordering::Relaxed);
-                    }
                     let result = input::handle_key(key, &mut self.vim);
                     self.process_input(result);
                 }
             }
-            AppEvent::KeyRelease(key) => {
-                // PTT: key release stops transmitting
-                if self.config.audio.push_to_talk
-                    && self.call_info.is_some()
-                    && self.key_matches_ptt(&key)
-                {
-                    self.ptt_transmitting.store(false, Ordering::Relaxed);
-                }
-            }
+            AppEvent::KeyRelease(_) => {}
             AppEvent::PttKeyCaptured(name) => {
                 if self.audio_settings.capturing_ptt_key {
                     self.audio_settings.push_to_talk_key = Some(name.clone());
@@ -592,6 +608,9 @@ impl App {
                         *handle.ptt_key.lock().unwrap() = name;
                     }
                 }
+            }
+            AppEvent::PttListenerFailed(message) => {
+                self.audio_settings.ptt_error = Some(message);
             }
             AppEvent::MicLevel(level) => {
                 self.audio_settings.mic_level = level;
@@ -891,6 +910,10 @@ impl App {
                 }
             }
             AppEvent::UserConfigUpdated => {
+                if self.change_password.open {
+                    self.change_password.open = false;
+                    self.change_password.saving = false;
+                }
                 if self.user_config.open {
                     if !self.user_config.display_name_buffer.is_empty() {
                         self.user_config.display_name =
@@ -901,6 +924,7 @@ impl App {
                 }
             }
             AppEvent::UserConfigError(error) => {
+                self.change_password.saving = false;
                 self.user_config.saving = false;
                 self.last_error = Some(error);
             }
@@ -1437,6 +1461,16 @@ impl App {
                     self.last_error = Some("No room selected".to_string());
                 }
             }
+            CommandAction::ChangePassword => {
+                self.change_password = ChangePasswordState {
+                    open: true,
+                    selected_field: 0,
+                    current_buffer: String::new(),
+                    new_buffer: String::new(),
+                    confirm_buffer: String::new(),
+                    saving: false,
+                };
+            }
             CommandAction::Recovery => {
                 self.recovery = Some(RecoveryModalState::new());
                 self.pending_recovery = Some(RecoveryAction::Check);
@@ -1604,6 +1638,7 @@ impl App {
             WhichKeyCategory::Security => match key {
                 'r' => self.handle_command(CommandAction::Recovery),
                 'v' => self.handle_command(CommandAction::Verify(None)),
+                'p' => self.handle_command(CommandAction::ChangePassword),
                 _ => {}
             },
         }
@@ -2014,31 +2049,95 @@ impl App {
                 self.user_config.open = false;
             }
             KeyCode::Char('j') | KeyCode::Down => {
-                if self.user_config.selected_field < 1 {
-                    self.user_config.selected_field += 1;
-                }
+                self.user_config.selected_field = (self.user_config.selected_field + 1).min(1);
             }
             KeyCode::Char('k') | KeyCode::Up => {
-                if self.user_config.selected_field > 0 {
-                    self.user_config.selected_field -= 1;
-                }
+                self.user_config.selected_field = self.user_config.selected_field.saturating_sub(1);
             }
             KeyCode::Enter => {
-                match self.user_config.selected_field {
-                    0 => {
-                        // Enter display name editing mode
-                        self.user_config.editing_display_name = true;
-                        self.user_config.display_name_buffer =
-                            self.user_config.display_name.clone().unwrap_or_default();
-                    }
-                    1 => {
-                        // Trigger self-verification and close modal
-                        self.pending_verify = Some(None);
-                        self.user_config.open = false;
-                    }
-                    _ => {}
+                if self.user_config.selected_field == 0 {
+                    // Enter display name editing mode
+                    self.user_config.editing_display_name = true;
+                    self.user_config.display_name_buffer =
+                        self.user_config.display_name.clone().unwrap_or_default();
+                } else if self.user_config.selected_field == 1 {
+                    // Open change password popup
+                    self.user_config.open = false;
+                    self.handle_command(CommandAction::ChangePassword);
                 }
             }
+            _ => {}
+        }
+    }
+
+    // ── Change Password ─────────────────────────────────
+
+    fn handle_change_password_key(&mut self, key: KeyEvent) {
+        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
+            self.change_password.open = false;
+            self.running = false;
+            return;
+        }
+
+        if self.change_password.saving {
+            if key.code == KeyCode::Esc {
+                self.change_password.open = false;
+            }
+            return;
+        }
+
+        match key.code {
+            KeyCode::Esc => {
+                self.change_password = ChangePasswordState::new();
+            }
+            KeyCode::Char('j') | KeyCode::Down => {
+                self.change_password.selected_field =
+                    (self.change_password.selected_field + 1).min(2);
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                self.change_password.selected_field =
+                    self.change_password.selected_field.saturating_sub(1);
+            }
+            KeyCode::Enter => {
+                if self.change_password.selected_field < 2 {
+                    self.change_password.selected_field += 1;
+                } else {
+                    // Submit
+                    if self.change_password.new_buffer != self.change_password.confirm_buffer {
+                        self.last_error = Some("Passwords do not match".to_string());
+                        self.change_password = ChangePasswordState::new();
+                        return;
+                    }
+                    if self.change_password.current_buffer.is_empty()
+                        || self.change_password.new_buffer.is_empty()
+                    {
+                        self.last_error = Some("Password cannot be empty".to_string());
+                        self.change_password = ChangePasswordState::new();
+                        return;
+                    }
+                    let current = std::mem::take(&mut self.change_password.current_buffer);
+                    let new = std::mem::take(&mut self.change_password.new_buffer);
+                    self.change_password.confirm_buffer.clear();
+                    self.change_password.saving = true;
+                    self.pending_change_password = Some((current, new));
+                }
+            }
+            KeyCode::Backspace => match self.change_password.selected_field {
+                0 => {
+                    self.change_password.current_buffer.pop();
+                }
+                1 => {
+                    self.change_password.new_buffer.pop();
+                }
+                _ => {
+                    self.change_password.confirm_buffer.pop();
+                }
+            },
+            KeyCode::Char(c) => match self.change_password.selected_field {
+                0 => self.change_password.current_buffer.push(c),
+                1 => self.change_password.new_buffer.push(c),
+                _ => self.change_password.confirm_buffer.push(c),
+            },
             _ => {}
         }
     }
@@ -2082,6 +2181,7 @@ impl App {
             push_to_talk: self.config.audio.push_to_talk,
             push_to_talk_key: self.config.audio.push_to_talk_key.clone(),
             capturing_ptt_key: false,
+            ptt_error: None,
             mic_level: 0.0,
             mic_test_running: Arc::new(AtomicBool::new(false)),
         };
@@ -2122,14 +2222,17 @@ impl App {
             self.ptt_transmitting.store(false, Ordering::Relaxed);
         }
 
-        // Sync PTT key to global listener
-        if let Some(ref handle) = self.global_ptt {
-            *handle.ptt_key.lock().unwrap() = self
-                .config
-                .audio
-                .push_to_talk_key
-                .clone()
-                .unwrap_or_default();
+        // Spawn global PTT listener on demand, or sync key if already running
+        if self.config.audio.push_to_talk {
+            self.ensure_global_ptt_listener();
+            if let Some(ref handle) = self.global_ptt {
+                *handle.ptt_key.lock().unwrap() = self
+                    .config
+                    .audio
+                    .push_to_talk_key
+                    .clone()
+                    .unwrap_or_default();
+            }
         }
 
         crate::config::save_config(&self.config);
@@ -2174,11 +2277,8 @@ impl App {
             return;
         }
 
-        // PTT key capture mode
+        // Swallow terminal keys while rdev captures the PTT key
         if self.audio_settings.capturing_ptt_key {
-            let key_name = key_event_name(&key);
-            self.audio_settings.push_to_talk_key = Some(key_name);
-            self.audio_settings.capturing_ptt_key = false;
             return;
         }
 
@@ -2219,8 +2319,10 @@ impl App {
                         }
                     }
                     7 => {
-                        self.audio_settings.capturing_ptt_key = true;
+                        self.audio_settings.ptt_error = None;
+                        self.ensure_global_ptt_listener();
                         if let Some(ref handle) = self.global_ptt {
+                            self.audio_settings.capturing_ptt_key = true;
                             handle.capturing.store(true, Ordering::Relaxed);
                         }
                     }
@@ -2294,61 +2396,36 @@ impl App {
         }
     }
 
+    fn ensure_global_ptt_listener(&mut self) {
+        if let Some(ref handle) = self.global_ptt
+            && !handle.alive.load(Ordering::Relaxed)
+        {
+            self.global_ptt = None;
+        }
+        if self.global_ptt.is_none() {
+            if let Some(error) = crate::global_ptt::check_linux_prerequisites() {
+                self.audio_settings.ptt_error = Some(error);
+                return;
+            }
+            let ptt_key = self
+                .config
+                .audio
+                .push_to_talk_key
+                .clone()
+                .unwrap_or_default();
+            let handle = crate::global_ptt::spawn_listener(
+                self.ptt_transmitting.clone(),
+                ptt_key,
+                self.event_tx.clone(),
+            );
+            self.global_ptt = Some(handle);
+        }
+    }
+
     fn set_global_ptt_active(&self, active: bool) {
         if let Some(ref handle) = self.global_ptt {
             handle.active.store(active, Ordering::Relaxed);
         }
-    }
-
-    fn key_matches_ptt(&self, key: &KeyEvent) -> bool {
-        if let Some(ref ptt_key) = self.config.audio.push_to_talk_key {
-            let name = key_event_name(key);
-            &name == ptt_key
-        } else {
-            false
-        }
-    }
-}
-
-fn key_event_name(key: &KeyEvent) -> String {
-    match key.code {
-        KeyCode::Char(c) => {
-            if c == ' ' {
-                "Space".to_string()
-            } else {
-                c.to_uppercase().to_string()
-            }
-        }
-        KeyCode::F(n) => format!("F{n}"),
-        KeyCode::Enter => "Enter".to_string(),
-        KeyCode::Tab => "Tab".to_string(),
-        KeyCode::Backspace => "Backspace".to_string(),
-        KeyCode::Left => "Left".to_string(),
-        KeyCode::Right => "Right".to_string(),
-        KeyCode::Up => "Up".to_string(),
-        KeyCode::Down => "Down".to_string(),
-        KeyCode::Home => "Home".to_string(),
-        KeyCode::End => "End".to_string(),
-        KeyCode::PageUp => "PageUp".to_string(),
-        KeyCode::PageDown => "PageDown".to_string(),
-        KeyCode::Insert => "Insert".to_string(),
-        KeyCode::Delete => "Delete".to_string(),
-        KeyCode::Esc => "Esc".to_string(),
-        KeyCode::Modifier(m) => {
-            use crossterm::event::ModifierKeyCode::*;
-            match m {
-                LeftControl | RightControl => "Ctrl",
-                LeftShift | RightShift => "Shift",
-                LeftAlt | RightAlt => "Alt",
-                LeftSuper | RightSuper => "Super",
-                LeftHyper | RightHyper => "Hyper",
-                LeftMeta | RightMeta => "Meta",
-                IsoLevel3Shift => "IsoLevel3Shift",
-                IsoLevel5Shift => "IsoLevel5Shift",
-            }
-            .to_string()
-        }
-        _ => format!("{:?}", key.code),
     }
 }
 

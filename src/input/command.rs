@@ -131,6 +131,13 @@ pub const COMMANDS: &[CommandDef] = &[
         takes_arg: false,
     },
     CommandDef {
+        name: "password",
+        aliases: &["passwd", "pw"],
+        syntax: ":password",
+        description: "Change account password",
+        takes_arg: false,
+    },
+    CommandDef {
         name: "verify",
         aliases: &["v"],
         syntax: ":verify [user]",
@@ -306,6 +313,7 @@ fn parse_command(input: &str) -> InputResult {
         "profile" | "configure" | "config" => InputResult::Command(CommandAction::Configure),
         "nerdfonts" | "nerd" | "icons" => InputResult::Command(CommandAction::NerdFonts),
         "recovery" | "recover" => InputResult::Command(CommandAction::Recovery),
+        "password" | "passwd" | "pw" => InputResult::Command(CommandAction::ChangePassword),
         "verify" | "v" => {
             let user = if arg.is_empty() {
                 None
@@ -579,6 +587,22 @@ mod tests {
         assert!(matches!(
             result,
             InputResult::Command(CommandAction::Verify(None))
+        ));
+    }
+
+    #[test]
+    fn parse_password_aliases() {
+        assert!(matches!(
+            parse_command("password"),
+            InputResult::Command(CommandAction::ChangePassword)
+        ));
+        assert!(matches!(
+            parse_command("passwd"),
+            InputResult::Command(CommandAction::ChangePassword)
+        ));
+        assert!(matches!(
+            parse_command("pw"),
+            InputResult::Command(CommandAction::ChangePassword)
         ));
     }
 

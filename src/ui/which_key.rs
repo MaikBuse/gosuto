@@ -122,6 +122,11 @@ fn entries(cat: WhichKeyCategory) -> &'static [Entry] {
                 label: "Verify",
                 available: always,
             },
+            Entry {
+                key: 'p',
+                label: "Password",
+                available: always,
+            },
         ],
     }
 }

@@ -84,6 +84,10 @@ async fn main() -> Result<()> {
     // Shared state for incoming verification requests
     let incoming_verification: matrix::sync::IncomingVerification = Arc::new(Mutex::new(None));
 
+    // Create CallManager command channel early so sync handlers can forward encryption keys
+    let (call_cmd_tx, call_cmd_rx) = voip::manager::command_channel();
+    app.call_cmd_tx = Some(call_cmd_tx.clone());
+
     if demo_mode {
         info!("Starting in demo mode");
         app.demo_mode = true;
@@ -97,8 +101,11 @@ async fn main() -> Result<()> {
                 *matrix_client.lock().await = Some(client.clone());
                 let tx = event_tx.clone();
                 let iv = incoming_verification.clone();
+                let cmd_tx = call_cmd_tx.clone();
                 tokio::spawn(async move {
-                    if let Err(e) = matrix::sync::start_sync(client, tx.clone(), iv).await {
+                    if let Err(e) =
+                        matrix::sync::start_sync(client, tx.clone(), iv, Some(cmd_tx)).await
+                    {
                         error!("Sync error: {}", e);
                         let _ = tx.send(AppEvent::SyncError(e.to_string()));
                     }
@@ -179,8 +186,6 @@ async fn main() -> Result<()> {
     let ptt_transmitting = app.ptt_transmitting.clone();
 
     // Spawn CallManager
-    let (call_cmd_tx, call_cmd_rx) = voip::manager::command_channel();
-    app.call_cmd_tx = Some(call_cmd_tx.clone());
     if !demo_mode {
         let call_manager = voip::manager::CallManager::new(
             call_cmd_rx,
@@ -450,6 +455,7 @@ async fn main() -> Result<()> {
                                 });
                             }
                             app.pending_set_display_name.take();
+                            app.pending_change_password.take();
                             if app.pending_room_info {
                                 app.pending_room_info = false;
                                 let rid = app.room_info.room_id.clone();
@@ -637,6 +643,18 @@ async fn main() -> Result<()> {
                                 let client = { client_holder.lock().await.clone() };
                                 if let Some(client) = client {
                                     matrix::profile::set_user_display_name(&client, &name, &tx).await;
+                                }
+                            });
+                        }
+
+                        // Handle password change
+                        if let Some((current, new)) = app.pending_change_password.take() {
+                            let client_holder = matrix_client.clone();
+                            let tx = event_tx.clone();
+                            tokio::spawn(async move {
+                                let client = { client_holder.lock().await.clone() };
+                                if let Some(client) = client {
+                                    matrix::profile::change_user_password(&client, &current, &new, &tx).await;
                                 }
                             });
                         }
@@ -864,6 +882,7 @@ async fn main() -> Result<()> {
                 let tx = event_tx.clone();
                 let client_holder = matrix_client.clone();
                 let iv = incoming_verification.clone();
+                let cmd_tx = call_cmd_tx.clone();
                 tokio::spawn(async move {
                     match matrix::client::login(
                         &homeserver,
@@ -878,8 +897,13 @@ async fn main() -> Result<()> {
                             *client_holder.lock().await = Some(client.clone());
                             let sync_tx = tx.clone();
                             tokio::spawn(async move {
-                                if let Err(e) =
-                                    matrix::sync::start_sync(client, sync_tx.clone(), iv).await
+                                if let Err(e) = matrix::sync::start_sync(
+                                    client,
+                                    sync_tx.clone(),
+                                    iv,
+                                    Some(cmd_tx),
+                                )
+                                .await
                                 {
                                     error!("Sync error: {}", e);
                                     let _ = sync_tx.send(AppEvent::SyncError(e.to_string()));
@@ -907,6 +931,7 @@ async fn main() -> Result<()> {
             let tx = event_tx.clone();
             let client_holder = matrix_client.clone();
             let iv = incoming_verification.clone();
+            let cmd_tx = call_cmd_tx.clone();
             tokio::spawn(async move {
                 match matrix::client::register(
                     &homeserver,
@@ -923,7 +948,8 @@ async fn main() -> Result<()> {
                         let sync_tx = tx.clone();
                         tokio::spawn(async move {
                             if let Err(e) =
-                                matrix::sync::start_sync(client, sync_tx.clone(), iv).await
+                                matrix::sync::start_sync(client, sync_tx.clone(), iv, Some(cmd_tx))
+                                    .await
                             {
                                 error!("Sync error: {}", e);
                                 let _ = sync_tx.send(AppEvent::SyncError(e.to_string()));

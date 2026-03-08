@@ -1,5 +1,6 @@
 pub mod audio_settings;
 pub mod call_overlay;
+pub mod change_password;
 pub mod chat;
 pub mod completion_popup;
 pub mod configure;
@@ -133,6 +134,11 @@ pub fn render(app: &mut App, frame: &mut Frame) {
     // User config modal overlay
     if app.user_config.open {
         configure::render(&app.user_config, icons, frame);
+    }
+
+    // Change password modal overlay
+    if app.change_password.open {
+        change_password::render(&app.change_password, icons, frame);
     }
 
     // Recovery modal

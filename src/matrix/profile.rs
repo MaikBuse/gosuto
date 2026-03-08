@@ -54,6 +54,41 @@ pub async fn fetch_user_config(client: &Client, tx: &EventSender) {
     });
 }
 
+pub async fn change_user_password(
+    client: &Client,
+    current_password: &str,
+    new_password: &str,
+    tx: &EventSender,
+) {
+    let user_id = match client.user_id() {
+        Some(id) => id.to_string(),
+        None => {
+            let _ = tx.send(AppEvent::UserConfigError("No user ID".to_string()));
+            return;
+        }
+    };
+    let identifier =
+        matrix_sdk::ruma::api::client::uiaa::UserIdentifier::UserIdOrLocalpart(user_id);
+    let password =
+        matrix_sdk::ruma::api::client::uiaa::Password::new(identifier, current_password.to_owned());
+    let auth = matrix_sdk::ruma::api::client::uiaa::AuthData::Password(password);
+
+    match client
+        .account()
+        .change_password(new_password, Some(auth))
+        .await
+    {
+        Ok(_) => {
+            let _ = tx.send(AppEvent::UserConfigUpdated);
+        }
+        Err(e) => {
+            let _ = tx.send(AppEvent::UserConfigError(format!(
+                "Failed to change password: {e}"
+            )));
+        }
+    }
+}
+
 pub async fn set_user_display_name(client: &Client, name: &str, tx: &EventSender) {
     match client.account().set_display_name(Some(name)).await {
         Ok(_) => {

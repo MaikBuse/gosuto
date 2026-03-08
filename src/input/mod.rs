@@ -50,5 +50,6 @@ pub enum CommandAction {
     Configure,
     NerdFonts,
     Recovery,
+    ChangePassword,
     Verify(Option<String>),
 }
