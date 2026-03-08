@@ -2,7 +2,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use rdev::{EventType, Key};
-use tracing::warn;
+use tracing::{info, warn};
 
 use crate::event::{AppEvent, EventSender};
 
@@ -24,11 +24,11 @@ pub fn check_linux_prerequisites() -> Option<String> {
         })
         .unwrap_or(false);
 
-    // On Wayland without X11, rdev needs evdev (/dev/input) access
-    if session_type == "wayland" && !has_display {
+    // On Wayland, rdev uses evdev (/dev/input) even when XWayland sets DISPLAY
+    if session_type == "wayland" {
         if !has_input_access {
             return Some(
-                "Wayland detected without X11. Add your user to the `input` group: sudo usermod -aG input $USER (then re-login)".to_string()
+                "Wayland detected. Add your user to the `input` group: sudo usermod -aG input $USER (then re-login)".to_string()
             );
         }
         return None;
@@ -78,54 +78,90 @@ pub fn spawn_listener(
         alive: alive.clone(),
     };
 
-    tokio::task::spawn_blocking(move || {
-        let error_tx = event_tx.clone();
-        let result = rdev::listen(move |event| match event.event_type {
-            EventType::KeyPress(key) => {
-                let Some(name) = rdev_key_to_name(key) else {
-                    return;
-                };
-                if capturing.load(Ordering::Relaxed) {
-                    let _ = event_tx.send(AppEvent::PttKeyCaptured(name));
-                    capturing.store(false, Ordering::Relaxed);
-                } else if active.load(Ordering::Relaxed) {
-                    let current_key = ptt_key_shared.lock().unwrap().clone();
-                    if !current_key.is_empty() && name == current_key {
-                        ptt_transmitting.store(true, Ordering::Relaxed);
-                    }
-                }
-            }
-            EventType::KeyRelease(key) => {
-                if active.load(Ordering::Relaxed)
-                    && let Some(name) = rdev_key_to_name(key)
-                {
-                    let current_key = ptt_key_shared.lock().unwrap().clone();
-                    if !current_key.is_empty() && name == current_key {
-                        ptt_transmitting.store(false, Ordering::Relaxed);
-                    }
-                }
-            }
-            _ => {}
-        });
+    std::thread::Builder::new()
+        .name("ptt-listener".into())
+        .spawn(move || {
+            info!("PTT listener thread started");
+            let error_tx = event_tx.clone();
 
-        alive.store(false, Ordering::Relaxed);
-        if let Err(e) = result {
-            let message = if cfg!(target_os = "linux") {
-                format!("PTT failed: {:?}. Add your user to the `input` group.", e)
-            } else if cfg!(target_os = "macos") {
-                format!(
-                    "PTT failed: {:?}. Grant Accessibility permission in System Settings.",
-                    e
-                )
-            } else {
-                format!("PTT failed: {:?}", e)
+            let handle_event = move |event: rdev::Event| {
+                match event.event_type {
+                    EventType::KeyPress(key) => {
+                        let Some(name) = rdev_key_to_name(key) else {
+                            return;
+                        };
+                        if capturing.load(Ordering::Relaxed) {
+                            let _ = event_tx.send(AppEvent::PttKeyCaptured(name));
+                            capturing.store(false, Ordering::Relaxed);
+                        } else if active.load(Ordering::Relaxed) {
+                            let current_key = ptt_key_shared.lock().unwrap().clone();
+                            if !current_key.is_empty() && name == current_key {
+                                ptt_transmitting.store(true, Ordering::Relaxed);
+                            }
+                        }
+                    }
+                    EventType::KeyRelease(key) => {
+                        if active.load(Ordering::Relaxed)
+                            && let Some(name) = rdev_key_to_name(key)
+                        {
+                            let current_key = ptt_key_shared.lock().unwrap().clone();
+                            if !current_key.is_empty() && name == current_key {
+                                ptt_transmitting.store(false, Ordering::Relaxed);
+                            }
+                        }
+                    }
+                    _ => {}
+                }
             };
-            warn!("{}", message);
-            let _ = error_tx.send(AppEvent::PttListenerFailed(message));
-        }
-    });
+
+            let failed = if use_evdev() {
+                info!("Using evdev (grab) backend for PTT");
+                rdev::grab(move |event| {
+                    handle_event(event.clone());
+                    Some(event)
+                })
+                .err()
+                .map(|e| format!("{e:?}"))
+            } else {
+                info!("Using X11 (listen) backend for PTT");
+                rdev::listen(handle_event)
+                    .err()
+                    .map(|e| format!("{e:?}"))
+            };
+
+            info!("PTT listener loop exited");
+            alive.store(false, Ordering::Relaxed);
+            if let Some(err) = failed {
+                let message = if cfg!(target_os = "linux") {
+                    format!("PTT failed: {err}. Add your user to the `input` group.")
+                } else if cfg!(target_os = "macos") {
+                    format!(
+                        "PTT failed: {err}. Grant Accessibility permission in System Settings.",
+                    )
+                } else {
+                    format!("PTT failed: {err}")
+                };
+                warn!("{}", message);
+                let _ = error_tx.send(AppEvent::PttListenerFailed(message));
+            }
+        })
+        .expect("failed to spawn PTT listener thread");
 
     handle
+}
+
+/// On Linux/Wayland, `rdev::listen()` only uses X11 XRecord which doesn't
+/// capture key events. Use `rdev::grab()` (evdev backend) instead.
+#[cfg(target_os = "linux")]
+fn use_evdev() -> bool {
+    std::env::var("XDG_SESSION_TYPE")
+        .map(|s| s == "wayland")
+        .unwrap_or(false)
+}
+
+#[cfg(not(target_os = "linux"))]
+fn use_evdev() -> bool {
+    false
 }
 
 fn rdev_key_to_name(key: Key) -> Option<String> {

@@ -61,7 +61,7 @@ keyring = { version = "3", features = ["sync-secret-service", "crypto-rust"] }
 url = "2.5.8"
 base64 = "0.22"
 arboard = "3"
-rdev = "0.5"
+rdev = { version = "0.5", features = ["unstable_grab"] }
 
 # Inline images
 ratatui-image = { version = "10", default-features = false, features = [
