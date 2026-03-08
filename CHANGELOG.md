@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.0](https://github.com/MaikBuse/gosuto/compare/v0.4.0...v0.5.0) (2026-03-08)
+
+
+### Features
+
+* add voice transmission indicator in status bar ([85a550e](https://github.com/MaikBuse/gosuto/commit/85a550efb33c21eb609ff09090763635d586cc5e))
+
+
+### Bug Fixes
+
+* **ci:** fix release binaries workflow for Linux and Windows ([b5a92ac](https://github.com/MaikBuse/gosuto/commit/b5a92acffc4ca3ac413ce96d6006a16b754816e6))
+
 ## [0.4.0](https://github.com/MaikBuse/gosuto/compare/v0.3.0...v0.4.0) (2026-03-08)
 
 
