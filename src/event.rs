@@ -136,6 +136,7 @@ pub enum AppEvent {
     MicLevel(f32),
     KeyRelease(KeyEvent),
     PttKeyCaptured(String),
+    PttListenerFailed(String),
     // Recovery events
     RecoveryStateChecked(crate::app::RecoveryStage),
     RecoveryKeyReady(String),

@@ -6,10 +6,59 @@ use tracing::warn;
 
 use crate::event::{AppEvent, EventSender};
 
+#[cfg(target_os = "linux")]
+pub fn check_linux_prerequisites() -> Option<String> {
+    use std::env;
+
+    let session_type = env::var("XDG_SESSION_TYPE").unwrap_or_default();
+    let has_display = env::var("DISPLAY").is_ok();
+
+    // Check if we can read /dev/input/event* (needed for evdev fallback)
+    let has_input_access = std::fs::read_dir("/dev/input")
+        .ok()
+        .and_then(|entries| {
+            entries
+                .filter_map(Result::ok)
+                .find(|e| e.file_name().to_string_lossy().starts_with("event"))
+                .map(|e| std::fs::File::open(e.path()).is_ok())
+        })
+        .unwrap_or(false);
+
+    // On Wayland without X11, rdev needs evdev (/dev/input) access
+    if session_type == "wayland" && !has_display {
+        if !has_input_access {
+            return Some(
+                "Wayland detected without X11. Add your user to the `input` group: sudo usermod -aG input $USER (then re-login)".to_string()
+            );
+        }
+        return None;
+    }
+
+    // On X11, rdev uses XRecord — needs DISPLAY
+    if session_type == "x11" || has_display {
+        return None;
+    }
+
+    // Unknown session, check input group as fallback
+    if !has_input_access {
+        return Some(
+            "No X11 display found. Add your user to the `input` group: sudo usermod -aG input $USER (then re-login)".to_string()
+        );
+    }
+
+    None
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn check_linux_prerequisites() -> Option<String> {
+    None
+}
+
 pub struct GlobalPttHandle {
     pub active: Arc<AtomicBool>,
     pub capturing: Arc<AtomicBool>,
     pub ptt_key: Arc<Mutex<String>>,
+    pub alive: Arc<AtomicBool>,
 }
 
 pub fn spawn_listener(
@@ -20,14 +69,17 @@ pub fn spawn_listener(
     let active = Arc::new(AtomicBool::new(false));
     let capturing = Arc::new(AtomicBool::new(false));
     let ptt_key_shared = Arc::new(Mutex::new(ptt_key));
+    let alive = Arc::new(AtomicBool::new(true));
 
     let handle = GlobalPttHandle {
         active: active.clone(),
         capturing: capturing.clone(),
         ptt_key: ptt_key_shared.clone(),
+        alive: alive.clone(),
     };
 
     tokio::task::spawn_blocking(move || {
+        let error_tx = event_tx.clone();
         let result = rdev::listen(move |event| match event.event_type {
             EventType::KeyPress(key) => {
                 let Some(name) = rdev_key_to_name(key) else {
@@ -44,7 +96,9 @@ pub fn spawn_listener(
                 }
             }
             EventType::KeyRelease(key) => {
-                if let Some(name) = rdev_key_to_name(key) {
+                if active.load(Ordering::Relaxed)
+                    && let Some(name) = rdev_key_to_name(key)
+                {
                     let current_key = ptt_key_shared.lock().unwrap().clone();
                     if !current_key.is_empty() && name == current_key {
                         ptt_transmitting.store(false, Ordering::Relaxed);
@@ -54,20 +108,20 @@ pub fn spawn_listener(
             _ => {}
         });
 
+        alive.store(false, Ordering::Relaxed);
         if let Err(e) = result {
-            if cfg!(target_os = "linux") {
-                warn!(
-                    "Global PTT listener failed: {:?}. Try adding your user to the `input` group.",
-                    e
-                );
+            let message = if cfg!(target_os = "linux") {
+                format!("PTT failed: {:?}. Add your user to the `input` group.", e)
             } else if cfg!(target_os = "macos") {
-                warn!(
-                    "Global PTT listener failed: {:?}. Grant Accessibility permission in System Settings.",
+                format!(
+                    "PTT failed: {:?}. Grant Accessibility permission in System Settings.",
                     e
-                );
+                )
             } else {
-                warn!("Global PTT listener failed: {:?}", e);
-            }
+                format!("PTT failed: {:?}", e)
+            };
+            warn!("{}", message);
+            let _ = error_tx.send(AppEvent::PttListenerFailed(message));
         }
     });
 
