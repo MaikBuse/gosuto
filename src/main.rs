@@ -1047,9 +1047,19 @@ async fn main() -> Result<()> {
     }
 
     // Cleanup
+    if let Some(ref handle) = app.global_ptt {
+        handle
+            .active
+            .store(false, std::sync::atomic::Ordering::Relaxed);
+    }
     let _ = call_cmd_tx.send(voip::manager::CallCommand::Shutdown);
     terminal::restore()?;
     info!("gōsuto shut down cleanly");
 
-    Ok(())
+    // Flush logs before exit (process::exit skips destructors)
+    drop(_guard);
+
+    // Force-exit to terminate the blocking rdev listener thread and any
+    // in-flight async tasks that would otherwise delay shutdown.
+    std::process::exit(0);
 }
