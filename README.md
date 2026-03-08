@@ -111,6 +111,10 @@ GOSUTO_LOG=debug gosuto                        # Linux
 $env:GOSUTO_LOG="debug"; .\gosuto.exe          # Windows (PowerShell)
 ```
 
+## ═══ limitations
+
+- **E2EE calls with Element X** — Voice calls between Gosuto and Element X are not end-to-end encrypted. Element X uses a JavaScript-based encryption implementation (HKDF key derivation) that differs from the native C++ implementation (PBKDF2) used by Gosuto. Calls between Gosuto users work with full E2EE.
+
 ## ═══ license
 
 Licensed under either of

@@ -465,6 +465,19 @@ pub async fn publish_call_member(
     Ok(event_id)
 }
 
+/// Decode base64 leniently, accepting both padded and unpadded input.
+/// Element X uses unpadded base64, but we should handle both.
+pub fn lenient_base64_decode(input: &str) -> Result<Vec<u8>, base64::DecodeError> {
+    use base64::alphabet::STANDARD as STANDARD_ALPHABET;
+    use base64::engine::{GeneralPurpose, GeneralPurposeConfig};
+    let engine = GeneralPurpose::new(
+        &STANDARD_ALPHABET,
+        GeneralPurposeConfig::new()
+            .with_decode_padding_mode(base64::engine::DecodePaddingMode::Indifferent),
+    );
+    engine.decode(input)
+}
+
 // --- Encryption key exchange (SFrame E2EE for MatrixRTC) ---
 
 #[derive(Debug, Clone)]
@@ -528,7 +541,7 @@ pub async fn fetch_participant_key(
             Some(k) => k,
             None => continue,
         };
-        let key_bytes = match base64::engine::general_purpose::STANDARD.decode(encoded) {
+        let key_bytes = match lenient_base64_decode(encoded) {
             Ok(b) => b,
             Err(e) => {
                 warn!(
@@ -569,7 +582,7 @@ pub async fn publish_encryption_keys(
     let user_id = client.user_id().context("Not logged in")?;
     let room = client.get_room(room_id).context("Room not found")?;
 
-    let encoded_key = base64::engine::general_purpose::STANDARD.encode(key);
+    let encoded_key = base64::engine::general_purpose::STANDARD_NO_PAD.encode(key);
 
     let state_key = format!("_{}_{}", user_id, device_id);
 
@@ -593,6 +606,104 @@ pub async fn publish_encryption_keys(
         .context("Failed to publish encryption keys")?;
 
     info!("Published encryption key for room {}", room_id);
+    Ok(())
+}
+
+/// Send our SFrame encryption key to specific call participants as to-device messages.
+/// Element X expects to receive encryption keys this way (not just via state events).
+/// `participants` is a list of (user_id, device_id) pairs (e.g. from LiveKit identities).
+pub async fn send_encryption_keys_to_device(
+    client: &Client,
+    room_id: &OwnedRoomId,
+    device_id: &OwnedDeviceId,
+    key: &[u8],
+    participants: &[(String, String)],
+) -> Result<()> {
+    use std::collections::BTreeMap;
+
+    let our_user_id = client.user_id().context("Not logged in")?;
+    let our_device_id = device_id.to_string();
+
+    let encoded_key = base64::engine::general_purpose::STANDARD_NO_PAD.encode(key);
+
+    let content = serde_json::json!({
+        "keys": {
+            "index": 0,
+            "key": encoded_key,
+        },
+        "member": {
+            "claimed_device_id": our_device_id,
+        },
+        "room_id": room_id.to_string(),
+        "sent_ts": std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64,
+        "session": {
+            "application": "m.call",
+            "call_id": "",
+            "scope": "m.room",
+        },
+    });
+
+    let raw_content = matrix_sdk::ruma::serde::Raw::from_json(
+        serde_json::value::to_raw_value(&content)
+            .context("Failed to serialize encryption key content")?,
+    );
+
+    let mut messages: BTreeMap<
+        matrix_sdk::ruma::OwnedUserId,
+        BTreeMap<
+            matrix_sdk::ruma::to_device::DeviceIdOrAllDevices,
+            matrix_sdk::ruma::serde::Raw<matrix_sdk::ruma::events::AnyToDeviceEventContent>,
+        >,
+    > = BTreeMap::new();
+
+    for (user_id, participant_device_id) in participants {
+        if user_id.as_str() == our_user_id.as_str() && participant_device_id == &our_device_id {
+            continue;
+        }
+
+        let user_id: matrix_sdk::ruma::OwnedUserId = match user_id.as_str().try_into() {
+            Ok(id) => id,
+            Err(_) => continue,
+        };
+        let device_key: matrix_sdk::ruma::to_device::DeviceIdOrAllDevices =
+            match participant_device_id.as_str().try_into() {
+                Ok(id) => id,
+                Err(_) => continue,
+            };
+
+        messages
+            .entry(user_id)
+            .or_default()
+            .insert(device_key, raw_content.clone());
+    }
+
+    if messages.is_empty() {
+        debug!("No other participants to send encryption keys to via to-device");
+        return Ok(());
+    }
+
+    let recipient_count = messages.values().map(|m| m.len()).sum::<usize>();
+    let event_type: matrix_sdk::ruma::events::ToDeviceEventType =
+        "io.element.call.encryption_keys".into();
+    let txn_id = matrix_sdk::ruma::TransactionId::new();
+
+    let request =
+        matrix_sdk::ruma::api::client::to_device::send_event_to_device::v3::Request::new_raw(
+            event_type, txn_id, messages,
+        );
+
+    client
+        .send(request)
+        .await
+        .context("Failed to send encryption keys via to-device")?;
+
+    info!(
+        "Sent encryption keys via to-device to {} recipient(s) for room {}",
+        recipient_count, room_id
+    );
     Ok(())
 }
 

@@ -611,6 +611,8 @@ impl AudioPipeline {
             let mut audio_stream =
                 NativeAudioStream::new(remote_track.rtc_track(), SAMPLE_RATE as i32, 1);
             let mut resampler = create_resampler(SAMPLE_RATE, device_rate, FRAME_SIZE);
+            let mut mono_buffer: Vec<f32> = Vec::with_capacity(FRAME_SIZE * 2);
+            let mut frame_count: u64 = 0;
 
             loop {
                 if !running_decode.load(Ordering::Relaxed) {
@@ -619,8 +621,35 @@ impl AudioPipeline {
 
                 match audio_stream.next().await {
                     Some(frame) => {
+                        if frame_count == 0 {
+                            let min = frame.data.iter().copied().min().unwrap_or(0);
+                            let max = frame.data.iter().copied().max().unwrap_or(0);
+                            let mean: f64 = frame.data.iter().map(|&s| s as f64).sum::<f64>()
+                                / frame.data.len().max(1) as f64;
+                            let rms: f64 = (frame
+                                .data
+                                .iter()
+                                .map(|&s| (s as f64) * (s as f64))
+                                .sum::<f64>()
+                                / frame.data.len().max(1) as f64)
+                                .sqrt();
+                            info!(
+                                "First remote audio frame: sample_rate={}, num_channels={}, \
+                                 samples_per_channel={}, data_len={}, min={}, max={}, \
+                                 mean={:.1}, rms={:.1}",
+                                frame.sample_rate,
+                                frame.num_channels,
+                                frame.samples_per_channel,
+                                frame.data.len(),
+                                min,
+                                max,
+                                mean,
+                                rms
+                            );
+                        }
+                        frame_count += 1;
                         // Convert i16 to f32
-                        let mut f32_samples: Vec<f32> = frame
+                        let f32_samples: Vec<f32> = frame
                             .data
                             .iter()
                             .map(|&s| s as f32 / i16::MAX as f32)
@@ -628,24 +657,34 @@ impl AudioPipeline {
 
                         // Resample from 48kHz to device rate if different
                         if let Some(ref mut resampler) = resampler {
-                            let waves_in = vec![f32_samples];
-                            match resampler.process(&waves_in, None) {
-                                Ok(mut result) => {
-                                    f32_samples = result.pop().unwrap_or_default();
-                                }
-                                Err(e) => {
-                                    error!("Playback resampler error: {}", e);
-                                    continue;
+                            // Buffer samples and process in FRAME_SIZE chunks
+                            // (SincFixedIn requires exactly chunk_size samples)
+                            mono_buffer.extend_from_slice(&f32_samples);
+                            while mono_buffer.len() >= FRAME_SIZE {
+                                let chunk: Vec<f32> = mono_buffer.drain(..FRAME_SIZE).collect();
+                                match resampler.process(&[chunk], None) {
+                                    Ok(mut result) => {
+                                        let mut resampled = result.pop().unwrap_or_default();
+                                        if device_channels > 1 {
+                                            resampled =
+                                                expand_channels(&resampled, device_channels);
+                                        }
+                                        let _ = audio_tx.send(resampled);
+                                    }
+                                    Err(e) => {
+                                        error!("Playback resampler error: {}", e);
+                                    }
                                 }
                             }
+                        } else {
+                            // No resampling needed — expand channels and send directly
+                            let output = if device_channels > 1 {
+                                expand_channels(&f32_samples, device_channels)
+                            } else {
+                                f32_samples
+                            };
+                            let _ = audio_tx.send(output);
                         }
-
-                        // Expand mono to device channels if needed
-                        if device_channels > 1 {
-                            f32_samples = expand_channels(&f32_samples, device_channels);
-                        }
-
-                        let _ = audio_tx.send(f32_samples);
                     }
                     None => {
                         info!("Audio stream ended");

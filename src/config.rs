@@ -49,6 +49,8 @@ pub struct AudioConfig {
     pub push_to_talk: bool,
     #[serde(default)]
     pub push_to_talk_key: Option<String>,
+    #[serde(default = "default_true")]
+    pub e2ee: bool,
 }
 
 impl Default for AudioConfig {
@@ -62,6 +64,7 @@ impl Default for AudioConfig {
             sensitivity: 0.15,
             push_to_talk: false,
             push_to_talk_key: None,
+            e2ee: true,
         }
     }
 }
@@ -287,6 +290,7 @@ mod tests {
         assert!(audio.push_to_talk_key.is_none());
         assert!(audio.input_device.is_none());
         assert!(audio.output_device.is_none());
+        assert!(audio.e2ee);
     }
 
     #[test]

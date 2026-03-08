@@ -14,6 +14,7 @@ use tracing::{debug, info, warn};
 use crate::config;
 use crate::event::{AppEvent, EventSender};
 use crate::matrix::{rooms, session};
+use crate::voip::CallCommandSender;
 
 pub type IncomingVerification = Arc<Mutex<Option<VerificationRequest>>>;
 
@@ -21,6 +22,7 @@ pub async fn start_sync(
     client: Client,
     tx: EventSender,
     incoming_verification: IncomingVerification,
+    call_cmd_tx: Option<CallCommandSender>,
 ) -> Result<()> {
     // Register event handler for messages
     let msg_tx = tx.clone();
@@ -160,8 +162,8 @@ pub async fn start_sync(
         },
     );
 
-    // Register event handlers for MatrixRTC call member events
-    register_matrixrtc_handlers(&client, &tx);
+    // Register event handlers for MatrixRTC call member events and encryption keys
+    register_matrixrtc_handlers(&client, &tx, call_cmd_tx);
 
     // Initial room list
     let room_list = rooms::get_room_list(&client).await;
@@ -263,7 +265,120 @@ fn sanitize_error(error: &str) -> String {
     msg
 }
 
-fn register_matrixrtc_handlers(client: &Client, tx: &EventSender) {
+fn register_matrixrtc_handlers(
+    client: &Client,
+    tx: &EventSender,
+    call_cmd_tx: Option<CallCommandSender>,
+) {
+    // Handle encryption key state events via sync
+    if let Some(call_cmd_tx) = call_cmd_tx {
+        // Handler for state events (our own key echo + legacy clients)
+        let state_cmd_tx = call_cmd_tx.clone();
+        client.add_event_handler(
+            move |event: matrix_sdk::ruma::events::AnySyncStateEvent, room: matrix_sdk::Room| {
+                let cmd_tx = state_cmd_tx.clone();
+                async move {
+                    let event_type = event.event_type().to_string();
+                    if event_type != "io.element.call.encryption_keys" {
+                        return;
+                    }
+
+                    let room_id = room.room_id().to_string();
+                    let content = match event.original_content() {
+                        Some(raw) => serde_json::to_value(raw).unwrap_or_default(),
+                        None => return,
+                    };
+
+                    let device_id_str = content
+                        .get("device_id")
+                        .and_then(|v| v.as_str())
+                        .or_else(|| {
+                            content
+                                .get("member")
+                                .and_then(|m| m.get("claimed_device_id"))
+                                .and_then(|v| v.as_str())
+                        })
+                        .unwrap_or("")
+                        .to_string();
+                    let sender = event.sender().to_string();
+
+                    dispatch_encryption_keys(
+                        &cmd_tx,
+                        &content,
+                        &room_id,
+                        &sender,
+                        &device_id_str,
+                        "state",
+                    );
+                }
+            },
+        );
+
+        // Handler for to-device events (Element X sends encryption keys this way)
+        let td_cmd_tx = call_cmd_tx;
+        client.add_event_handler(
+            move |raw: matrix_sdk::ruma::serde::Raw<matrix_sdk::ruma::events::AnyToDeviceEvent>| {
+                let cmd_tx = td_cmd_tx.clone();
+                async move {
+                    let json: serde_json::Value = match serde_json::from_str(raw.json().get()) {
+                        Ok(v) => v,
+                        Err(_) => return,
+                    };
+                    let event_type = json.get("type").and_then(|v| v.as_str()).unwrap_or("");
+                    if event_type != "io.element.call.encryption_keys" {
+                        return;
+                    }
+
+                    let sender = json
+                        .get("sender")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let content = match json.get("content") {
+                        Some(c) => c,
+                        None => return,
+                    };
+
+                    let device_id_str = content
+                        .get("device_id")
+                        .and_then(|v| v.as_str())
+                        .or_else(|| {
+                            content
+                                .get("member")
+                                .and_then(|m| m.get("claimed_device_id"))
+                                .and_then(|v| v.as_str())
+                        })
+                        .unwrap_or("")
+                        .to_string();
+                    // Element X sends call_id which is the room ID for MatrixRTC calls
+                    let room_id = content
+                        .get("call_id")
+                        .and_then(|v| v.as_str())
+                        .or_else(|| content.get("room_id").and_then(|v| v.as_str()))
+                        .unwrap_or("")
+                        .to_string();
+
+                    debug!(
+                        "Encryption key to-device event: sender={}, device={}, room={}, content={}",
+                        sender,
+                        device_id_str,
+                        room_id,
+                        serde_json::to_string_pretty(content).unwrap_or_default()
+                    );
+
+                    dispatch_encryption_keys(
+                        &cmd_tx,
+                        content,
+                        &room_id,
+                        &sender,
+                        &device_id_str,
+                        "to-device",
+                    );
+                }
+            },
+        );
+    }
+
     // Handle raw m.call.member / org.matrix.msc3401.call.member state events
     let member_tx = tx.clone();
     client.add_event_handler(
@@ -330,4 +445,59 @@ fn register_matrixrtc_handlers(client: &Client, tx: &EventSender) {
             }
         },
     );
+}
+
+fn dispatch_encryption_keys(
+    cmd_tx: &CallCommandSender,
+    content: &serde_json::Value,
+    room_id: &str,
+    sender: &str,
+    device_id_str: &str,
+    source: &str,
+) {
+    // Handle keys as array (state event format) or single object (Element X to-device format)
+    let key_entries: Vec<&serde_json::Value> =
+        if let Some(arr) = content.get("keys").and_then(|v| v.as_array()) {
+            arr.iter().collect()
+        } else if content.get("keys").and_then(|v| v.as_object()).is_some() {
+            vec![content.get("keys").unwrap()]
+        } else {
+            return;
+        };
+
+    if key_entries.is_empty() {
+        return;
+    }
+
+    for entry in key_entries {
+        let index = entry.get("index").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+        let encoded = match entry.get("key").and_then(|v| v.as_str()) {
+            Some(k) => k,
+            None => continue,
+        };
+
+        let key_bytes = match crate::voip::matrixrtc::lenient_base64_decode(encoded) {
+            Ok(b) => b,
+            Err(e) => {
+                warn!(
+                    "Failed to decode encryption key ({}) for {}:{}: {}",
+                    source, sender, device_id_str, e
+                );
+                continue;
+            }
+        };
+
+        info!(
+            "Encryption key received via {}: sender={}, device={}, index={}",
+            source, sender, device_id_str, index
+        );
+
+        let _ = cmd_tx.send(crate::voip::CallCommand::EncryptionKeyReceived {
+            room_id: room_id.to_string(),
+            user_id: sender.to_string(),
+            device_id: device_id_str.to_string(),
+            key_index: index,
+            key_bytes,
+        });
+    }
 }

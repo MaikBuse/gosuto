@@ -7,7 +7,7 @@ use livekit::webrtc::audio_source::RtcAudioSource;
 use livekit::webrtc::audio_source::native::NativeAudioSource;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
-use tracing::info;
+use tracing::{debug, info};
 
 #[derive(Debug)]
 #[allow(dead_code)]
@@ -31,6 +31,10 @@ pub enum LiveKitEvent {
     },
     Reconnecting,
     Reconnected,
+    E2eeStateChanged {
+        participant_identity: String,
+        state: String,
+    },
     Error(String),
 }
 
@@ -42,31 +46,57 @@ pub struct LiveKitSession {
 }
 
 impl LiveKitSession {
-    pub async fn connect(server_url: &str, token: &str, encryption_key: Vec<u8>) -> Result<Self> {
+    pub async fn connect(
+        server_url: &str,
+        token: &str,
+        encryption_key: Vec<u8>,
+        use_e2ee: bool,
+    ) -> Result<Self> {
         // Append access_token as query param — the Rust SDK only sends it
         // as an Authorization header, which reverse proxies may strip during
         // WebSocket upgrade. The query param ensures the token reaches LiveKit.
         let mut url = url::Url::parse(server_url).context("Invalid LiveKit server URL")?;
         url.query_pairs_mut().append_pair("access_token", token);
 
-        let key_provider = KeyProvider::new(KeyProviderOptions::default());
+        let key_provider = KeyProvider::new(KeyProviderOptions {
+            failure_tolerance: 10,
+            ..KeyProviderOptions::default()
+        });
 
         let mut options = RoomOptions::default();
-        options.encryption = Some(E2eeOptions {
-            encryption_type: EncryptionType::Gcm,
-            key_provider: key_provider.clone(),
-        });
+        if use_e2ee {
+            options.encryption = Some(E2eeOptions {
+                encryption_type: EncryptionType::Gcm,
+                key_provider: key_provider.clone(),
+            });
+        }
 
         let (room, mut room_events) = Room::connect(url.as_str(), token, options).await?;
 
         // Set our own encryption key using our actual LiveKit identity
         let local_identity = room.local_participant().identity();
-        key_provider.set_key(&local_identity, 0, encryption_key);
-        info!(
-            "Connected to LiveKit room: {} (E2EE enabled, GCM, identity: {})",
-            room.name(),
-            local_identity
-        );
+        if use_e2ee {
+            debug!(
+                "Set local E2EE key: {}...",
+                encryption_key
+                    .iter()
+                    .take(4)
+                    .map(|b| format!("{:02x}", b))
+                    .collect::<String>()
+            );
+            key_provider.set_key(&local_identity, 0, encryption_key);
+            info!(
+                "Connected to LiveKit room: {} (E2EE enabled, GCM, identity: {})",
+                room.name(),
+                local_identity
+            );
+        } else {
+            info!(
+                "Connected to LiveKit room: {} (E2EE DISABLED for testing, identity: {})",
+                room.name(),
+                local_identity
+            );
+        }
 
         let (event_tx, event_rx) = mpsc::unbounded_channel();
 
@@ -111,6 +141,12 @@ impl LiveKitSession {
                     }),
                     RoomEvent::Reconnecting => Some(LiveKitEvent::Reconnecting),
                     RoomEvent::Reconnected => Some(LiveKitEvent::Reconnected),
+                    RoomEvent::E2eeStateChanged { participant, state } => {
+                        Some(LiveKitEvent::E2eeStateChanged {
+                            participant_identity: participant.identity().to_string(),
+                            state: format!("{:?}", state),
+                        })
+                    }
                     _ => None,
                 };
 
