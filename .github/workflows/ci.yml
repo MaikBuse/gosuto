@@ -39,7 +39,7 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libasound2-dev libdbus-1-dev pkg-config libglib2.0-dev libva-dev libx11-dev
+          sudo apt-get install -y libasound2-dev libdbus-1-dev pkg-config libglib2.0-dev libva-dev libx11-dev libxi-dev libxtst-dev
 
       - uses: arduino/setup-protoc@v3
         with:
