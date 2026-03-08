@@ -7,7 +7,7 @@ use crate::ui::popup;
 use crate::ui::theme;
 
 const POPUP_WIDTH: u16 = 54;
-const POPUP_HEIGHT: u16 = 18;
+const POPUP_HEIGHT: u16 = 20;
 
 pub fn render(state: &UserConfigState, icons: &Icons, frame: &mut Frame) {
     let area = frame.area();
@@ -21,7 +21,7 @@ pub fn render(state: &UserConfigState, icons: &Icons, frame: &mut Frame) {
     let buf = frame.buffer_mut();
     let bounds = *buf.area();
 
-    popup::render_popup_chrome(buf, &bounds, popup_area, "CONFIGURE");
+    popup::render_popup_chrome(buf, &bounds, popup_area, "PROFILE");
 
     let left = popup_area.x + 3;
     let right = popup_area.x + popup_area.width.saturating_sub(3);
@@ -65,6 +65,40 @@ pub fn render(state: &UserConfigState, icons: &Icons, frame: &mut Frame) {
     popup::write_str(buf, &bounds, label_x, row, "HOMESERVER", label_s);
     let hs_display = popup::truncate_str(&state.homeserver, (right - value_x) as usize);
     popup::write_str(buf, &bounds, value_x, row, &hs_display, value_s);
+    row += 1;
+
+    // VERIFIED (read-only)
+    popup::write_str(buf, &bounds, label_x, row, "VERIFIED", label_s);
+    let (ver_text, ver_color) = if state.verified {
+        ("yes", theme::GREEN)
+    } else {
+        ("no", theme::RED)
+    };
+    popup::write_str(
+        buf,
+        &bounds,
+        value_x,
+        row,
+        ver_text,
+        Style::default().fg(ver_color).bg(theme::BG),
+    );
+    row += 1;
+
+    // RECOVERY (read-only)
+    popup::write_str(buf, &bounds, label_x, row, "RECOVERY", label_s);
+    let (rec_text, rec_color) = if state.recovery_enabled {
+        ("yes", theme::GREEN)
+    } else {
+        ("no", theme::RED)
+    };
+    popup::write_str(
+        buf,
+        &bounds,
+        value_x,
+        row,
+        rec_text,
+        Style::default().fg(rec_color).bg(theme::BG),
+    );
     row += 1;
 
     row += 1;
@@ -152,5 +186,10 @@ pub fn render(state: &UserConfigState, icons: &Icons, frame: &mut Frame) {
     }
 
     // Hints
-    popup::render_hint(buf, &bounds, popup_area, "Enter edit  Esc close");
+    popup::render_hint(
+        buf,
+        &bounds,
+        popup_area,
+        "j/k navigate  Enter select  Esc close",
+    );
 }

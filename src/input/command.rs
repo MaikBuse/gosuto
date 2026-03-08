@@ -110,9 +110,9 @@ pub const COMMANDS: &[CommandDef] = &[
         takes_arg: false,
     },
     CommandDef {
-        name: "configure",
-        aliases: &["config", "profile"],
-        syntax: ":configure",
+        name: "profile",
+        aliases: &["configure", "config"],
+        syntax: ":profile",
         description: "Edit user profile",
         takes_arg: false,
     },
@@ -303,7 +303,7 @@ fn parse_command(input: &str) -> InputResult {
         "audio" | "sound" => InputResult::Command(CommandAction::AudioSettings),
         "create" | "new" => InputResult::Command(CommandAction::CreateRoom),
         "edit" | "roominfo" => InputResult::Command(CommandAction::RoomInfo),
-        "configure" | "config" | "profile" => InputResult::Command(CommandAction::Configure),
+        "profile" | "configure" | "config" => InputResult::Command(CommandAction::Configure),
         "nerdfonts" | "nerd" | "icons" => InputResult::Command(CommandAction::NerdFonts),
         "recovery" | "recover" => InputResult::Command(CommandAction::Recovery),
         "verify" | "v" => {
@@ -361,7 +361,7 @@ mod tests {
     #[test]
     fn filtered_commands_multiple_matches() {
         let result = filtered_commands("c");
-        // "call", "configure", "create" all start with "c"
+        // "call", "create", "config" (alias) all start with "c"
         assert!(result.len() >= 2);
     }
 
@@ -525,17 +525,17 @@ mod tests {
     }
 
     #[test]
-    fn parse_configure_aliases() {
+    fn parse_profile_aliases() {
+        assert!(matches!(
+            parse_command("profile"),
+            InputResult::Command(CommandAction::Configure)
+        ));
         assert!(matches!(
             parse_command("configure"),
             InputResult::Command(CommandAction::Configure)
         ));
         assert!(matches!(
             parse_command("config"),
-            InputResult::Command(CommandAction::Configure)
-        ));
-        assert!(matches!(
-            parse_command("profile"),
             InputResult::Command(CommandAction::Configure)
         ));
     }
