@@ -38,7 +38,7 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libasound2-dev libdbus-1-dev pkg-config libglib2.0-dev libva-dev
+          sudo apt-get install -y libasound2-dev libdbus-1-dev pkg-config libglib2.0-dev libva-dev libx11-dev libxi-dev libxtst-dev
 
       - uses: arduino/setup-protoc@v3
         with:
@@ -58,6 +58,8 @@ jobs:
 
       - name: Build
         run: cargo build --release --target ${{ matrix.target }}
+        env:
+          RUSTFLAGS: ${{ matrix.os == 'windows-latest' && '-C target-feature=+crt-static' || '' }}
 
       - name: Package (Linux)
         if: matrix.os == 'ubuntu-latest'
