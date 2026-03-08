@@ -414,7 +414,6 @@ impl UserConfigState {
     }
 }
 
-#[allow(dead_code)]
 pub struct App {
     pub running: bool,
     pub vim: VimState,
@@ -605,7 +604,7 @@ impl App {
                     self.process_input(result);
                 }
             }
-            AppEvent::KeyRelease(_) => {}
+            AppEvent::KeyRelease => {}
             AppEvent::PttKeyCaptured(name) => {
                 if self.audio_settings.capturing_ptt_key {
                     self.audio_settings.push_to_talk_key = Some(name.clone());
@@ -621,7 +620,7 @@ impl App {
             AppEvent::MicLevel(level) => {
                 self.audio_settings.mic_level = level;
             }
-            AppEvent::Resize(_, _) => {}
+            AppEvent::Resize => {}
             AppEvent::Tick => {}
             AppEvent::LoginSuccess {
                 user_id,
@@ -980,25 +979,21 @@ impl App {
                 }
             }
             // Verification events
-            AppEvent::VerificationRequestReceived { sender, flow_id: _ } => {
+            AppEvent::VerificationRequestReceived { sender } => {
                 self.verification_modal = Some(crate::state::VerificationModalState {
                     stage: crate::state::VerificationStage::WaitingForOtherDevice,
                     sender,
                     emojis: vec![],
                 });
             }
-            AppEvent::VerificationSasEmoji {
-                emojis,
-                flow_id: _,
-                sender,
-            } => {
+            AppEvent::VerificationSasEmoji { emojis, sender } => {
                 self.verification_modal = Some(crate::state::VerificationModalState {
                     stage: crate::state::VerificationStage::EmojiConfirmation,
                     sender,
                     emojis,
                 });
             }
-            AppEvent::VerificationCompleted { sender: _ } => {
+            AppEvent::VerificationCompleted => {
                 if let Some(ref mut modal) = self.verification_modal {
                     modal.stage = crate::state::VerificationStage::Completed;
                 }

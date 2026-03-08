@@ -121,7 +121,7 @@ impl VimState {
         self.completion.reset(0);
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn clear_input(&mut self) {
         self.input_buffer.clear();
         self.input_cursor = 0;

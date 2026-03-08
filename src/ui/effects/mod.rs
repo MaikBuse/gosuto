@@ -52,11 +52,9 @@ impl Xorshift64 {
     }
 }
 
-#[allow(dead_code)]
 pub trait EffectLayer {
     fn tick(&mut self, dt_ms: u64, area: Rect);
     fn render(&self, buf: &mut Buffer);
-    fn is_active(&self) -> bool;
 }
 
 pub struct EffectsState {

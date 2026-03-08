@@ -10,7 +10,6 @@ use crate::event::{AppEvent, EventSender};
 /// Drive a SAS verification flow once we have a SasVerification handle.
 async fn drive_sas(
     sas: SasVerification,
-    flow_id: String,
     tx: &EventSender,
     confirm_rx: tokio::sync::oneshot::Receiver<bool>,
 ) {
@@ -44,7 +43,6 @@ async fn drive_sas(
 
                 let _ = tx.send(AppEvent::VerificationSasEmoji {
                     emojis: emoji_data,
-                    flow_id: flow_id.clone(),
                     sender: sender.clone(),
                 });
 
@@ -79,9 +77,7 @@ async fn drive_sas(
             }
             SasState::Done { .. } => {
                 info!("SAS verification completed with {}", sender);
-                let _ = tx.send(AppEvent::VerificationCompleted {
-                    sender: sender.clone(),
-                });
+                let _ = tx.send(AppEvent::VerificationCompleted);
                 return;
             }
             SasState::Cancelled(info) => {
@@ -103,7 +99,6 @@ async fn drive_request(
     we_initiated: bool,
 ) {
     let sender = request.other_user_id().to_string();
-    let flow_id = request.flow_id().to_owned();
 
     // If we received the request (didn't initiate), accept it
     if !we_initiated && let Err(e) = request.accept().await {
@@ -115,7 +110,6 @@ async fn drive_request(
 
     let _ = tx.send(AppEvent::VerificationRequestReceived {
         sender: sender.clone(),
-        flow_id: flow_id.clone(),
     });
 
     let mut stream = request.changes();
@@ -127,7 +121,7 @@ async fn drive_request(
                 if we_initiated {
                     match request.start_sas().await {
                         Ok(Some(sas)) => {
-                            drive_sas(sas, flow_id, tx, confirm_rx).await;
+                            drive_sas(sas, tx, confirm_rx).await;
                             return;
                         }
                         Ok(None) => {
@@ -147,7 +141,7 @@ async fn drive_request(
             }
             VerificationRequestState::Transitioned { verification } => match verification {
                 Verification::SasV1(sas) => {
-                    drive_sas(sas, flow_id, tx, confirm_rx).await;
+                    drive_sas(sas, tx, confirm_rx).await;
                     return;
                 }
                 _ => {
@@ -158,9 +152,7 @@ async fn drive_request(
                 }
             },
             VerificationRequestState::Done => {
-                let _ = tx.send(AppEvent::VerificationCompleted {
-                    sender: sender.clone(),
-                });
+                let _ = tx.send(AppEvent::VerificationCompleted);
                 return;
             }
             VerificationRequestState::Cancelled(info) => {

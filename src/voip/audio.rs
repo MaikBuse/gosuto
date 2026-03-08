@@ -25,8 +25,9 @@ pub const FRAME_SIZE: usize = 960; // 20ms at 48kHz
 /// Wrapper to make cpal::Stream Send.
 /// cpal::Stream is !Send because the audio backend uses raw pointers internally,
 /// but the stream itself is safe to move between threads (we only stop/drop it).
-#[allow(dead_code)]
-struct SendStream(cpal::Stream);
+struct SendStream {
+    _stream: cpal::Stream,
+}
 
 // SAFETY: cpal::Stream is !Send due to raw pointers in backend implementations,
 // but the stream handle itself is safe to transfer between threads. We only
@@ -284,7 +285,7 @@ impl AudioPipeline {
             mic_active,
         ) {
             Ok((stream, task)) => {
-                self.capture_stream = Some(SendStream(stream));
+                self.capture_stream = Some(SendStream { _stream: stream });
                 self.capture_task = Some(task);
             }
             Err(e) => {
@@ -304,7 +305,7 @@ impl AudioPipeline {
     ) -> Result<()> {
         let (stream, task) =
             Self::build_playback_stream(remote_track, self.running.clone(), config)?;
-        self.playback_streams.push(SendStream(stream));
+        self.playback_streams.push(SendStream { _stream: stream });
         self.playback_tasks.push(task);
         Ok(())
     }

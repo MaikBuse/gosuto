@@ -1,5 +1,4 @@
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub enum AuthState {
     LoggedOut,
     LoggingIn,

@@ -629,10 +629,6 @@ impl CallManager {
             } => {
                 info!("E2EE state: {} → {}", participant_identity, state);
             }
-            LiveKitEvent::Error(err) => {
-                error!("LiveKit error: {}", err);
-                let _ = self.event_tx.send(AppEvent::CallError(err));
-            }
         }
     }
 

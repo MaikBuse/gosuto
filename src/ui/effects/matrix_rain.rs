@@ -190,8 +190,4 @@ impl EffectLayer for MatrixRain {
             }
         }
     }
-
-    fn is_active(&self) -> bool {
-        !self.columns.is_empty()
-    }
 }

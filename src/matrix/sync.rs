@@ -155,7 +155,6 @@ pub async fn start_sync(
                     *incoming_verify.lock().await = Some(request);
                     let _ = tx.send(crate::event::AppEvent::VerificationRequestReceived {
                         sender: event.sender.to_string(),
-                        flow_id: event.content.transaction_id.to_string(),
                     });
                 }
             }

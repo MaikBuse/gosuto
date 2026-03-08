@@ -183,9 +183,4 @@ impl GlitchEffect {
             }
         }
     }
-
-    #[allow(dead_code)]
-    pub fn is_active(&self) -> bool {
-        !self.bands.is_empty()
-    }
 }

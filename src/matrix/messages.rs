@@ -208,7 +208,6 @@ pub async fn send_message(
         Err(e) => {
             error!("Failed to send message: {}", e);
             let _ = tx.send(AppEvent::SendError {
-                room_id: room_id.to_string(),
                 error: e.to_string(),
             });
         }

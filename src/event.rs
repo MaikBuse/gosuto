@@ -28,10 +28,9 @@ impl std::fmt::Debug for PasswordSender {
 }
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub enum AppEvent {
     Key(KeyEvent),
-    Resize(u16, u16),
+    Resize,
     Tick,
     // Auth events
     LoginSuccess {
@@ -65,7 +64,6 @@ pub enum AppEvent {
         body: String,
     },
     SendError {
-        room_id: String,
         error: String,
     },
     FetchError {
@@ -134,7 +132,7 @@ pub enum AppEvent {
     UserConfigError(String),
     // Audio settings events
     MicLevel(f32),
-    KeyRelease(KeyEvent),
+    KeyRelease,
     PttKeyCaptured(String),
     PttListenerFailed(String),
     // Recovery events
@@ -147,16 +145,12 @@ pub enum AppEvent {
     // Verification events
     VerificationRequestReceived {
         sender: String,
-        flow_id: String,
     },
     VerificationSasEmoji {
         emojis: Vec<(String, String)>,
-        flow_id: String,
         sender: String,
     },
-    VerificationCompleted {
-        sender: String,
-    },
+    VerificationCompleted,
     VerificationCancelled {
         reason: String,
     },

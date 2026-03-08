@@ -158,11 +158,11 @@ async fn main() -> Result<()> {
                         let _ = input_tx.send(AppEvent::Key(key));
                     }
                     KeyEventKind::Release => {
-                        let _ = input_tx.send(AppEvent::KeyRelease(key));
+                        let _ = input_tx.send(AppEvent::KeyRelease);
                     }
                 },
-                Event::Resize(w, h) => {
-                    let _ = input_tx.send(AppEvent::Resize(w, h));
+                Event::Resize(_, _) => {
+                    let _ = input_tx.send(AppEvent::Resize);
                 }
                 _ => {}
             }

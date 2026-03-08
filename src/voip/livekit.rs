@@ -10,7 +10,6 @@ use tokio::task::JoinHandle;
 use tracing::{debug, info};
 
 #[derive(Debug)]
-#[allow(dead_code)]
 pub enum LiveKitEvent {
     Connected,
     ParticipantJoined {
@@ -35,7 +34,6 @@ pub enum LiveKitEvent {
         participant_identity: String,
         state: String,
     },
-    Error(String),
 }
 
 pub struct LiveKitSession {

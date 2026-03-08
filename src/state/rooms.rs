@@ -8,7 +8,6 @@ pub enum RoomCategory {
 }
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct RoomSummary {
     pub id: String,
     pub name: String,
