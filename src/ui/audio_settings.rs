@@ -5,6 +5,7 @@ use ratatui::style::{Color, Modifier, Style};
 
 use crate::app::AudioSettingsState;
 use crate::ui::icons::Icons;
+use crate::ui::popup;
 use crate::ui::theme;
 
 const POPUP_WIDTH: u16 = 54;
@@ -20,32 +21,17 @@ pub fn render(state: &AudioSettingsState, icons: &Icons, frame: &mut Frame) {
 
     let popup_w = POPUP_WIDTH.min(area.width.saturating_sub(4));
     let popup_h = POPUP_HEIGHT.min(area.height.saturating_sub(4));
-    let popup = centered_rect(popup_w, popup_h, area);
+    let popup_area = popup::centered_rect(popup_w, popup_h, area);
     let buf = frame.buffer_mut();
     let bounds = *buf.area();
 
-    // Fill background
-    for y in popup.y..popup.y + popup.height {
-        for x in popup.x..popup.x + popup.width {
-            if in_bounds(x, y, &bounds) {
-                let cell = &mut buf[(x, y)];
-                cell.set_char(' ');
-                cell.set_style(Style::default().bg(theme::BG));
-                cell.skip = false;
-            }
-        }
-    }
-
-    let border_color = theme::CYAN;
-    render_border(buf, &bounds, popup, border_color);
-    render_title(buf, &bounds, popup, border_color);
+    popup::render_popup_chrome(buf, &bounds, popup_area, "AUDIO CONFIGURATION");
 
     let visible = state.visible_fields();
-    let left = popup.x + 3;
-    let right = popup.x + popup.width.saturating_sub(3);
-    let inner_w = (right - left) as usize;
+    let left = popup_area.x + 3;
+    let right = popup_area.x + popup_area.width.saturating_sub(3);
 
-    let mut row = popup.y + 2;
+    let mut row = popup_area.y + 2;
 
     for (vis_idx, &field_id) in visible.iter().enumerate() {
         let selected = vis_idx == state.selected_field;
@@ -59,20 +45,15 @@ pub fn render(state: &AudioSettingsState, icons: &Icons, frame: &mut Frame) {
     }
 
     // Mic level meter
-    let meter_row = popup.y + popup.height.saturating_sub(4);
+    let meter_row = popup_area.y + popup_area.height.saturating_sub(4);
     render_mic_meter(buf, &bounds, left, right, meter_row, state.mic_level);
 
     // Hints
-    let hint_row = popup.y + popup.height.saturating_sub(2);
-    let hint = "j/k navigate  h/l adjust  Esc close";
-    let hx = left + ((inner_w).saturating_sub(hint.chars().count())) as u16 / 2;
-    write_str(
+    popup::render_hint(
         buf,
         &bounds,
-        hx,
-        hint_row,
-        hint,
-        Style::default().fg(theme::DIM).bg(theme::BG),
+        popup_area,
+        "j/k navigate  h/l adjust  Esc close",
     );
 }
 
@@ -105,8 +86,8 @@ fn render_field(
             Modifier::empty()
         });
 
-    write_str(buf, &bounds, left, row, marker, marker_s);
-    set_cell(
+    popup::write_str(buf, &bounds, left, row, marker, marker_s);
+    popup::set_cell(
         buf,
         &bounds,
         left + 1,
@@ -120,7 +101,7 @@ fn render_field(
 
     match field_id {
         0 => {
-            write_str(buf, &bounds, label_x, row, "INPUT DEVICE", label_s);
+            popup::write_str(buf, &bounds, label_x, row, "INPUT DEVICE", label_s);
             let name = state
                 .input_devices
                 .get(state.input_device_idx)
@@ -129,7 +110,7 @@ fn render_field(
             render_device_selector(buf, value_x, right, row, name, selected, icons);
         }
         1 => {
-            write_str(buf, &bounds, label_x, row, "OUTPUT DEVICE", label_s);
+            popup::write_str(buf, &bounds, label_x, row, "OUTPUT DEVICE", label_s);
             let name = state
                 .output_devices
                 .get(state.output_device_idx)
@@ -138,33 +119,45 @@ fn render_field(
             render_device_selector(buf, value_x, right, row, name, selected, icons);
         }
         2 => {
-            write_str(buf, &bounds, label_x, row, "INPUT VOLUME", label_s);
+            popup::write_str(buf, &bounds, label_x, row, "INPUT VOLUME", label_s);
             render_volume_bar(buf, &bounds, value_x, row, state.input_volume, selected);
         }
         3 => {
-            write_str(buf, &bounds, label_x, row, "OUTPUT VOLUME", label_s);
+            popup::write_str(buf, &bounds, label_x, row, "OUTPUT VOLUME", label_s);
             render_volume_bar(buf, &bounds, value_x, row, state.output_volume, selected);
         }
         4 => {
-            write_str(buf, &bounds, label_x, row, "VOICE ACTIVITY", label_s);
+            popup::write_str(buf, &bounds, label_x, row, "VOICE ACTIVITY", label_s);
             render_toggle(buf, &bounds, value_x, row, state.voice_activity, selected);
         }
         5 => {
-            write_str(buf, &bounds, label_x, row, "SENSITIVITY", label_s);
+            popup::write_str(buf, &bounds, label_x, row, "SENSITIVITY", label_s);
             render_volume_bar(buf, &bounds, value_x, row, state.sensitivity, selected);
         }
         6 => {
-            write_str(buf, &bounds, label_x, row, "PUSH TO TALK", label_s);
+            popup::write_str(buf, &bounds, label_x, row, "PUSH TO TALK", label_s);
             render_toggle(buf, &bounds, value_x, row, state.push_to_talk, selected);
         }
         7 => {
-            write_str(buf, &bounds, label_x, row, "PTT KEY", label_s);
+            popup::write_str(buf, &bounds, label_x, row, "PTT KEY", label_s);
             if state.capturing_ptt_key {
                 let s = Style::default()
                     .fg(theme::GREEN)
                     .bg(theme::BG)
                     .add_modifier(Modifier::BOLD);
-                write_str(buf, &bounds, value_x, row, "press key...", s);
+                popup::write_str(buf, &bounds, value_x, row, "press key...", s);
+            } else if let Some(ref err) = state.ptt_error {
+                let s = Style::default()
+                    .fg(theme::RED)
+                    .bg(theme::BG)
+                    .add_modifier(Modifier::BOLD);
+                let max_w = (right.saturating_sub(value_x)) as usize;
+                let display: &str = if err.len() > max_w {
+                    &err[..max_w]
+                } else {
+                    err
+                };
+                popup::write_str(buf, &bounds, value_x, row, display, s);
             } else {
                 let key_name = state.push_to_talk_key.as_deref().unwrap_or("not set");
                 let s = if selected {
@@ -173,7 +166,7 @@ fn render_field(
                     Style::default().fg(theme::DIM).bg(theme::BG)
                 };
                 let display = format!("[{}]", key_name);
-                write_str(buf, &bounds, value_x, row, &display, s);
+                popup::write_str(buf, &bounds, value_x, row, &display, s);
             }
         }
         _ => {}
@@ -196,8 +189,8 @@ fn render_device_selector(
     let arrow_s = Style::default().fg(arrow_color).bg(theme::BG);
     let name_s = Style::default().fg(name_color).bg(theme::BG);
 
-    write_str(buf, &bounds, x, row, icons.arrow_left, arrow_s);
-    set_cell(
+    popup::write_str(buf, &bounds, x, row, icons.arrow_left, arrow_s);
+    popup::set_cell(
         buf,
         &bounds,
         x + 1,
@@ -213,10 +206,10 @@ fn render_device_selector(
     } else {
         name.to_string()
     };
-    write_str(buf, &bounds, x + 2, row, &display, name_s);
+    popup::write_str(buf, &bounds, x + 2, row, &display, name_s);
 
     let end_x = x + 2 + display.chars().count() as u16;
-    set_cell(
+    popup::set_cell(
         buf,
         &bounds,
         end_x,
@@ -224,7 +217,7 @@ fn render_device_selector(
         ' ',
         Style::default().bg(theme::BG),
     );
-    write_str(buf, &bounds, end_x + 1, row, icons.arrow_right, arrow_s);
+    popup::write_str(buf, &bounds, end_x + 1, row, icons.arrow_right, arrow_s);
 }
 
 fn render_volume_bar(
@@ -240,7 +233,7 @@ fn render_volume_bar(
     let empty_color = Color::Rgb(40, 40, 50);
     let pct = format!("{:>3}%", (value * 100.0).round() as u32);
 
-    set_cell(
+    popup::set_cell(
         buf,
         bounds,
         x,
@@ -252,7 +245,7 @@ fn render_volume_bar(
     for i in 0..BAR_WIDTH {
         let ch = if i < filled { '█' } else { '░' };
         let color = if i < filled { fill_color } else { empty_color };
-        set_cell(
+        popup::set_cell(
             buf,
             bounds,
             x + 1 + i as u16,
@@ -262,7 +255,7 @@ fn render_volume_bar(
         );
     }
 
-    set_cell(
+    popup::set_cell(
         buf,
         bounds,
         x + 1 + BAR_WIDTH as u16,
@@ -271,7 +264,7 @@ fn render_volume_bar(
         Style::default().fg(theme::DIM).bg(theme::BG),
     );
 
-    write_str(
+    popup::write_str(
         buf,
         bounds,
         x + 2 + BAR_WIDTH as u16,
@@ -291,13 +284,13 @@ fn render_toggle(buf: &mut Buffer, bounds: &Rect, x: u16, row: u16, on: bool, se
         .fg(if selected { color } else { theme::DIM })
         .bg(theme::BG)
         .add_modifier(Modifier::BOLD);
-    write_str(buf, bounds, x, row, text, s);
+    popup::write_str(buf, bounds, x, row, text, s);
 }
 
 fn render_mic_meter(buf: &mut Buffer, bounds: &Rect, left: u16, right: u16, row: u16, level: f32) {
     let label = "MIC ";
     let label_s = Style::default().fg(theme::DIM).bg(theme::BG);
-    write_str(buf, bounds, left, row, label, label_s);
+    popup::write_str(buf, bounds, left, row, label, label_s);
 
     let bar_start = left + label.len() as u16;
     let bar_width = (right.saturating_sub(bar_start)) as usize;
@@ -314,7 +307,7 @@ fn render_mic_meter(buf: &mut Buffer, bounds: &Rect, left: u16, right: u16, row:
         } else {
             Color::Rgb(30, 30, 40)
         };
-        set_cell(
+        popup::set_cell(
             buf,
             bounds,
             bar_start + i as u16,
@@ -322,93 +315,5 @@ fn render_mic_meter(buf: &mut Buffer, bounds: &Rect, left: u16, right: u16, row:
             ch,
             Style::default().fg(color).bg(theme::BG),
         );
-    }
-}
-
-fn render_border(buf: &mut Buffer, bounds: &Rect, area: Rect, color: Color) {
-    let s = Style::default().fg(color).bg(theme::BG);
-    let x1 = area.x;
-    let x2 = area.x + area.width - 1;
-    let y1 = area.y;
-    let y2 = area.y + area.height - 1;
-
-    set_cell(buf, bounds, x1, y1, '╔', s);
-    set_cell(buf, bounds, x2, y1, '╗', s);
-    set_cell(buf, bounds, x1, y2, '╚', s);
-    set_cell(buf, bounds, x2, y2, '╝', s);
-
-    for x in (x1 + 1)..x2 {
-        set_cell(buf, bounds, x, y1, '═', s);
-        set_cell(buf, bounds, x, y2, '═', s);
-    }
-
-    for y in (y1 + 1)..y2 {
-        set_cell(buf, bounds, x1, y, '║', s);
-        set_cell(buf, bounds, x2, y, '║', s);
-    }
-
-    // Decorative glyph
-    let gx = x2.saturating_sub(5);
-    if gx > x1 {
-        set_cell(buf, bounds, gx, y2, '◈', s);
-    }
-}
-
-fn render_title(buf: &mut Buffer, bounds: &Rect, area: Rect, color: Color) {
-    let title = "AUDIO CONFIGURATION";
-    let border_s = Style::default().fg(color).bg(theme::BG);
-    let title_s = border_s.add_modifier(Modifier::BOLD);
-
-    let bracket_l = area.x + 3;
-    let title_start = bracket_l + 2;
-
-    set_cell(buf, bounds, bracket_l, area.y, '╡', border_s);
-    set_cell(buf, bounds, bracket_l + 1, area.y, ' ', border_s);
-
-    for (i, ch) in title.chars().enumerate() {
-        let x = title_start + i as u16;
-        if x >= area.x + area.width - 1 {
-            break;
-        }
-        set_cell(buf, bounds, x, area.y, ch, title_s);
-    }
-
-    let bracket_r_space = title_start + title.len() as u16;
-    let bracket_r = bracket_r_space + 1;
-    set_cell(buf, bounds, bracket_r_space, area.y, ' ', border_s);
-    if bracket_r < area.x + area.width - 1 {
-        set_cell(buf, bounds, bracket_r, area.y, '╞', border_s);
-    }
-}
-
-// ── helpers ──────────────────────────────────────────
-
-fn centered_rect(w: u16, h: u16, area: Rect) -> Rect {
-    Rect::new(
-        area.x + area.width.saturating_sub(w) / 2,
-        area.y + area.height.saturating_sub(h) / 2,
-        w.min(area.width),
-        h.min(area.height),
-    )
-}
-
-#[inline]
-fn in_bounds(x: u16, y: u16, r: &Rect) -> bool {
-    x >= r.x && x < r.x + r.width && y >= r.y && y < r.y + r.height
-}
-
-#[inline]
-fn set_cell(buf: &mut Buffer, bounds: &Rect, x: u16, y: u16, ch: char, style: Style) {
-    if in_bounds(x, y, bounds) {
-        let cell = &mut buf[(x, y)];
-        cell.set_char(ch);
-        cell.set_style(style);
-        cell.skip = false;
-    }
-}
-
-fn write_str(buf: &mut Buffer, bounds: &Rect, x: u16, y: u16, text: &str, style: Style) {
-    for (i, ch) in text.chars().enumerate() {
-        set_cell(buf, bounds, x + i as u16, y, ch, style);
     }
 }

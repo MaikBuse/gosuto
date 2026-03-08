@@ -10,6 +10,7 @@ pub mod input_bar;
 pub mod layout;
 pub mod login;
 pub mod members;
+pub mod popup;
 pub mod recovery_modal;
 pub mod room_info;
 pub mod room_list;

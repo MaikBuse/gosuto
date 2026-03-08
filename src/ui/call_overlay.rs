@@ -5,6 +5,7 @@ use ratatui::style::{Color, Modifier, Style};
 
 use crate::ui::effects::{TextReveal, Xorshift64};
 use crate::ui::icons::Icons;
+use crate::ui::popup;
 use crate::ui::theme;
 use crate::voip::{CallInfo, CallState};
 
@@ -144,32 +145,30 @@ impl TransmissionPopup {
         }
         .min(area.height.saturating_sub(4));
 
-        let popup = centered_rect(popup_w, popup_h, area);
+        let popup_area = popup::centered_rect(popup_w, popup_h, area);
         let buf = frame.buffer_mut();
         let bounds = *buf.area();
 
         // Fill background
-        for y in popup.y..popup.y + popup.height {
-            for x in popup.x..popup.x + popup.width {
-                if in_bounds(x, y, &bounds) {
-                    let cell = &mut buf[(x, y)];
-                    cell.set_char(' ');
-                    cell.set_style(Style::default().bg(theme::BG));
-                    cell.skip = false;
-                }
-            }
-        }
+        popup::fill_bg(buf, &bounds, popup_area);
 
         let border_color = self.pulse_color(display_state);
-        self.render_border(buf, &bounds, popup, border_color);
-        self.render_title(buf, &bounds, popup, border_color, display_state, info);
-        self.render_caller_line(buf, &bounds, popup, info, display_state, icons);
-        self.render_separator(buf, &bounds, popup, room_name_line);
-        self.render_state_content(buf, &bounds, popup, info, display_state, room_name_line);
+        self.render_border(buf, &bounds, popup_area, border_color);
+        self.render_title(buf, &bounds, popup_area, border_color, display_state, info);
+        self.render_caller_line(buf, &bounds, popup_area, info, display_state, icons);
+        self.render_separator(buf, &bounds, popup_area, room_name_line);
+        self.render_state_content(
+            buf,
+            &bounds,
+            popup_area,
+            info,
+            display_state,
+            room_name_line,
+        );
         if show_waveform {
-            self.render_waveform(buf, &bounds, popup, display_state, room_name_line);
+            self.render_waveform(buf, &bounds, popup_area, display_state, room_name_line);
         }
-        self.render_hints(buf, &bounds, popup, display_state);
+        self.render_hints(buf, &bounds, popup_area, display_state);
     }
 
     fn pulse_color(&self, state: &CallDisplayState) -> Color {
@@ -198,27 +197,27 @@ impl TransmissionPopup {
         let y2 = area.y + area.height - 1;
 
         // Corners
-        set_cell(buf, bounds, x1, y1, '╔', s);
-        set_cell(buf, bounds, x2, y1, '╗', s);
-        set_cell(buf, bounds, x1, y2, '╚', s);
-        set_cell(buf, bounds, x2, y2, '╝', s);
+        popup::set_cell(buf, bounds, x1, y1, '╔', s);
+        popup::set_cell(buf, bounds, x2, y1, '╗', s);
+        popup::set_cell(buf, bounds, x1, y2, '╚', s);
+        popup::set_cell(buf, bounds, x2, y2, '╝', s);
 
         // Horizontals
         for x in (x1 + 1)..x2 {
-            set_cell(buf, bounds, x, y1, '═', s);
-            set_cell(buf, bounds, x, y2, '═', s);
+            popup::set_cell(buf, bounds, x, y1, '═', s);
+            popup::set_cell(buf, bounds, x, y2, '═', s);
         }
 
         // Verticals
         for y in (y1 + 1)..y2 {
-            set_cell(buf, bounds, x1, y, '║', s);
-            set_cell(buf, bounds, x2, y, '║', s);
+            popup::set_cell(buf, bounds, x1, y, '║', s);
+            popup::set_cell(buf, bounds, x2, y, '║', s);
         }
 
         // Decorative bottom glyph ◈
         let gx = x2.saturating_sub(5);
         if gx > x1 {
-            set_cell(buf, bounds, gx, y2, '◈', s);
+            popup::set_cell(buf, bounds, gx, y2, '◈', s);
         }
     }
 
@@ -234,14 +233,7 @@ impl TransmissionPopup {
         let title = match state {
             CallDisplayState::Ringing => "INCOMING TRANSMISSION",
             CallDisplayState::Connecting => "ESTABLISHING LINK",
-            CallDisplayState::Active => {
-                if info.participants.len() > 1 {
-                    // Will format dynamically below
-                    "TRANSMISSION ACTIVE"
-                } else {
-                    "TRANSMISSION ACTIVE"
-                }
-            }
+            CallDisplayState::Active => "TRANSMISSION ACTIVE",
         };
         let border_s = Style::default().fg(color).bg(theme::BG);
         let title_s = border_s.add_modifier(Modifier::BOLD);
@@ -250,8 +242,8 @@ impl TransmissionPopup {
         let bracket_l = area.x + 3;
         let title_start = bracket_l + 2;
 
-        set_cell(buf, bounds, bracket_l, area.y, '╡', border_s);
-        set_cell(buf, bounds, bracket_l + 1, area.y, ' ', border_s);
+        popup::set_cell(buf, bounds, bracket_l, area.y, '╡', border_s);
+        popup::set_cell(buf, bounds, bracket_l + 1, area.y, ' ', border_s);
 
         // For active group calls, show participant count
         let display_title = if *state == CallDisplayState::Active && info.participants.len() > 1 {
@@ -267,14 +259,14 @@ impl TransmissionPopup {
             if x >= area.x + area.width - 1 {
                 break;
             }
-            set_cell(buf, bounds, x, area.y, ch, title_s);
+            popup::set_cell(buf, bounds, x, area.y, ch, title_s);
         }
 
         let bracket_r_space = title_start + display_title.len() as u16;
         let bracket_r = bracket_r_space + 1;
-        set_cell(buf, bounds, bracket_r_space, area.y, ' ', border_s);
+        popup::set_cell(buf, bounds, bracket_r_space, area.y, ' ', border_s);
         if bracket_r < area.x + area.width - 1 {
-            set_cell(buf, bounds, bracket_r, area.y, '╞', border_s);
+            popup::set_cell(buf, bounds, bracket_r, area.y, '╞', border_s);
         }
     }
 
@@ -307,7 +299,7 @@ impl TransmissionPopup {
             let label = format!("{} {}", icons.home, name);
             let max_w = (right - left) as usize;
             let truncated: String = label.chars().take(max_w).collect();
-            write_str(buf, bounds, left, row, &truncated, room_s);
+            popup::write_str(buf, bounds, left, row, &truncated, room_s);
         }
 
         let caller_row = if info.room_name.is_some() {
@@ -318,7 +310,7 @@ impl TransmissionPopup {
 
         if info.participants.is_empty() {
             // Joining, no participants yet
-            write_str(
+            popup::write_str(
                 buf,
                 bounds,
                 left,
@@ -326,7 +318,7 @@ impl TransmissionPopup {
                 icons.participant,
                 Style::default().fg(color).bg(theme::BG),
             );
-            set_cell(
+            popup::set_cell(
                 buf,
                 bounds,
                 left + 1,
@@ -334,10 +326,10 @@ impl TransmissionPopup {
                 ' ',
                 Style::default().bg(theme::BG),
             );
-            write_str(buf, bounds, left + 2, caller_row, "joining...", name_s);
+            popup::write_str(buf, bounds, left + 2, caller_row, "joining...", name_s);
         } else if info.participants.len() == 1 {
             // 1:1 call — show single participant
-            write_str(
+            popup::write_str(
                 buf,
                 bounds,
                 left,
@@ -345,7 +337,7 @@ impl TransmissionPopup {
                 icons.participant,
                 Style::default().fg(color).bg(theme::BG),
             );
-            set_cell(
+            popup::set_cell(
                 buf,
                 bounds,
                 left + 1,
@@ -353,7 +345,7 @@ impl TransmissionPopup {
                 ' ',
                 Style::default().bg(theme::BG),
             );
-            write_str(
+            popup::write_str(
                 buf,
                 bounds,
                 left + 2,
@@ -368,7 +360,7 @@ impl TransmissionPopup {
                 if y >= area.y + area.height - 3 {
                     break;
                 }
-                write_str(
+                popup::write_str(
                     buf,
                     bounds,
                     left,
@@ -376,7 +368,7 @@ impl TransmissionPopup {
                     icons.participant,
                     Style::default().fg(color).bg(theme::BG),
                 );
-                set_cell(
+                popup::set_cell(
                     buf,
                     bounds,
                     left + 1,
@@ -384,7 +376,7 @@ impl TransmissionPopup {
                     ' ',
                     Style::default().bg(theme::BG),
                 );
-                write_str(buf, bounds, left + 2, y, participant, name_s);
+                popup::write_str(buf, bounds, left + 2, y, participant, name_s);
             }
         }
 
@@ -392,7 +384,7 @@ impl TransmissionPopup {
         let voice = format!("{} VOICE", icons.voice);
         let voice = voice.as_str();
         let vx = right.saturating_sub(voice.chars().count() as u16);
-        write_str(
+        popup::write_str(
             buf,
             bounds,
             vx,
@@ -408,7 +400,7 @@ impl TransmissionPopup {
         let right = area.x + area.width.saturating_sub(3);
         let s = Style::default().fg(theme::DIM).bg(theme::BG);
         for x in left..right {
-            set_cell(buf, bounds, x, row, '┄', s);
+            popup::set_cell(buf, bounds, x, row, '┄', s);
         }
     }
 
@@ -428,13 +420,13 @@ impl TransmissionPopup {
         match state {
             CallDisplayState::Ringing => {
                 let s = Style::default().fg(theme::GREEN).bg(theme::BG);
-                write_str(buf, bounds, left, row, "SIGNAL DETECTED", s);
-                write_str(buf, bounds, left, row + 1, "AWAITING RESPONSE", s);
+                popup::write_str(buf, bounds, left, row, "SIGNAL DETECTED", s);
+                popup::write_str(buf, bounds, left, row + 1, "AWAITING RESPONSE", s);
             }
             CallDisplayState::Connecting => {
                 let texts = ["NEGOTIATING HANDSHAKE", "EXCHANGING KEYS", "ROUTING SIGNAL"];
                 let idx = (self.connecting_dots as usize) % texts.len();
-                write_str(
+                popup::write_str(
                     buf,
                     bounds,
                     left,
@@ -450,11 +442,11 @@ impl TransmissionPopup {
                     let bar_s = Style::default().fg(theme::CYAN).bg(theme::BG);
                     for i in 0..bar_w {
                         let ch = if i == pos { '╸' } else { '━' };
-                        set_cell(buf, bounds, left + i as u16, row + 1, ch, bar_s);
+                        popup::set_cell(buf, bounds, left + i as u16, row + 1, ch, bar_s);
                     }
                     // Bright packet highlight
                     let px = left + pos as u16;
-                    if in_bounds(px, row + 1, bounds) {
+                    if popup::in_bounds(px, row + 1, bounds) {
                         buf[(px, row + 1)].set_style(
                             Style::default().fg(Color::Rgb(255, 255, 255)).bg(theme::BG),
                         );
@@ -464,7 +456,7 @@ impl TransmissionPopup {
             CallDisplayState::Active => {
                 let elapsed = info.elapsed_display();
                 let text = format!("◧ VOICE ━━━━━━━ {}", elapsed);
-                write_str(
+                popup::write_str(
                     buf,
                     bounds,
                     left,
@@ -497,22 +489,22 @@ impl TransmissionPopup {
         let dim = Style::default().fg(theme::DIM).bg(theme::BG);
 
         // Top: ┌╌╌...╌┐
-        set_cell(buf, bounds, left, top, '┌', dim);
+        popup::set_cell(buf, bounds, left, top, '┌', dim);
         for x in (left + 1)..right {
-            set_cell(buf, bounds, x, top, '╌', dim);
+            popup::set_cell(buf, bounds, x, top, '╌', dim);
         }
-        set_cell(buf, bounds, right, top, '┐', dim);
+        popup::set_cell(buf, bounds, right, top, '┐', dim);
 
         // Bottom: └╌╌...╌┘
-        set_cell(buf, bounds, left, bot, '└', dim);
+        popup::set_cell(buf, bounds, left, bot, '└', dim);
         for x in (left + 1)..right {
-            set_cell(buf, bounds, x, bot, '╌', dim);
+            popup::set_cell(buf, bounds, x, bot, '╌', dim);
         }
-        set_cell(buf, bounds, right, bot, '┘', dim);
+        popup::set_cell(buf, bounds, right, bot, '┘', dim);
 
         // Content: ╎ waveform ╎
-        set_cell(buf, bounds, left, mid, '╎', dim);
-        set_cell(
+        popup::set_cell(buf, bounds, left, mid, '╎', dim);
+        popup::set_cell(
             buf,
             bounds,
             left + 1,
@@ -533,14 +525,14 @@ impl TransmissionPopup {
                 break;
             }
             let idx = ((self.waveform[i] * 7.0).round() as usize).min(7);
-            set_cell(buf, bounds, x, mid, WAVEFORM_CHARS[idx], ws);
+            popup::set_cell(buf, bounds, x, mid, WAVEFORM_CHARS[idx], ws);
         }
 
         let after = wave_x + WAVEFORM_LEN as u16;
         if after < right {
-            set_cell(buf, bounds, after, mid, ' ', Style::default().bg(theme::BG));
+            popup::set_cell(buf, bounds, after, mid, ' ', Style::default().bg(theme::BG));
         }
-        set_cell(buf, bounds, right, mid, '╎', dim);
+        popup::set_cell(buf, bounds, right, mid, '╎', dim);
     }
 
     fn render_hints(&self, buf: &mut Buffer, bounds: &Rect, area: Rect, state: &CallDisplayState) {
@@ -569,41 +561,9 @@ impl TransmissionPopup {
             if bold {
                 s = s.add_modifier(Modifier::BOLD);
             }
-            write_str(buf, bounds, x, row, text, s);
+            popup::write_str(buf, bounds, x, row, text, s);
             x += text.chars().count() as u16;
         }
-    }
-}
-
-// ── helpers ──────────────────────────────────────────
-
-fn centered_rect(w: u16, h: u16, area: Rect) -> Rect {
-    Rect::new(
-        area.x + area.width.saturating_sub(w) / 2,
-        area.y + area.height.saturating_sub(h) / 2,
-        w.min(area.width),
-        h.min(area.height),
-    )
-}
-
-#[inline]
-fn in_bounds(x: u16, y: u16, r: &Rect) -> bool {
-    x >= r.x && x < r.x + r.width && y >= r.y && y < r.y + r.height
-}
-
-#[inline]
-fn set_cell(buf: &mut Buffer, bounds: &Rect, x: u16, y: u16, ch: char, style: Style) {
-    if in_bounds(x, y, bounds) {
-        let cell = &mut buf[(x, y)];
-        cell.set_char(ch);
-        cell.set_style(style);
-        cell.skip = false;
-    }
-}
-
-fn write_str(buf: &mut Buffer, bounds: &Rect, x: u16, y: u16, text: &str, style: Style) {
-    for (i, ch) in text.chars().enumerate() {
-        set_cell(buf, bounds, x + i as u16, y, ch, style);
     }
 }
 
