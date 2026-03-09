@@ -194,15 +194,15 @@ pub fn session_path() -> Result<PathBuf> {
     Ok(data_dir()?.join("session.json"))
 }
 
-pub fn store_path_for_homeserver(homeserver: &str) -> Result<PathBuf> {
-    let hostname = url::Url::parse(homeserver)
+fn extract_hostname(homeserver: &str) -> String {
+    url::Url::parse(homeserver)
         .ok()
         .and_then(|u| u.host_str().map(|h| h.to_string()))
-        .unwrap_or_else(|| {
-            // Fallback: sanitize the raw string for use as a directory name
-            homeserver.replace(['/', ':', '\\'], "_")
-        });
-    let path = data_dir()?.join("store").join(hostname);
+        .unwrap_or_else(|| homeserver.replace(['/', ':', '\\'], "_"))
+}
+
+pub fn store_path_for_homeserver(homeserver: &str) -> Result<PathBuf> {
+    let path = data_dir()?.join("store").join(extract_hostname(homeserver));
     std::fs::create_dir_all(&path)?;
     Ok(path)
 }
@@ -210,11 +210,7 @@ pub fn store_path_for_homeserver(homeserver: &str) -> Result<PathBuf> {
 /// Returns the store path for a homeserver without creating it.
 /// Use this for cleanup/deletion paths.
 pub fn store_path_for_homeserver_unchecked(homeserver: &str) -> Result<PathBuf> {
-    let hostname = url::Url::parse(homeserver)
-        .ok()
-        .and_then(|u| u.host_str().map(|h| h.to_string()))
-        .unwrap_or_else(|| homeserver.replace(['/', ':', '\\'], "_"));
-    Ok(data_dir()?.join("store").join(hostname))
+    Ok(data_dir()?.join("store").join(extract_hostname(homeserver)))
 }
 
 pub fn log_path() -> Result<PathBuf> {
