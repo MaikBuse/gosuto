@@ -4,7 +4,7 @@ use matrix_sdk::ruma::events::room::message::ImageMessageEventContent;
 use matrix_sdk::ruma::uint;
 use tracing::{debug, error};
 
-use crate::event::{AppEvent, EventSender};
+use crate::event::{AppEvent, EventSender, WarnClosed};
 
 pub async fn fetch_image(
     client: &Client,
@@ -20,26 +20,29 @@ pub async fn fetch_image(
         _ => match client.media().get_file(content, true).await {
             Ok(Some(data)) => data,
             Ok(None) => {
-                let _ = tx.send(AppEvent::ImageFailed {
+                tx.send(AppEvent::ImageFailed {
                     event_id,
                     error: "No media source".to_string(),
-                });
+                })
+                .warn_closed("ImageFailed");
                 return;
             }
             Err(e) => {
                 error!("Failed to download image {}: {}", event_id, e);
-                let _ = tx.send(AppEvent::ImageFailed {
+                tx.send(AppEvent::ImageFailed {
                     event_id,
                     error: e.to_string(),
-                });
+                })
+                .warn_closed("ImageFailed");
                 return;
             }
         },
     };
 
     debug!("Downloaded image {} ({} bytes)", event_id, data.len());
-    let _ = tx.send(AppEvent::ImageLoaded {
+    tx.send(AppEvent::ImageLoaded {
         event_id,
         image_data: data,
-    });
+    })
+    .warn_closed("ImageLoaded");
 }

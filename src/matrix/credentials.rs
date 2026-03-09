@@ -39,8 +39,10 @@ pub fn load_credentials() -> Option<SavedCredentials> {
 
 pub fn delete_credentials() {
     for key in ["homeserver", "username", "password"] {
-        if let Ok(entry) = keyring::Entry::new(SERVICE, key) {
-            let _ = entry.delete_credential();
+        if let Ok(entry) = keyring::Entry::new(SERVICE, key)
+            && let Err(e) = entry.delete_credential()
+        {
+            tracing::warn!("Failed to delete keyring credential '{key}': {e}");
         }
     }
 }

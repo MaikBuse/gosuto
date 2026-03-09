@@ -17,7 +17,7 @@ use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
 
 use crate::config::AudioConfig;
-use crate::event::{AppEvent, EventSender};
+use crate::event::{AppEvent, EventSender, WarnClosed};
 
 pub const SAMPLE_RATE: u32 = 48000;
 pub const FRAME_SIZE: usize = 960; // 20ms at 48kHz
@@ -374,7 +374,9 @@ impl AudioPipeline {
                                 })
                                 .sum();
                             let rms = (sum_sq / samples.len().max(1) as f32).sqrt();
-                            let _ = level_tx.send(AppEvent::MicLevel(rms.sqrt().clamp(0.0, 1.0)));
+                            level_tx
+                                .send(AppEvent::MicLevel(rms.sqrt().clamp(0.0, 1.0)))
+                                .warn_closed("MicLevel");
                         }
                     },
                     |err: cpal::StreamError| error!("Mic test stream error: {err}"),
@@ -446,7 +448,7 @@ impl AudioPipeline {
                                 return;
                             }
                             let f32_data: Vec<f32> = data.iter().map($convert).collect();
-                            let _ = raw_tx.send(f32_data);
+                            raw_tx.send(f32_data).warn_closed("raw audio capture");
                         }
                     },
                     |err: cpal::StreamError| error!("Audio input stream error: {err}"),
@@ -552,7 +554,9 @@ impl AudioPipeline {
                         num_channels: 1,
                         samples_per_channel: FRAME_SIZE as u32,
                     };
-                    let _ = source.capture_frame(&audio_frame).await;
+                    if let Err(e) = source.capture_frame(&audio_frame).await {
+                        tracing::warn!("capture_frame failed: {e}");
+                    }
                 }
             }
         });
@@ -695,7 +699,7 @@ impl AudioPipeline {
                                             resampled =
                                                 expand_channels(&resampled, device_channels);
                                         }
-                                        let _ = audio_tx.send(resampled);
+                                        audio_tx.send(resampled).warn_closed("audio playback");
                                     }
                                     Err(e) => {
                                         error!("Playback resampler error: {}", e);
@@ -709,7 +713,7 @@ impl AudioPipeline {
                             } else {
                                 f32_samples
                             };
-                            let _ = audio_tx.send(output);
+                            audio_tx.send(output).warn_closed("audio playback");
                         }
                     }
                     None => {

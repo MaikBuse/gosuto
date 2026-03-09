@@ -14,7 +14,7 @@ fn encryption_settings() -> EncryptionSettings {
 }
 
 use crate::config;
-use crate::event::{AppEvent, EventSender};
+use crate::event::{AppEvent, EventSender, WarnClosed};
 use crate::matrix::session::{self, StoredSession};
 
 pub async fn try_restore_session(
@@ -66,11 +66,12 @@ pub async fn try_restore_session(
 
     client.restore_session(session).await?;
 
-    let _ = tx.send(AppEvent::LoginSuccess {
+    tx.send(AppEvent::LoginSuccess {
         user_id: stored.user_id,
         device_id: stored.device_id,
         homeserver: stored.homeserver,
-    });
+    })
+    .warn_closed("LoginSuccess");
 
     Ok(Some(client))
 }
@@ -184,11 +185,12 @@ pub async fn login(
     };
     session::save_session(&session_path, &stored)?;
 
-    let _ = tx.send(AppEvent::LoginSuccess {
+    tx.send(AppEvent::LoginSuccess {
         user_id,
         device_id,
         homeserver: client.homeserver().to_string(),
-    });
+    })
+    .warn_closed("LoginSuccess");
 
     Ok(client)
 }
@@ -299,11 +301,12 @@ pub async fn register(
     };
     session::save_session(&session_path, &stored)?;
 
-    let _ = tx.send(AppEvent::LoginSuccess {
+    tx.send(AppEvent::LoginSuccess {
         user_id,
         device_id,
         homeserver: client.homeserver().to_string(),
-    });
+    })
+    .warn_closed("LoginSuccess");
 
     Ok(client)
 }
@@ -426,7 +429,9 @@ pub async fn logout(client: &Client) -> Result<()> {
     session::delete_session(&session_path)?;
 
     // Try to log out from the server, but don't fail if it doesn't work
-    let _ = client.matrix_auth().logout().await;
+    if let Err(e) = client.matrix_auth().logout().await {
+        warn!("logout request failed: {e}");
+    }
 
     // Clean up only this server's store
     let store_path = config::store_path_for_homeserver_unchecked(client.homeserver().as_str())?;
@@ -464,7 +469,8 @@ pub async fn heal_recovery(client: &Client, tx: &EventSender) -> Result<String> 
         .is_none_or(|status| !status.is_complete());
 
     if needs_cross_signing {
-        let _ = tx.send(AppEvent::RecoveryHealingProgress(HealingStep::CrossSigning));
+        tx.send(AppEvent::RecoveryHealingProgress(HealingStep::CrossSigning))
+            .warn_closed("RecoveryHealingProgress");
         let handle = client
             .encryption()
             .reset_cross_signing()
@@ -477,9 +483,10 @@ pub async fn heal_recovery(client: &Client, tx: &EventSender) -> Result<String> 
                 matrix_sdk::encryption::CrossSigningResetAuthType::Uiaa(uiaa) => {
                     let session = uiaa.session.clone();
                     let (password_tx, password_rx) = tokio::sync::oneshot::channel();
-                    let _ = tx.send(AppEvent::RecoveryNeedPassword(PasswordSender::new(
+                    tx.send(AppEvent::RecoveryNeedPassword(PasswordSender::new(
                         password_tx,
-                    )));
+                    )))
+                    .warn_closed("RecoveryNeedPassword");
 
                     let password = password_rx
                         .await
@@ -516,7 +523,8 @@ pub async fn heal_recovery(client: &Client, tx: &EventSender) -> Result<String> 
     }
 
     // Step 2: Delete stale backup from server and create fresh one
-    let _ = tx.send(AppEvent::RecoveryHealingProgress(HealingStep::Backup));
+    tx.send(AppEvent::RecoveryHealingProgress(HealingStep::Backup))
+        .warn_closed("RecoveryHealingProgress");
     client
         .encryption()
         .backups()
@@ -531,9 +539,10 @@ pub async fn heal_recovery(client: &Client, tx: &EventSender) -> Result<String> 
         .context("Failed to create backup")?;
 
     // Step 3: Re-export all secrets into a new secret storage key
-    let _ = tx.send(AppEvent::RecoveryHealingProgress(
+    tx.send(AppEvent::RecoveryHealingProgress(
         HealingStep::ExportSecrets,
-    ));
+    ))
+    .warn_closed("RecoveryHealingProgress");
     let new_key = client
         .encryption()
         .recovery()

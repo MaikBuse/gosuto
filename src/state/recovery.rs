@@ -181,7 +181,9 @@ pub fn recovery_key_action(
                 if let RecoveryStage::ShowKey(ref key) = state.stage
                     && let Some(clip) = clipboard
                 {
-                    let _ = clip.set_text(key.clone());
+                    if let Err(e) = clip.set_text(key.clone()) {
+                        tracing::warn!("clipboard set_text failed: {e}");
+                    }
                     state.copied = true;
                 }
                 RecoveryTransition::None

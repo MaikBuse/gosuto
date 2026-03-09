@@ -5,7 +5,7 @@ use matrix_sdk::ruma::events::room::message::{MessageType, RoomMessageEventConte
 use matrix_sdk::ruma::uint;
 use tracing::{debug, error};
 
-use crate::event::{AppEvent, EventSender};
+use crate::event::{AppEvent, EventSender, WarnClosed};
 use crate::state::{DisplayMessage, MessageContent};
 
 pub async fn fetch_messages(
@@ -167,11 +167,12 @@ pub async fn fetch_messages(
 
     let has_more = response.end.is_some();
 
-    let _ = tx.send(AppEvent::MessagesLoaded {
+    tx.send(AppEvent::MessagesLoaded {
         room_id: room_id.to_string(),
         messages,
         has_more,
-    });
+    })
+    .warn_closed("MessagesLoaded");
 
     Ok(())
 }
@@ -199,17 +200,19 @@ pub async fn send_message(
     };
     match room.send(content).await {
         Ok(response) => {
-            let _ = tx.send(AppEvent::MessageSent {
+            tx.send(AppEvent::MessageSent {
                 room_id: room_id.to_string(),
                 event_id: response.event_id.to_string(),
                 body: body.to_string(),
-            });
+            })
+            .warn_closed("MessageSent");
         }
         Err(e) => {
             error!("Failed to send message: {}", e);
-            let _ = tx.send(AppEvent::SendError {
+            tx.send(AppEvent::SendError {
                 error: e.to_string(),
-            });
+            })
+            .warn_closed("SendError");
         }
     }
 

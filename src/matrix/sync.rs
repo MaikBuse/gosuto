@@ -12,7 +12,7 @@ use tokio::time::sleep;
 use tracing::{debug, info, warn};
 
 use crate::config;
-use crate::event::{AppEvent, EventSender};
+use crate::event::{AppEvent, EventSender, WarnClosed};
 use crate::matrix::{rooms, session};
 use crate::voip::CallCommandSender;
 
@@ -109,10 +109,11 @@ pub async fn start_sync(
                     verified: None,
                 };
 
-                let _ = tx.send(AppEvent::NewMessage {
+                tx.send(AppEvent::NewMessage {
                     room_id,
                     message: msg,
-                });
+                })
+                .warn_closed("NewMessage");
             }
         },
     );
@@ -129,7 +130,8 @@ pub async fn start_sync(
                 .iter()
                 .map(|u| u.to_string())
                 .collect();
-            let _ = tx.send(AppEvent::TypingUsersUpdated { room_id, user_ids });
+            tx.send(AppEvent::TypingUsersUpdated { room_id, user_ids })
+                .warn_closed("TypingUsersUpdated");
         }
     });
 
@@ -153,9 +155,9 @@ pub async fn start_sync(
                     info!("Incoming verification request from {}", event.sender);
                     // Store the request for main.rs to drive
                     *incoming_verify.lock().await = Some(request);
-                    let _ = tx.send(crate::event::AppEvent::VerificationRequestReceived {
+                    tx.send(crate::event::AppEvent::VerificationRequestReceived {
                         sender: event.sender.to_string(),
-                    });
+                    }).warn_closed("VerificationRequestReceived");
                 }
             }
         },
@@ -166,9 +168,11 @@ pub async fn start_sync(
 
     // Initial room list
     let room_list = rooms::get_room_list(&client).await;
-    let _ = tx.send(AppEvent::RoomListUpdated(room_list));
+    tx.send(AppEvent::RoomListUpdated(room_list))
+        .warn_closed("RoomListUpdated");
 
-    let _ = tx.send(AppEvent::SyncStatus("syncing...".to_string()));
+    tx.send(AppEvent::SyncStatus("syncing...".to_string()))
+        .warn_closed("SyncStatus");
 
     info!("Starting sync loop");
 
@@ -187,15 +191,19 @@ pub async fn start_sync(
                     let retry_reset = retry_reset.clone();
                     async move {
                         retry_reset.store(0, Ordering::Relaxed);
-                        let _ = tx.send(AppEvent::SyncTokenUpdated(response.next_batch.clone()));
-                        let _ = tx.send(AppEvent::SyncStatus("synced".to_string()));
+                        tx.send(AppEvent::SyncTokenUpdated(response.next_batch.clone()))
+                            .warn_closed("SyncTokenUpdated");
+                        tx.send(AppEvent::SyncStatus("synced".to_string()))
+                            .warn_closed("SyncStatus");
 
                         // Update room list in background so sync loop isn't blocked
                         let room_list_client = client.clone();
                         let room_list_tx = tx.clone();
                         tokio::spawn(async move {
                             let room_list = rooms::get_room_list(&room_list_client).await;
-                            let _ = room_list_tx.send(AppEvent::RoomListUpdated(room_list));
+                            room_list_tx
+                                .send(AppEvent::RoomListUpdated(room_list))
+                                .warn_closed("RoomListUpdated");
                         });
 
                         matrix_sdk::LoopCtrl::Continue
@@ -212,10 +220,12 @@ pub async fn start_sync(
                 if is_auth_error(&e.to_string()) {
                     warn!("Auth error during sync: {msg}");
                     // Delete stale session file
-                    if let Ok(path) = config::session_path() {
-                        let _ = session::delete_session(&path);
+                    if let Ok(path) = config::session_path()
+                        && let Err(e) = session::delete_session(&path)
+                    {
+                        warn!("Failed to delete session: {e}");
                     }
-                    let _ = tx.send(AppEvent::LoggedOut);
+                    tx.send(AppEvent::LoggedOut).warn_closed("LoggedOut");
                     break;
                 }
 
@@ -232,16 +242,18 @@ pub async fn start_sync(
                     "Sync error (attempt {}): {msg} — retrying in {backoff_secs}s",
                     attempt + 1
                 );
-                let _ = tx.send(AppEvent::SyncError(msg));
+                tx.send(AppEvent::SyncError(msg)).warn_closed("SyncError");
 
                 // Countdown
                 for remaining in (1..=backoff_secs).rev() {
-                    let _ = tx.send(AppEvent::SyncStatus(format!(
+                    tx.send(AppEvent::SyncStatus(format!(
                         "reconnecting in {remaining}s..."
-                    )));
+                    )))
+                    .warn_closed("SyncStatus");
                     sleep(Duration::from_secs(1)).await;
                 }
-                let _ = tx.send(AppEvent::SyncStatus("reconnecting...".to_string()));
+                tx.send(AppEvent::SyncStatus("reconnecting...".to_string()))
+                    .warn_closed("SyncStatus");
             }
         }
     }
@@ -430,16 +442,18 @@ fn register_matrixrtc_handlers(
 
                 if has_active_memberships {
                     info!("m.call.member joined: {} in {}", sender, room_id);
-                    let _ = tx.send(AppEvent::CallMemberJoined {
+                    tx.send(AppEvent::CallMemberJoined {
                         room_id,
                         user_id: sender,
-                    });
+                    })
+                    .warn_closed("CallMemberJoined");
                 } else {
                     info!("m.call.member left: {} in {}", sender, room_id);
-                    let _ = tx.send(AppEvent::CallMemberLeft {
+                    tx.send(AppEvent::CallMemberLeft {
                         room_id,
                         user_id: sender,
-                    });
+                    })
+                    .warn_closed("CallMemberLeft");
                 }
             }
         },
@@ -491,12 +505,14 @@ fn dispatch_encryption_keys(
             source, sender, device_id_str, index
         );
 
-        let _ = cmd_tx.send(crate::voip::CallCommand::EncryptionKeyReceived {
-            room_id: room_id.to_string(),
-            user_id: sender.to_string(),
-            device_id: device_id_str.to_string(),
-            key_index: index,
-            key_bytes,
-        });
+        cmd_tx
+            .send(crate::voip::CallCommand::EncryptionKeyReceived {
+                room_id: room_id.to_string(),
+                user_id: sender.to_string(),
+                device_id: device_id_str.to_string(),
+                key_index: index,
+                key_bytes,
+            })
+            .warn_closed("EncryptionKeyReceived");
     }
 }

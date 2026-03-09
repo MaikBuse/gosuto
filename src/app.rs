@@ -11,7 +11,7 @@ use ratatui_image::protocol::StatefulProtocol;
 pub type ImageDecodeResult = (String, Result<(StatefulProtocol, u32, u32), String>);
 
 use crate::config::GosutoConfig;
-use crate::event::{AppEvent, EventSender};
+use crate::event::{AppEvent, EventSender, WarnClosed};
 use crate::input::{self, CommandAction, FocusPanel, InputResult, VimState};
 use crate::state::{
     AudioSettingsAction, AudioSettingsState, AuthState, ChangePasswordAction, ChangePasswordState,
@@ -301,11 +301,13 @@ impl App {
                 } else if !self.auto_login_attempted
                     && let Some(creds) = crate::matrix::credentials::load_credentials()
                 {
-                    let _ = self.event_tx.send(AppEvent::AutoLogin {
-                        homeserver: creds.homeserver,
-                        username: creds.username,
-                        password: creds.password,
-                    });
+                    self.event_tx
+                        .send(AppEvent::AutoLogin {
+                            homeserver: creds.homeserver,
+                            username: creds.username,
+                            password: creds.password,
+                        })
+                        .warn_closed("AutoLogin");
                 } else {
                     self.auth = AuthState::LoggedOut;
                 }
@@ -684,7 +686,9 @@ impl App {
                             (picker.new_resize_protocol(img), w, h)
                         })
                         .map_err(|e| e.to_string());
-                    let _ = tx.send((event_id, result));
+                    if tx.send((event_id, result)).is_err() {
+                        tracing::warn!("image decode result: receiver dropped");
+                    }
                 });
             }
             AppEvent::ImageFailed { event_id, error } => {
@@ -985,7 +989,8 @@ impl App {
                     self.call_info = Some(CallInfo::new_outgoing(room_id.clone(), room_name));
                     self.set_global_ptt_active(true);
                     if let Some(ref tx) = self.call_cmd_tx {
-                        let _ = tx.send(CallCommand::Initiate { room_id });
+                        tx.send(CallCommand::Initiate { room_id })
+                            .warn_closed("CallCommand::Initiate");
                     }
                 } else {
                     self.last_error = Some("No room selected".to_string());
@@ -999,7 +1004,8 @@ impl App {
                         Some(CallInfo::new_incoming(room_id.clone(), caller, room_name));
                     self.set_global_ptt_active(true);
                     if let Some(ref tx) = self.call_cmd_tx {
-                        let _ = tx.send(CallCommand::Initiate { room_id });
+                        tx.send(CallCommand::Initiate { room_id })
+                            .warn_closed("CallCommand::Initiate");
                     }
                 } else {
                     self.last_error = Some("No incoming call".to_string());
@@ -1017,7 +1023,8 @@ impl App {
             CommandAction::Hangup => {
                 if self.call_info.is_some() {
                     if let Some(ref tx) = self.call_cmd_tx {
-                        let _ = tx.send(CallCommand::Leave);
+                        tx.send(CallCommand::Leave)
+                            .warn_closed("CallCommand::Leave");
                     }
                     self.call_info = None;
                     self.set_global_ptt_active(false);
@@ -1220,16 +1227,20 @@ impl App {
         match stage {
             Some(crate::state::VerificationStage::EmojiConfirmation) => match key.code {
                 KeyCode::Char('y') | KeyCode::Char('Y') => {
-                    if let Some(tx) = self.verify_confirm_tx.take() {
-                        let _ = tx.send(true);
+                    if let Some(tx) = self.verify_confirm_tx.take()
+                        && tx.send(true).is_err()
+                    {
+                        tracing::warn!("verify confirm: receiver dropped");
                     }
                     if let Some(ref mut modal) = self.verification_modal {
                         modal.stage = crate::state::VerificationStage::WaitingForOtherDevice;
                     }
                 }
                 KeyCode::Char('n') | KeyCode::Char('N') => {
-                    if let Some(tx) = self.verify_confirm_tx.take() {
-                        let _ = tx.send(false);
+                    if let Some(tx) = self.verify_confirm_tx.take()
+                        && tx.send(false).is_err()
+                    {
+                        tracing::warn!("verify reject: receiver dropped");
                     }
                 }
                 KeyCode::Esc => {

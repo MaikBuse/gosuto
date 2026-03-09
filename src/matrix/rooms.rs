@@ -9,6 +9,7 @@ use tracing::{error, warn};
 
 use crate::event::AppEvent;
 use crate::event::EventSender;
+use crate::event::WarnClosed;
 use crate::state::{RoomCategory, RoomMember, RoomSummary};
 
 pub async fn get_room_list(client: &Client) -> Vec<RoomSummary> {
@@ -168,10 +169,11 @@ pub async fn fetch_room_members(client: &Client, room_id: &str, tx: &EventSender
                 })
                 .collect();
 
-            let _ = tx.send(AppEvent::MembersLoaded {
+            tx.send(AppEvent::MembersLoaded {
                 room_id: room_id.to_string(),
                 members: room_members,
-            });
+            })
+            .warn_closed("MembersLoaded");
         }
         Err(e) => {
             error!("Failed to fetch room members: {}", e);
@@ -200,11 +202,12 @@ pub async fn check_member_verification(client: &Client, room_id: &str, tx: &Even
             Ok(Some(identity)) => identity.is_verified(),
             _ => false,
         };
-        let _ = tx.send(AppEvent::MemberVerificationStatus {
+        tx.send(AppEvent::MemberVerificationStatus {
             room_id: room_id.to_string(),
             user_id: uid.to_string(),
             verified,
-        });
+        })
+        .warn_closed("MemberVerificationStatus");
     }
 }
 
@@ -212,17 +215,19 @@ pub async fn fetch_room_info(client: &Client, room_id: &str, tx: &EventSender) {
     let room_id_parsed: Result<matrix_sdk::ruma::OwnedRoomId, _> = room_id.try_into();
     let Ok(rid) = room_id_parsed else {
         error!("Invalid room id for info fetch: {}", room_id);
-        let _ = tx.send(AppEvent::RoomSettingError {
+        tx.send(AppEvent::RoomSettingError {
             error: format!("Invalid room ID: {}", room_id),
-        });
+        })
+        .warn_closed("RoomSettingError");
         return;
     };
 
     let Some(room) = client.get_room(&rid) else {
         error!("Room not found for info fetch: {}", room_id);
-        let _ = tx.send(AppEvent::RoomSettingError {
+        tx.send(AppEvent::RoomSettingError {
             error: "Room not found".to_string(),
-        });
+        })
+        .warn_closed("RoomSettingError");
         return;
     };
 
@@ -238,41 +243,46 @@ pub async fn fetch_room_info(client: &Client, room_id: &str, tx: &EventSender) {
         .map(|s| s.is_encrypted())
         .unwrap_or(false);
 
-    let _ = tx.send(AppEvent::RoomInfoLoaded {
+    tx.send(AppEvent::RoomInfoLoaded {
         room_id: room_id.to_string(),
         name,
         topic,
         history_visibility: visibility.as_ref().to_string(),
         encrypted,
-    });
+    })
+    .warn_closed("RoomInfoLoaded");
 }
 
 pub async fn set_room_name(client: &Client, room_id: &str, name: &str, tx: &EventSender) {
     let room_id_parsed: Result<matrix_sdk::ruma::OwnedRoomId, _> = room_id.try_into();
     let Ok(rid) = room_id_parsed else {
-        let _ = tx.send(AppEvent::RoomSettingError {
+        tx.send(AppEvent::RoomSettingError {
             error: format!("Invalid room ID: {}", room_id),
-        });
+        })
+        .warn_closed("RoomSettingError");
         return;
     };
 
     let Some(room) = client.get_room(&rid) else {
-        let _ = tx.send(AppEvent::RoomSettingError {
+        tx.send(AppEvent::RoomSettingError {
             error: "Room not found".to_string(),
-        });
+        })
+        .warn_closed("RoomSettingError");
         return;
     };
 
     match room.set_name(name.to_string()).await {
         Ok(_) => {
-            let _ = tx.send(AppEvent::RoomSettingUpdated {
+            tx.send(AppEvent::RoomSettingUpdated {
                 room_id: room_id.to_string(),
-            });
+            })
+            .warn_closed("RoomSettingUpdated");
         }
         Err(e) => {
-            let _ = tx.send(AppEvent::RoomSettingError {
+            tx.send(AppEvent::RoomSettingError {
                 error: format!("Failed to set room name: {}", e),
-            });
+            })
+            .warn_closed("RoomSettingError");
         }
     }
 }
@@ -280,29 +290,33 @@ pub async fn set_room_name(client: &Client, room_id: &str, name: &str, tx: &Even
 pub async fn set_room_topic(client: &Client, room_id: &str, topic: &str, tx: &EventSender) {
     let room_id_parsed: Result<matrix_sdk::ruma::OwnedRoomId, _> = room_id.try_into();
     let Ok(rid) = room_id_parsed else {
-        let _ = tx.send(AppEvent::RoomSettingError {
+        tx.send(AppEvent::RoomSettingError {
             error: format!("Invalid room ID: {}", room_id),
-        });
+        })
+        .warn_closed("RoomSettingError");
         return;
     };
 
     let Some(room) = client.get_room(&rid) else {
-        let _ = tx.send(AppEvent::RoomSettingError {
+        tx.send(AppEvent::RoomSettingError {
             error: "Room not found".to_string(),
-        });
+        })
+        .warn_closed("RoomSettingError");
         return;
     };
 
     match room.set_room_topic(topic).await {
         Ok(_) => {
-            let _ = tx.send(AppEvent::RoomSettingUpdated {
+            tx.send(AppEvent::RoomSettingUpdated {
                 room_id: room_id.to_string(),
-            });
+            })
+            .warn_closed("RoomSettingUpdated");
         }
         Err(e) => {
-            let _ = tx.send(AppEvent::RoomSettingError {
+            tx.send(AppEvent::RoomSettingError {
                 error: format!("Failed to set room topic: {}", e),
-            });
+            })
+            .warn_closed("RoomSettingError");
         }
     }
 }
@@ -310,29 +324,33 @@ pub async fn set_room_topic(client: &Client, room_id: &str, topic: &str, tx: &Ev
 pub async fn enable_encryption(client: &Client, room_id: &str, tx: &EventSender) {
     let room_id_parsed: Result<matrix_sdk::ruma::OwnedRoomId, _> = room_id.try_into();
     let Ok(rid) = room_id_parsed else {
-        let _ = tx.send(AppEvent::RoomSettingError {
+        tx.send(AppEvent::RoomSettingError {
             error: format!("Invalid room ID: {}", room_id),
-        });
+        })
+        .warn_closed("RoomSettingError");
         return;
     };
 
     let Some(room) = client.get_room(&rid) else {
-        let _ = tx.send(AppEvent::RoomSettingError {
+        tx.send(AppEvent::RoomSettingError {
             error: "Room not found".to_string(),
-        });
+        })
+        .warn_closed("RoomSettingError");
         return;
     };
 
     match room.enable_encryption().await {
         Ok(_) => {
-            let _ = tx.send(AppEvent::RoomSettingUpdated {
+            tx.send(AppEvent::RoomSettingUpdated {
                 room_id: room_id.to_string(),
-            });
+            })
+            .warn_closed("RoomSettingUpdated");
         }
         Err(e) => {
-            let _ = tx.send(AppEvent::RoomSettingError {
+            tx.send(AppEvent::RoomSettingError {
                 error: format!("Failed to enable encryption: {}", e),
-            });
+            })
+            .warn_closed("RoomSettingError");
         }
     }
 }
@@ -345,16 +363,18 @@ pub async fn set_history_visibility(
 ) {
     let room_id_parsed: Result<matrix_sdk::ruma::OwnedRoomId, _> = room_id.try_into();
     let Ok(rid) = room_id_parsed else {
-        let _ = tx.send(AppEvent::RoomSettingError {
+        tx.send(AppEvent::RoomSettingError {
             error: format!("Invalid room ID: {}", room_id),
-        });
+        })
+        .warn_closed("RoomSettingError");
         return;
     };
 
     let Some(room) = client.get_room(&rid) else {
-        let _ = tx.send(AppEvent::RoomSettingError {
+        tx.send(AppEvent::RoomSettingError {
             error: "Room not found".to_string(),
-        });
+        })
+        .warn_closed("RoomSettingError");
         return;
     };
 
@@ -364,9 +384,10 @@ pub async fn set_history_visibility(
         "joined" => HistoryVisibility::Joined,
         "world_readable" => HistoryVisibility::WorldReadable,
         other => {
-            let _ = tx.send(AppEvent::RoomSettingError {
+            tx.send(AppEvent::RoomSettingError {
                 error: format!("Invalid visibility: {}", other),
-            });
+            })
+            .warn_closed("RoomSettingError");
             return;
         }
     };
@@ -377,14 +398,16 @@ pub async fn set_history_visibility(
         .await
     {
         Ok(()) => {
-            let _ = tx.send(AppEvent::RoomSettingUpdated {
+            tx.send(AppEvent::RoomSettingUpdated {
                 room_id: room_id.to_string(),
-            });
+            })
+            .warn_closed("RoomSettingUpdated");
         }
         Err(e) => {
-            let _ = tx.send(AppEvent::RoomSettingError {
+            tx.send(AppEvent::RoomSettingError {
                 error: format!("Failed to update visibility: {}", e),
-            });
+            })
+            .warn_closed("RoomSettingError");
         }
     }
 }
@@ -451,29 +474,33 @@ pub async fn mark_room_as_read(client: &Client, room_id: &str, event_id_hint: Op
 pub async fn accept_invite(client: &Client, room_id: &str, tx: &EventSender) {
     let room_id_parsed: Result<matrix_sdk::ruma::OwnedRoomId, _> = room_id.try_into();
     let Ok(rid) = room_id_parsed else {
-        let _ = tx.send(AppEvent::InviteError {
+        tx.send(AppEvent::InviteError {
             error: format!("Invalid room ID: {}", room_id),
-        });
+        })
+        .warn_closed("InviteError");
         return;
     };
 
     let Some(room) = client.get_room(&rid) else {
-        let _ = tx.send(AppEvent::InviteError {
+        tx.send(AppEvent::InviteError {
             error: "Room not found".to_string(),
-        });
+        })
+        .warn_closed("InviteError");
         return;
     };
 
     match room.join().await {
         Ok(_) => {
-            let _ = tx.send(AppEvent::InviteAccepted {
+            tx.send(AppEvent::InviteAccepted {
                 room_id: room_id.to_string(),
-            });
+            })
+            .warn_closed("InviteAccepted");
         }
         Err(e) => {
-            let _ = tx.send(AppEvent::InviteError {
+            tx.send(AppEvent::InviteError {
                 error: format!("Failed to accept invite: {}", e),
-            });
+            })
+            .warn_closed("InviteError");
         }
     }
 }
@@ -481,27 +508,31 @@ pub async fn accept_invite(client: &Client, room_id: &str, tx: &EventSender) {
 pub async fn decline_invite(client: &Client, room_id: &str, tx: &EventSender) {
     let room_id_parsed: Result<matrix_sdk::ruma::OwnedRoomId, _> = room_id.try_into();
     let Ok(rid) = room_id_parsed else {
-        let _ = tx.send(AppEvent::InviteError {
+        tx.send(AppEvent::InviteError {
             error: format!("Invalid room ID: {}", room_id),
-        });
+        })
+        .warn_closed("InviteError");
         return;
     };
 
     let Some(room) = client.get_room(&rid) else {
-        let _ = tx.send(AppEvent::InviteError {
+        tx.send(AppEvent::InviteError {
             error: "Room not found".to_string(),
-        });
+        })
+        .warn_closed("InviteError");
         return;
     };
 
     match room.leave().await {
         Ok(_) => {
-            let _ = tx.send(AppEvent::InviteDeclined);
+            tx.send(AppEvent::InviteDeclined)
+                .warn_closed("InviteDeclined");
         }
         Err(e) => {
-            let _ = tx.send(AppEvent::InviteError {
+            tx.send(AppEvent::InviteError {
                 error: format!("Failed to decline invite: {}", e),
-            });
+            })
+            .warn_closed("InviteError");
         }
     }
 }
@@ -509,37 +540,42 @@ pub async fn decline_invite(client: &Client, room_id: &str, tx: &EventSender) {
 pub async fn invite_user(client: &Client, room_id: &str, user_id: &str, tx: &EventSender) {
     let room_id_parsed: Result<matrix_sdk::ruma::OwnedRoomId, _> = room_id.try_into();
     let Ok(rid) = room_id_parsed else {
-        let _ = tx.send(AppEvent::InviteError {
+        tx.send(AppEvent::InviteError {
             error: format!("Invalid room ID: {}", room_id),
-        });
+        })
+        .warn_closed("InviteError");
         return;
     };
 
     let uid_parsed: Result<matrix_sdk::ruma::OwnedUserId, _> = user_id.try_into();
     let Ok(uid) = uid_parsed else {
-        let _ = tx.send(AppEvent::InviteError {
+        tx.send(AppEvent::InviteError {
             error: format!("Invalid user ID: {}", user_id),
-        });
+        })
+        .warn_closed("InviteError");
         return;
     };
 
     let Some(room) = client.get_room(&rid) else {
-        let _ = tx.send(AppEvent::InviteError {
+        tx.send(AppEvent::InviteError {
             error: "Room not found".to_string(),
-        });
+        })
+        .warn_closed("InviteError");
         return;
     };
 
     match room.invite_user_by_id(&uid).await {
         Ok(_) => {
-            let _ = tx.send(AppEvent::UserInvited {
+            tx.send(AppEvent::UserInvited {
                 user_id: user_id.to_string(),
-            });
+            })
+            .warn_closed("UserInvited");
         }
         Err(e) => {
-            let _ = tx.send(AppEvent::InviteError {
+            tx.send(AppEvent::InviteError {
                 error: format!("Failed to invite user: {}", e),
-            });
+            })
+            .warn_closed("InviteError");
         }
     }
 }

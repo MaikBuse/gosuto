@@ -25,6 +25,7 @@ use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
 use app::App;
 use event::AppEvent;
+use event::WarnClosed;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -107,18 +108,21 @@ async fn main() -> Result<()> {
                         matrix::sync::start_sync(client, tx.clone(), iv, Some(cmd_tx)).await
                     {
                         error!("Sync error: {}", e);
-                        let _ = tx.send(AppEvent::SyncError(e.to_string()));
+                        tx.send(AppEvent::SyncError(e.to_string()))
+                            .warn_closed("SyncError");
                     }
                 });
             }
             Ok(None) => {
                 info!("No stored session found");
                 if let Some(creds) = matrix::credentials::load_credentials() {
-                    let _ = event_tx.send(AppEvent::AutoLogin {
-                        homeserver: creds.homeserver,
-                        username: creds.username,
-                        password: creds.password,
-                    });
+                    event_tx
+                        .send(AppEvent::AutoLogin {
+                            homeserver: creds.homeserver,
+                            username: creds.username,
+                            password: creds.password,
+                        })
+                        .warn_closed("AutoLogin");
                 }
             }
             Err(e) => {
@@ -134,14 +138,18 @@ async fn main() -> Result<()> {
                             info!("Could not remove store: {}", e);
                         }
                     }
-                    let _ = matrix::session::delete_session(&session_path);
+                    if let Err(e) = matrix::session::delete_session(&session_path) {
+                        tracing::warn!("Failed to delete session: {e}");
+                    }
                 }
                 if let Some(creds) = matrix::credentials::load_credentials() {
-                    let _ = event_tx.send(AppEvent::AutoLogin {
-                        homeserver: creds.homeserver,
-                        username: creds.username,
-                        password: creds.password,
-                    });
+                    event_tx
+                        .send(AppEvent::AutoLogin {
+                            homeserver: creds.homeserver,
+                            username: creds.username,
+                            password: creds.password,
+                        })
+                        .warn_closed("AutoLogin");
                 }
             }
         }
@@ -155,14 +163,16 @@ async fn main() -> Result<()> {
             match event {
                 Event::Key(key) => match key.kind {
                     KeyEventKind::Press | KeyEventKind::Repeat => {
-                        let _ = input_tx.send(AppEvent::Key(key));
+                        input_tx.send(AppEvent::Key(key)).warn_closed("Key");
                     }
                     KeyEventKind::Release => {
-                        let _ = input_tx.send(AppEvent::KeyRelease);
+                        input_tx
+                            .send(AppEvent::KeyRelease)
+                            .warn_closed("KeyRelease");
                     }
                 },
                 Event::Resize(_, _) => {
-                    let _ = input_tx.send(AppEvent::Resize);
+                    input_tx.send(AppEvent::Resize).warn_closed("Resize");
                 }
                 _ => {}
             }
@@ -253,15 +263,15 @@ async fn main() -> Result<()> {
 
                             if let Some(ref room_id) = new_room {
                                 if demo_mode {
-                                    let _ = event_tx.send(AppEvent::MessagesLoaded {
+                                    event_tx.send(AppEvent::MessagesLoaded {
                                         room_id: room_id.clone(),
                                         messages: demo::demo_messages_for_room(room_id),
                                         has_more: false,
-                                    });
-                                    let _ = event_tx.send(AppEvent::MembersLoaded {
+                                    }).warn_closed("MessagesLoaded");
+                                    event_tx.send(AppEvent::MembersLoaded {
                                         room_id: room_id.clone(),
                                         members: demo::demo_members_for_room(room_id),
-                                    });
+                                    }).warn_closed("MembersLoaded");
                                 } else {
                                 // Fetch messages
                                 let client_holder = matrix_client.clone();
@@ -273,16 +283,16 @@ async fn main() -> Result<()> {
                                     if let Some(client) = client {
                                         if let Err(e) = matrix::messages::fetch_messages(&client, &rid, &tx, sync_token).await {
                                             error!("Failed to fetch messages for {}: {:?}", rid, e);
-                                            let _ = tx.send(AppEvent::FetchError {
+                                            tx.send(AppEvent::FetchError {
                                                 room_id: rid,
                                                 error: e.to_string(),
-                                            });
+                                            }).warn_closed("FetchError");
                                         }
                                     } else {
-                                        let _ = tx.send(AppEvent::FetchError {
+                                        tx.send(AppEvent::FetchError {
                                             room_id: rid,
                                             error: "Not connected".to_string(),
-                                        });
+                                        }).warn_closed("FetchError");
                                     }
                                 });
 
@@ -330,10 +340,10 @@ async fn main() -> Result<()> {
                                         && let Err(e) = matrix::messages::fetch_messages(&client, &rid, &tx, sync_token).await
                                     {
                                         error!("Failed to re-fetch messages for {}: {:?}", rid, e);
-                                        let _ = tx.send(AppEvent::FetchError {
+                                        tx.send(AppEvent::FetchError {
                                             room_id: rid,
                                             error: e.to_string(),
-                                        });
+                                        }).warn_closed("FetchError");
                                     }
                                 });
                             }
@@ -342,11 +352,11 @@ async fn main() -> Result<()> {
                         // Handle message sending
                         if let Some((room_id, body)) = app.take_pending_send() {
                             if demo_mode {
-                                let _ = event_tx.send(AppEvent::MessageSent {
+                                event_tx.send(AppEvent::MessageSent {
                                     room_id,
                                     event_id: format!("$demo_{}", Local::now().timestamp_nanos_opt().unwrap_or(0)),
                                     body,
-                                });
+                                }).warn_closed("MessageSent");
                             } else {
                             let client_holder = matrix_client.clone();
                             let tx = event_tx.clone();
@@ -372,8 +382,9 @@ async fn main() -> Result<()> {
                                     let room_id_parsed: Result<matrix_sdk::ruma::OwnedRoomId, _> = room_id.as_str().try_into();
                                     if let Ok(id) = room_id_parsed
                                         && let Some(room) = client.get_room(&id)
+                                        && let Err(e) = room.typing_notice(typing).await
                                     {
-                                        let _ = room.typing_notice(typing).await;
+                                        tracing::warn!("typing_notice failed: {e}");
                                     }
                                 }
                             });
@@ -407,7 +418,7 @@ async fn main() -> Result<()> {
                                 {
                                     error!("Logout error: {}", e);
                                 }
-                                let _ = tx.send(AppEvent::LoggedOut);
+                                tx.send(AppEvent::LoggedOut).warn_closed("LoggedOut");
                             });
                             }
                         }
@@ -426,11 +437,11 @@ async fn main() -> Result<()> {
                                     match room_id_parsed {
                                         Ok(id) => {
                                             if let Err(e) = client.join_room_by_id_or_alias(&id, &[]).await {
-                                                let _ = tx.send(AppEvent::SyncError(format!("Join failed: {}", e)));
+                                                tx.send(AppEvent::SyncError(format!("Join failed: {}", e))).warn_closed("SyncError");
                                             }
                                         }
                                         Err(e) => {
-                                            let _ = tx.send(AppEvent::SyncError(format!("Invalid room: {}", e)));
+                                            tx.send(AppEvent::SyncError(format!("Invalid room: {}", e))).warn_closed("SyncError");
                                         }
                                     }
                                 }
@@ -453,24 +464,24 @@ async fn main() -> Result<()> {
                             }
                             if app.pending_user_config {
                                 app.pending_user_config = false;
-                                let _ = event_tx.send(AppEvent::UserConfigLoaded {
+                                event_tx.send(AppEvent::UserConfigLoaded {
                                     display_name: Some("Ghost".to_string()),
                                     verified: true,
                                     recovery_status: crate::event::RecoveryStatus::Disabled,
-                                });
+                                }).warn_closed("UserConfigLoaded");
                             }
                             app.pending_set_display_name.take();
                             app.pending_change_password.take();
                             if app.pending_room_info {
                                 app.pending_room_info = false;
                                 let rid = app.room_info.room_id.clone();
-                                let _ = event_tx.send(AppEvent::RoomInfoLoaded {
+                                event_tx.send(AppEvent::RoomInfoLoaded {
                                     room_id: rid,
                                     name: Some("Demo Room".to_string()),
                                     topic: Some("A demo room".to_string()),
                                     history_visibility: "shared".to_string(),
                                     encrypted: true,
-                                });
+                                }).warn_closed("RoomInfoLoaded");
                             }
                             app.pending_set_visibility.take();
                             app.pending_set_room_topic.take();
@@ -494,9 +505,9 @@ async fn main() -> Result<()> {
                                         Ok(uid) => {
                                             // Check for existing DM room
                                             if let Some(room) = client.get_dm_room(&uid) {
-                                                let _ = tx.send(AppEvent::DmRoomReady {
+                                                tx.send(AppEvent::DmRoomReady {
                                                     room_id: room.room_id().to_string(),
-                                                });
+                                                }).warn_closed("DmRoomReady");
                                             } else {
                                                 // Create new DM room
                                                 use matrix_sdk::ruma::api::client::room::create_room::v3::Request as CreateRoomRequest;
@@ -524,18 +535,18 @@ async fn main() -> Result<()> {
 
                                                 match client.create_room(request).await {
                                                     Ok(response) => {
-                                                        let _ = tx.send(AppEvent::DmRoomReady {
+                                                        tx.send(AppEvent::DmRoomReady {
                                                             room_id: response.room_id().to_string(),
-                                                        });
+                                                        }).warn_closed("DmRoomReady");
                                                     }
                                                     Err(e) => {
-                                                        let _ = tx.send(AppEvent::SyncError(format!("Failed to create DM: {}", e)));
+                                                        tx.send(AppEvent::SyncError(format!("Failed to create DM: {}", e))).warn_closed("SyncError");
                                                     }
                                                 }
                                             }
                                         }
                                         Err(e) => {
-                                            let _ = tx.send(AppEvent::SyncError(format!("Invalid user ID: {}", e)));
+                                            tx.send(AppEvent::SyncError(format!("Invalid user ID: {}", e))).warn_closed("SyncError");
                                         }
                                     }
                                 }
@@ -598,12 +609,12 @@ async fn main() -> Result<()> {
 
                                     match client.create_room(request).await {
                                         Ok(response) => {
-                                            let _ = tx.send(AppEvent::RoomCreated {
+                                            tx.send(AppEvent::RoomCreated {
                                                 room_id: response.room_id().to_string(),
-                                            });
+                                            }).warn_closed("RoomCreated");
                                         }
                                         Err(e) => {
-                                            let _ = tx.send(AppEvent::SyncError(format!("Failed to create room: {}", e)));
+                                            tx.send(AppEvent::SyncError(format!("Failed to create room: {}", e))).warn_closed("SyncError");
                                         }
                                     }
                                 }
@@ -622,7 +633,7 @@ async fn main() -> Result<()> {
                                         && let Some(room) = client.get_room(&id)
                                         && let Err(e) = room.leave().await
                                     {
-                                        let _ = tx.send(AppEvent::SyncError(format!("Leave failed: {}", e)));
+                                        tx.send(AppEvent::SyncError(format!("Leave failed: {}", e))).warn_closed("SyncError");
                                     }
                                 }
                             });
@@ -770,8 +781,9 @@ async fn main() -> Result<()> {
                                 RecoveryAction::SubmitPassword(password) => {
                                     if let Some(ref mut modal) = app.recovery
                                         && let Some(tx) = modal.password_tx.take()
+                                        && tx.send(password).is_err()
                                     {
-                                        let _ = tx.send(password);
+                                        tracing::warn!("password oneshot: receiver dropped");
                                     }
                                 }
                                 other => {
@@ -791,13 +803,13 @@ async fn main() -> Result<()> {
                                                         RecoveryState::Incomplete => state::RecoveryStage::Incomplete,
                                                         _ => state::RecoveryStage::Disabled,
                                                     };
-                                                    let _ = tx.send(AppEvent::RecoveryStateChecked(stage));
+                                                    tx.send(AppEvent::RecoveryStateChecked(stage)).warn_closed("RecoveryStateChecked");
                                                 }
                                                 RecoveryAction::Create => {
                                                     match client.encryption().recovery()
                                                         .enable().wait_for_backups_to_upload().await {
-                                                        Ok(key) => { let _ = tx.send(AppEvent::RecoveryKeyReady(key)); }
-                                                        Err(e) => { let _ = tx.send(AppEvent::RecoveryError(e.to_string())); }
+                                                        Ok(key) => { tx.send(AppEvent::RecoveryKeyReady(key)).warn_closed("RecoveryKeyReady"); }
+                                                        Err(e) => { tx.send(AppEvent::RecoveryError(e.to_string())).warn_closed("RecoveryError"); }
                                                     }
                                                 }
                                                 RecoveryAction::Recover(phrase) => {
@@ -807,12 +819,12 @@ async fn main() -> Result<()> {
                                                             if matches!(state, matrix_sdk::encryption::recovery::RecoveryState::Incomplete) {
                                                                 match matrix::client::heal_recovery(&client, &tx).await {
                                                                     Ok(new_key) => {
-                                                                        let _ = tx.send(AppEvent::RecoveryKeyReady(new_key));
+                                                                        tx.send(AppEvent::RecoveryKeyReady(new_key)).warn_closed("RecoveryKeyReady");
                                                                     }
                                                                     Err(e) => {
-                                                                        let _ = tx.send(AppEvent::RecoveryError(
+                                                                        tx.send(AppEvent::RecoveryError(
                                                                             format!("Recovery succeeded but healing failed: {}", e),
-                                                                        ));
+                                                                        )).warn_closed("RecoveryError");
                                                                     }
                                                                 }
                                                             } else {
@@ -821,13 +833,12 @@ async fn main() -> Result<()> {
                                                                     .map(|r| r.room_id().to_owned())
                                                                     .collect();
                                                                 for room_id in &rooms {
-                                                                    let _ = client.encryption().backups()
-                                                                        .download_room_keys_for_room(room_id).await;
+                                                                    if let Err(e) = client.encryption().backups().download_room_keys_for_room(room_id).await { tracing::warn!("download_room_keys failed for {room_id}: {e}"); }
                                                                 }
-                                                                let _ = tx.send(AppEvent::RecoveryRecovered);
+                                                                tx.send(AppEvent::RecoveryRecovered).warn_closed("RecoveryRecovered");
                                                             }
                                                         }
-                                                        Err(e) => { let _ = tx.send(AppEvent::RecoveryError(e.to_string())); }
+                                                        Err(e) => { tx.send(AppEvent::RecoveryError(e.to_string())).warn_closed("RecoveryError"); }
                                                     }
                                                 }
                                                 RecoveryAction::Reset => {
@@ -838,13 +849,13 @@ async fn main() -> Result<()> {
                                                     );
                                                     if is_incomplete {
                                                         match matrix::client::heal_recovery(&client, &tx).await {
-                                                            Ok(key) => { let _ = tx.send(AppEvent::RecoveryKeyReady(key)); }
-                                                            Err(e) => { let _ = tx.send(AppEvent::RecoveryError(e.to_string())); }
+                                                            Ok(key) => { tx.send(AppEvent::RecoveryKeyReady(key)).warn_closed("RecoveryKeyReady"); }
+                                                            Err(e) => { tx.send(AppEvent::RecoveryError(e.to_string())).warn_closed("RecoveryError"); }
                                                         }
                                                     } else {
                                                         match client.encryption().recovery().reset_key().await {
-                                                            Ok(key) => { let _ = tx.send(AppEvent::RecoveryKeyReady(key)); }
-                                                            Err(e) => { let _ = tx.send(AppEvent::RecoveryError(e.to_string())); }
+                                                            Ok(key) => { tx.send(AppEvent::RecoveryKeyReady(key)).warn_closed("RecoveryKeyReady"); }
+                                                            Err(e) => { tx.send(AppEvent::RecoveryError(e.to_string())).warn_closed("RecoveryError"); }
                                                         }
                                                     }
                                                 }
@@ -911,13 +922,19 @@ async fn main() -> Result<()> {
         // Check for login trigger
         if app.is_logging_in() && !login_in_progress {
             if demo_mode {
-                let _ = event_tx.send(AppEvent::LoginSuccess {
-                    user_id: "@ghost:gosuto.dev".to_string(),
-                    device_id: "DEMO_DEVICE".to_string(),
-                    homeserver: "https://gosuto.dev".to_string(),
-                });
-                let _ = event_tx.send(AppEvent::RoomListUpdated(demo::demo_rooms()));
-                let _ = event_tx.send(AppEvent::SyncStatus("demo mode".to_string()));
+                event_tx
+                    .send(AppEvent::LoginSuccess {
+                        user_id: "@ghost:gosuto.dev".to_string(),
+                        device_id: "DEMO_DEVICE".to_string(),
+                        homeserver: "https://gosuto.dev".to_string(),
+                    })
+                    .warn_closed("LoginSuccess");
+                event_tx
+                    .send(AppEvent::RoomListUpdated(demo::demo_rooms()))
+                    .warn_closed("RoomListUpdated");
+                event_tx
+                    .send(AppEvent::SyncStatus("demo mode".to_string()))
+                    .warn_closed("SyncStatus");
             } else {
                 login_in_progress = true;
                 let (homeserver, username, password) = app.login_credentials();
@@ -948,13 +965,16 @@ async fn main() -> Result<()> {
                                 .await
                                 {
                                     error!("Sync error: {}", e);
-                                    let _ = sync_tx.send(AppEvent::SyncError(e.to_string()));
+                                    sync_tx
+                                        .send(AppEvent::SyncError(e.to_string()))
+                                        .warn_closed("SyncError");
                                 }
                             });
                         }
                         Err(e) => {
                             error!("Login failed: {:#}", e);
-                            let _ = tx.send(AppEvent::LoginFailure(e.to_string()));
+                            tx.send(AppEvent::LoginFailure(e.to_string()))
+                                .warn_closed("LoginFailure");
                         }
                     }
                 });
@@ -994,13 +1014,16 @@ async fn main() -> Result<()> {
                                     .await
                             {
                                 error!("Sync error: {}", e);
-                                let _ = sync_tx.send(AppEvent::SyncError(e.to_string()));
+                                sync_tx
+                                    .send(AppEvent::SyncError(e.to_string()))
+                                    .warn_closed("SyncError");
                             }
                         });
                     }
                     Err(e) => {
                         error!("Registration failed: {:#}", e);
-                        let _ = tx.send(AppEvent::RegisterFailure(e.to_string()));
+                        tx.send(AppEvent::RegisterFailure(e.to_string()))
+                            .warn_closed("RegisterFailure");
                     }
                 }
             });

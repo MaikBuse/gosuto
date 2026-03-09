@@ -5,7 +5,7 @@ use parking_lot::Mutex;
 
 use tracing::{info, warn};
 
-use crate::event::{AppEvent, EventSender};
+use crate::event::{AppEvent, EventSender, WarnClosed};
 
 #[cfg(target_os = "linux")]
 pub fn check_linux_prerequisites() -> Option<String> {
@@ -84,7 +84,7 @@ pub fn spawn_listener(
                     format!("PTT failed: {err}")
                 };
                 warn!("{}", message);
-                let _ = error_tx.send(AppEvent::PttListenerFailed(message));
+                error_tx.send(AppEvent::PttListenerFailed(message)).warn_closed("PttListenerFailed");
             }
         })
         .expect("failed to spawn PTT listener thread");
@@ -104,7 +104,9 @@ fn handle_ptt_event(
 ) {
     if is_press {
         if capturing.load(Ordering::Relaxed) {
-            let _ = event_tx.send(AppEvent::PttKeyCaptured(key_name.to_string()));
+            event_tx
+                .send(AppEvent::PttKeyCaptured(key_name.to_string()))
+                .warn_closed("PttKeyCaptured");
             capturing.store(false, Ordering::Relaxed);
         } else if active.load(Ordering::Relaxed) {
             let current_key = ptt_key_shared.lock().clone();

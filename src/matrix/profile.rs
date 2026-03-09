@@ -1,17 +1,18 @@
 use matrix_sdk::Client;
 use tracing::error;
 
-use crate::event::{AppEvent, EventSender, RecoveryStatus};
+use crate::event::{AppEvent, EventSender, RecoveryStatus, WarnClosed};
 
 pub async fn fetch_user_config(client: &Client, tx: &EventSender) {
     let display_name = match client.account().get_display_name().await {
         Ok(name) => name,
         Err(e) => {
             error!("Failed to fetch display name: {}", e);
-            let _ = tx.send(AppEvent::UserConfigError(format!(
+            tx.send(AppEvent::UserConfigError(format!(
                 "Failed to fetch display name: {}",
                 e
-            )));
+            )))
+            .warn_closed("UserConfigError");
             return;
         }
     };
@@ -44,11 +45,12 @@ pub async fn fetch_user_config(client: &Client, tx: &EventSender) {
         _ => RecoveryStatus::Disabled,
     };
 
-    let _ = tx.send(AppEvent::UserConfigLoaded {
+    tx.send(AppEvent::UserConfigLoaded {
         display_name,
         verified,
         recovery_status,
-    });
+    })
+    .warn_closed("UserConfigLoaded");
 }
 
 pub async fn change_user_password(
@@ -60,7 +62,8 @@ pub async fn change_user_password(
     let user_id = match client.user_id() {
         Some(id) => id.to_string(),
         None => {
-            let _ = tx.send(AppEvent::UserConfigError("No user ID".to_string()));
+            tx.send(AppEvent::UserConfigError("No user ID".to_string()))
+                .warn_closed("UserConfigError");
             return;
         }
     };
@@ -76,12 +79,14 @@ pub async fn change_user_password(
         .await
     {
         Ok(_) => {
-            let _ = tx.send(AppEvent::UserConfigUpdated);
+            tx.send(AppEvent::UserConfigUpdated)
+                .warn_closed("UserConfigUpdated");
         }
         Err(e) => {
-            let _ = tx.send(AppEvent::UserConfigError(format!(
+            tx.send(AppEvent::UserConfigError(format!(
                 "Failed to change password: {e}"
-            )));
+            )))
+            .warn_closed("UserConfigError");
         }
     }
 }
@@ -89,13 +94,15 @@ pub async fn change_user_password(
 pub async fn set_user_display_name(client: &Client, name: &str, tx: &EventSender) {
     match client.account().set_display_name(Some(name)).await {
         Ok(_) => {
-            let _ = tx.send(AppEvent::UserConfigUpdated);
+            tx.send(AppEvent::UserConfigUpdated)
+                .warn_closed("UserConfigUpdated");
         }
         Err(e) => {
-            let _ = tx.send(AppEvent::UserConfigError(format!(
+            tx.send(AppEvent::UserConfigError(format!(
                 "Failed to set display name: {}",
                 e
-            )));
+            )))
+            .warn_closed("UserConfigError");
         }
     }
 }

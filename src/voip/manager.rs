@@ -11,7 +11,7 @@ use tokio::time::Instant;
 use tracing::{debug, error, info, warn};
 
 use crate::config::AudioConfig;
-use crate::event::{AppEvent, EventSender};
+use crate::event::{AppEvent, EventSender, WarnClosed};
 use crate::voip::audio::AudioPipeline;
 use crate::voip::livekit::{LiveKitEvent, LiveKitSession};
 use crate::voip::matrixrtc;
@@ -182,9 +182,9 @@ impl CallManager {
             match guard.as_ref() {
                 Some(client) => client.clone(),
                 None => {
-                    let _ = self
-                        .event_tx
-                        .send(AppEvent::CallError("Not logged in".to_string()));
+                    self.event_tx
+                        .send(AppEvent::CallError("Not logged in".to_string()))
+                        .warn_closed("CallError");
                     return;
                 }
             }
@@ -193,9 +193,9 @@ impl CallManager {
         let room_id: OwnedRoomId = match room_id.as_str().try_into() {
             Ok(id) => id,
             Err(e) => {
-                let _ = self
-                    .event_tx
-                    .send(AppEvent::CallError(format!("Invalid room ID: {}", e)));
+                self.event_tx
+                    .send(AppEvent::CallError(format!("Invalid room ID: {}", e)))
+                    .warn_closed("CallError");
                 return;
             }
         };
@@ -203,9 +203,9 @@ impl CallManager {
         let device_id: OwnedDeviceId = match client.device_id() {
             Some(id) => id.to_owned(),
             None => {
-                let _ = self
-                    .event_tx
-                    .send(AppEvent::CallError("No device ID".to_string()));
+                self.event_tx
+                    .send(AppEvent::CallError("No device ID".to_string()))
+                    .warn_closed("CallError");
                 return;
             }
         };
@@ -215,9 +215,11 @@ impl CallManager {
             Ok(f) => f,
             Err(e) => {
                 error!("Failed to discover LiveKit focus: {:#}", e);
-                let _ = self.event_tx.send(AppEvent::CallError(
-                    "No VoIP service configured on this homeserver".to_string(),
-                ));
+                self.event_tx
+                    .send(AppEvent::CallError(
+                        "No VoIP service configured on this homeserver".to_string(),
+                    ))
+                    .warn_closed("CallError");
                 return;
             }
         };
@@ -225,7 +227,9 @@ impl CallManager {
         // 2. Ensure user has permission to send m.call.member, auto-fix if admin
         if let Err(e) = matrixrtc::ensure_call_member_permissions(&client, &room_id).await {
             error!("Call permission check failed: {:#}", e);
-            let _ = self.event_tx.send(AppEvent::CallError(format!("{}", e)));
+            self.event_tx
+                .send(AppEvent::CallError(format!("{}", e)))
+                .warn_closed("CallError");
             return;
         }
 
@@ -266,12 +270,17 @@ impl CallManager {
             Err(e) => {
                 error!("Failed to get LiveKit credentials: {:#}", e);
                 // Clean up the state event we just published
-                if call_member_event_id.is_some() {
-                    let _ = matrixrtc::remove_call_member(&client, &room_id, &device_id).await;
+                if call_member_event_id.is_some()
+                    && let Err(e) =
+                        matrixrtc::remove_call_member(&client, &room_id, &device_id).await
+                {
+                    warn!("remove_call_member failed: {e}");
                 }
-                let _ = self.event_tx.send(AppEvent::CallError(
-                    "Failed to get call credentials from the SFU service".to_string(),
-                ));
+                self.event_tx
+                    .send(AppEvent::CallError(
+                        "Failed to get call credentials from the SFU service".to_string(),
+                    ))
+                    .warn_closed("CallError");
                 return;
             }
         };
@@ -280,12 +289,16 @@ impl CallManager {
         let mut encryption_key = vec![0u8; 16];
         if let Err(e) = getrandom::getrandom(&mut encryption_key) {
             error!("Failed to generate encryption key: {}", e);
-            if call_member_event_id.is_some() {
-                let _ = matrixrtc::remove_call_member(&client, &room_id, &device_id).await;
+            if call_member_event_id.is_some()
+                && let Err(e) = matrixrtc::remove_call_member(&client, &room_id, &device_id).await
+            {
+                warn!("remove_call_member failed: {e}");
             }
-            let _ = self.event_tx.send(AppEvent::CallError(
-                "Failed to generate encryption key".to_string(),
-            ));
+            self.event_tx
+                .send(AppEvent::CallError(
+                    "Failed to generate encryption key".to_string(),
+                ))
+                .warn_closed("CallError");
             return;
         }
 
@@ -316,11 +329,17 @@ impl CallManager {
                 error!("Failed to connect to LiveKit: {:#}", e);
                 log_jwt_claims(&creds.token);
                 // Try to clean up state events
-                if call_member_event_id.is_some() {
-                    let _ = matrixrtc::remove_call_member(&client, &room_id, &device_id).await;
+                if call_member_event_id.is_some()
+                    && let Err(e) =
+                        matrixrtc::remove_call_member(&client, &room_id, &device_id).await
+                {
+                    warn!("remove_call_member failed: {e}");
                 }
-                if published_encryption_keys {
-                    let _ = matrixrtc::remove_encryption_keys(&client, &room_id, &device_id).await;
+                if published_encryption_keys
+                    && let Err(e) =
+                        matrixrtc::remove_encryption_keys(&client, &room_id, &device_id).await
+                {
+                    warn!("remove_encryption_keys failed: {e}");
                 }
                 let err_str = format!("{:#}", e);
                 let msg = if err_str.contains("401") || err_str.contains("nauthorized") {
@@ -328,7 +347,9 @@ impl CallManager {
                 } else {
                     format!("LiveKit connection failed: {}", err_str)
                 };
-                let _ = self.event_tx.send(AppEvent::CallError(msg));
+                self.event_tx
+                    .send(AppEvent::CallError(msg))
+                    .warn_closed("CallError");
                 return;
             }
         };
@@ -388,13 +409,20 @@ impl CallManager {
             Ok(s) => s,
             Err(e) => {
                 error!("Failed to start audio capture: {:#}", e);
-                let _ = session.close().await;
-                if call_member_event_id.is_some() {
-                    let _ = matrixrtc::remove_call_member(&client, &room_id, &device_id).await;
+                if let Err(e) = session.close().await {
+                    warn!("session.close() failed: {e}");
                 }
-                let _ = self.event_tx.send(AppEvent::CallError(
-                    "Microphone error: could not start audio capture".to_string(),
-                ));
+                if call_member_event_id.is_some()
+                    && let Err(e) =
+                        matrixrtc::remove_call_member(&client, &room_id, &device_id).await
+                {
+                    warn!("remove_call_member failed: {e}");
+                }
+                self.event_tx
+                    .send(AppEvent::CallError(
+                        "Microphone error: could not start audio capture".to_string(),
+                    ))
+                    .warn_closed("CallError");
                 return;
             }
         };
@@ -403,20 +431,28 @@ impl CallManager {
         if let Err(e) = session.publish_audio(source).await {
             error!("Failed to publish audio track: {:#}", e);
             audio.stop();
-            let _ = session.close().await;
-            if call_member_event_id.is_some() {
-                let _ = matrixrtc::remove_call_member(&client, &room_id, &device_id).await;
+            if let Err(e) = session.close().await {
+                warn!("session.close() failed: {e}");
             }
-            let _ = self.event_tx.send(AppEvent::CallError(
-                "Failed to publish audio to the call".to_string(),
-            ));
+            if call_member_event_id.is_some()
+                && let Err(e) = matrixrtc::remove_call_member(&client, &room_id, &device_id).await
+            {
+                warn!("remove_call_member failed: {e}");
+            }
+            self.event_tx
+                .send(AppEvent::CallError(
+                    "Failed to publish audio to the call".to_string(),
+                ))
+                .warn_closed("CallError");
             return;
         }
 
-        let _ = self.event_tx.send(AppEvent::CallStateChanged {
-            room_id: room_id.to_string(),
-            state: CallState::Connecting,
-        });
+        self.event_tx
+            .send(AppEvent::CallStateChanged {
+                room_id: room_id.to_string(),
+                state: CallState::Connecting,
+            })
+            .warn_closed("CallStateChanged");
 
         self.active_call = Some(ActiveCall {
             room_id,
@@ -441,13 +477,21 @@ impl CallManager {
                 && let Some(device_id) = client.device_id()
             {
                 let device_id = device_id.to_owned();
-                let _ = matrixrtc::remove_call_member(&client, &room_id, &device_id).await;
-                let _ = matrixrtc::remove_encryption_keys(&client, &room_id, &device_id).await;
+                if let Err(e) = matrixrtc::remove_call_member(&client, &room_id, &device_id).await {
+                    warn!("remove_call_member failed: {e}");
+                }
+                if let Err(e) =
+                    matrixrtc::remove_encryption_keys(&client, &room_id, &device_id).await
+                {
+                    warn!("remove_encryption_keys failed: {e}");
+                }
             }
         }
 
         self.cleanup().await;
-        let _ = self.event_tx.send(AppEvent::CallEnded);
+        self.event_tx
+            .send(AppEvent::CallEnded)
+            .warn_closed("CallEnded");
     }
 
     async fn handle_livekit_event(&mut self, event: LiveKitEvent) {
@@ -455,10 +499,12 @@ impl CallManager {
             LiveKitEvent::Connected => {
                 info!("LiveKit connected");
                 if let Some(ref call) = self.active_call {
-                    let _ = self.event_tx.send(AppEvent::CallStateChanged {
-                        room_id: call.room_id.to_string(),
-                        state: CallState::Active,
-                    });
+                    self.event_tx
+                        .send(AppEvent::CallStateChanged {
+                            room_id: call.room_id.to_string(),
+                            state: CallState::Active,
+                        })
+                        .warn_closed("CallStateChanged");
                 }
             }
             LiveKitEvent::ParticipantJoined { identity } => {
@@ -520,18 +566,22 @@ impl CallManager {
                             );
                         }
                     }
-                    let _ = self.event_tx.send(AppEvent::CallParticipantUpdate {
-                        participants: call.participants.clone(),
-                    });
+                    self.event_tx
+                        .send(AppEvent::CallParticipantUpdate {
+                            participants: call.participants.clone(),
+                        })
+                        .warn_closed("CallParticipantUpdate");
                 }
             }
             LiveKitEvent::ParticipantLeft { identity } => {
                 info!("Participant left: {}", identity);
                 if let Some(ref mut call) = self.active_call {
                     call.participants.retain(|p| p != &identity);
-                    let _ = self.event_tx.send(AppEvent::CallParticipantUpdate {
-                        participants: call.participants.clone(),
-                    });
+                    self.event_tx
+                        .send(AppEvent::CallParticipantUpdate {
+                            participants: call.participants.clone(),
+                        })
+                        .warn_closed("CallParticipantUpdate");
                 }
             }
             LiveKitEvent::TrackSubscribed {
@@ -613,9 +663,9 @@ impl CallManager {
             LiveKitEvent::Disconnected { reason } => {
                 warn!("LiveKit disconnected: {}", reason);
                 self.cleanup().await;
-                let _ = self
-                    .event_tx
-                    .send(AppEvent::CallError(format!("Disconnected: {}", reason)));
+                self.event_tx
+                    .send(AppEvent::CallError(format!("Disconnected: {}", reason)))
+                    .warn_closed("CallError");
             }
             LiveKitEvent::Reconnecting => {
                 info!("LiveKit reconnecting...");

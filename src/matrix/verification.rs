@@ -5,7 +5,7 @@ use matrix_sdk::encryption::verification::{
 };
 use tracing::{info, warn};
 
-use crate::event::{AppEvent, EventSender};
+use crate::event::{AppEvent, EventSender, WarnClosed};
 
 /// Drive a SAS verification flow once we have a SasVerification handle.
 async fn drive_sas(
@@ -20,9 +20,10 @@ async fn drive_sas(
     if !sas.we_started()
         && let Err(e) = sas.accept().await
     {
-        let _ = tx.send(AppEvent::VerificationError(format!(
+        tx.send(AppEvent::VerificationError(format!(
             "Failed to accept SAS: {e}"
-        )));
+        )))
+        .warn_closed("VerificationError");
         return;
     }
 
@@ -41,35 +42,43 @@ async fn drive_sas(
                     vec![]
                 };
 
-                let _ = tx.send(AppEvent::VerificationSasEmoji {
+                tx.send(AppEvent::VerificationSasEmoji {
                     emojis: emoji_data,
                     sender: sender.clone(),
-                });
+                })
+                .warn_closed("VerificationSasEmoji");
 
                 // Wait for user confirmation
                 if let Some(rx) = confirm_rx.take() {
                     match rx.await {
                         Ok(true) => {
                             if let Err(e) = sas.confirm().await {
-                                let _ = tx.send(AppEvent::VerificationError(format!(
+                                tx.send(AppEvent::VerificationError(format!(
                                     "Failed to confirm: {e}"
-                                )));
+                                )))
+                                .warn_closed("VerificationError");
                                 return;
                             }
                         }
                         Ok(false) => {
-                            let _ = sas.mismatch().await;
-                            let _ = tx.send(AppEvent::VerificationCancelled {
+                            if let Err(e) = sas.mismatch().await {
+                                tracing::warn!("sas.mismatch() failed: {e}");
+                            }
+                            tx.send(AppEvent::VerificationCancelled {
                                 reason: "Emoji mismatch".to_string(),
-                            });
+                            })
+                            .warn_closed("VerificationCancelled");
                             return;
                         }
                         Err(_) => {
                             // Channel dropped (modal closed)
-                            let _ = sas.cancel().await;
-                            let _ = tx.send(AppEvent::VerificationCancelled {
+                            if let Err(e) = sas.cancel().await {
+                                tracing::warn!("sas.cancel() failed: {e}");
+                            }
+                            tx.send(AppEvent::VerificationCancelled {
                                 reason: "Cancelled".to_string(),
-                            });
+                            })
+                            .warn_closed("VerificationCancelled");
                             return;
                         }
                     }
@@ -77,13 +86,15 @@ async fn drive_sas(
             }
             SasState::Done { .. } => {
                 info!("SAS verification completed with {}", sender);
-                let _ = tx.send(AppEvent::VerificationCompleted);
+                tx.send(AppEvent::VerificationCompleted)
+                    .warn_closed("VerificationCompleted");
                 return;
             }
             SasState::Cancelled(info) => {
                 let reason = info.reason().to_string();
                 warn!("SAS verification cancelled: {}", reason);
-                let _ = tx.send(AppEvent::VerificationCancelled { reason });
+                tx.send(AppEvent::VerificationCancelled { reason })
+                    .warn_closed("VerificationCancelled");
                 return;
             }
             _ => {}
@@ -102,15 +113,17 @@ async fn drive_request(
 
     // If we received the request (didn't initiate), accept it
     if !we_initiated && let Err(e) = request.accept().await {
-        let _ = tx.send(AppEvent::VerificationError(format!(
+        tx.send(AppEvent::VerificationError(format!(
             "Failed to accept verification: {e}"
-        )));
+        )))
+        .warn_closed("VerificationError");
         return;
     }
 
-    let _ = tx.send(AppEvent::VerificationRequestReceived {
+    tx.send(AppEvent::VerificationRequestReceived {
         sender: sender.clone(),
-    });
+    })
+    .warn_closed("VerificationRequestReceived");
 
     let mut stream = request.changes();
 
@@ -125,14 +138,15 @@ async fn drive_request(
                             return;
                         }
                         Ok(None) => {
-                            let _ = tx.send(AppEvent::VerificationError(
+                            tx.send(AppEvent::VerificationError(
                                 "Failed to start SAS verification".to_string(),
-                            ));
+                            ))
+                            .warn_closed("VerificationError");
                             return;
                         }
                         Err(e) => {
-                            let _ = tx
-                                .send(AppEvent::VerificationError(format!("SAS start error: {e}")));
+                            tx.send(AppEvent::VerificationError(format!("SAS start error: {e}")))
+                                .warn_closed("VerificationError");
                             return;
                         }
                     }
@@ -145,19 +159,22 @@ async fn drive_request(
                     return;
                 }
                 _ => {
-                    let _ = tx.send(AppEvent::VerificationError(
+                    tx.send(AppEvent::VerificationError(
                         "Unsupported verification method".to_string(),
-                    ));
+                    ))
+                    .warn_closed("VerificationError");
                     return;
                 }
             },
             VerificationRequestState::Done => {
-                let _ = tx.send(AppEvent::VerificationCompleted);
+                tx.send(AppEvent::VerificationCompleted)
+                    .warn_closed("VerificationCompleted");
                 return;
             }
             VerificationRequestState::Cancelled(info) => {
                 let reason = info.reason().to_string();
-                let _ = tx.send(AppEvent::VerificationCancelled { reason });
+                tx.send(AppEvent::VerificationCancelled { reason })
+                    .warn_closed("VerificationCancelled");
                 return;
             }
             _ => {}
@@ -174,7 +191,8 @@ pub async fn start_self_verification(
     let user_id = match client.user_id() {
         Some(id) => id.to_owned(),
         None => {
-            let _ = tx.send(AppEvent::VerificationError("Not logged in".to_string()));
+            tx.send(AppEvent::VerificationError("Not logged in".to_string()))
+                .warn_closed("VerificationError");
             return;
         }
     };
@@ -182,15 +200,17 @@ pub async fn start_self_verification(
     let identity = match client.encryption().get_user_identity(&user_id).await {
         Ok(Some(identity)) => identity,
         Ok(None) => {
-            let _ = tx.send(AppEvent::VerificationError(
+            tx.send(AppEvent::VerificationError(
                 "No cross-signing identity found. Try logging out and back in.".to_string(),
-            ));
+            ))
+            .warn_closed("VerificationError");
             return;
         }
         Err(e) => {
-            let _ = tx.send(AppEvent::VerificationError(format!(
+            tx.send(AppEvent::VerificationError(format!(
                 "Failed to get identity: {e}"
-            )));
+            )))
+            .warn_closed("VerificationError");
             return;
         }
     };
@@ -198,9 +218,10 @@ pub async fn start_self_verification(
     let request = match identity.request_verification().await {
         Ok(req) => req,
         Err(e) => {
-            let _ = tx.send(AppEvent::VerificationError(format!(
+            tx.send(AppEvent::VerificationError(format!(
                 "Failed to request verification: {e}"
-            )));
+            )))
+            .warn_closed("VerificationError");
             return;
         }
     };
@@ -218,7 +239,8 @@ pub async fn start_user_verification(
     let user_id: matrix_sdk::ruma::OwnedUserId = match user_id_str.try_into() {
         Ok(id) => id,
         Err(e) => {
-            let _ = tx.send(AppEvent::VerificationError(format!("Invalid user ID: {e}")));
+            tx.send(AppEvent::VerificationError(format!("Invalid user ID: {e}")))
+                .warn_closed("VerificationError");
             return;
         }
     };
@@ -226,15 +248,17 @@ pub async fn start_user_verification(
     let identity = match client.encryption().request_user_identity(&user_id).await {
         Ok(Some(identity)) => identity,
         Ok(None) => {
-            let _ = tx.send(AppEvent::VerificationError(format!(
+            tx.send(AppEvent::VerificationError(format!(
                 "No cross-signing identity found for {user_id}. They may not have set up cross-signing."
-            )));
+            )))
+            .warn_closed("VerificationError");
             return;
         }
         Err(e) => {
-            let _ = tx.send(AppEvent::VerificationError(format!(
+            tx.send(AppEvent::VerificationError(format!(
                 "Failed to get identity: {e}"
-            )));
+            )))
+            .warn_closed("VerificationError");
             return;
         }
     };
@@ -242,9 +266,10 @@ pub async fn start_user_verification(
     let request = match identity.request_verification().await {
         Ok(req) => req,
         Err(e) => {
-            let _ = tx.send(AppEvent::VerificationError(format!(
+            tx.send(AppEvent::VerificationError(format!(
                 "Failed to request verification: {e}"
-            )));
+            )))
+            .warn_closed("VerificationError");
             return;
         }
     };

@@ -42,29 +42,24 @@ guard directly without poisoning.
 
 ---
 
-## 3. Silent Error Swallowing: 179 `let _ = ...` instances
+## 3. ~~Silent Error Swallowing: 179 `let _ = ...` instances~~ — RESOLVED
 
-Spread across 16 files, this pattern indiscriminately swallows channel send failures,
-keyring errors, and SDK responses. While some are intentionally fire-and-forget, many
-hide genuine failures that make debugging difficult.
-
-**Worst offenders by count:**
-- `src/main.rs` — 48 instances
-- `src/voip/manager.rs` — 26 instances
-- `src/matrix/verification.rs` — 24 instances
-- `src/matrix/rooms.rs` — 22 instances
-- `src/matrix/sync.rs` — 16 instances
+Added `WarnClosed` extension trait in `src/event.rs` to log channel-closed errors.
+~150 channel `.send()` calls now use `.warn_closed("VariantName")`. ~25 non-channel
+patterns (keyring, SDK ops, oneshot sends) got individual `if let Err(e)` treatment.
+~7 intentionally fire-and-forget instances left as-is (panic hook, app exit, log
+cleanup, terminal degradation, test helper).
 
 ### Checklist
 
-- [ ] Audit `src/main.rs` — classify each as ignorable / should-log / should-propagate
-- [ ] Audit `src/voip/manager.rs` — same classification
-- [ ] Audit `src/matrix/verification.rs` — same classification
-- [ ] Audit `src/matrix/rooms.rs` — same classification
-- [ ] Audit `src/matrix/sync.rs` — same classification
-- [ ] Audit remaining 11 files
-- [ ] Replace should-log instances with `.inspect_err(|e| error!("context: {e}"))`
-- [ ] Replace should-propagate instances with proper `?` propagation
+- [x] Audit `src/main.rs` — classify each as ignorable / should-log / should-propagate
+- [x] Audit `src/voip/manager.rs` — same classification
+- [x] Audit `src/matrix/verification.rs` — same classification
+- [x] Audit `src/matrix/rooms.rs` — same classification
+- [x] Audit `src/matrix/sync.rs` — same classification
+- [x] Audit remaining 11 files
+- [x] Replace should-log instances with `WarnClosed` trait / `if let Err(e)` logging
+- [x] Replace should-propagate instances with proper `?` propagation
 
 ---
 
@@ -137,6 +132,6 @@ and bug-prone modules have zero tests.
 
 1. ~~**Mutex panic risk** — smallest change, highest reliability impact~~ DONE
 2. **VoIP `unwrap_or_default()`** — prevents silent call failures
-3. **Audit `let _ =` patterns** — systematic pass, log or propagate
+3. ~~**Audit `let _ =` patterns** — systematic pass, log or propagate~~ DONE
 4. **Add tests for `input/command.rs`** — pure logic, highest ROI
 5. ~~**Split `app.rs`** — largest structural improvement~~ DONE

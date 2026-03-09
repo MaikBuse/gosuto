@@ -199,3 +199,16 @@ pub type EventReceiver = mpsc::UnboundedReceiver<AppEvent>;
 pub fn event_channel() -> (EventSender, EventReceiver) {
     mpsc::unbounded_channel()
 }
+
+/// Extension trait to log channel-closed errors instead of silently swallowing them.
+pub trait WarnClosed<T> {
+    fn warn_closed(self, context: &str);
+}
+
+impl<T> WarnClosed<T> for Result<(), mpsc::error::SendError<T>> {
+    fn warn_closed(self, context: &str) {
+        if self.is_err() {
+            tracing::warn!("{context}: channel closed");
+        }
+    }
+}
