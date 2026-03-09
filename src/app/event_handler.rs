@@ -73,6 +73,7 @@ impl App {
                     homeserver,
                 };
                 self.sync_status = "syncing...".to_string();
+                self.room_list.loading = true;
             }
             AppEvent::LoginFailure(err) => {
                 if matches!(self.auth, AuthState::AutoLoggingIn) {

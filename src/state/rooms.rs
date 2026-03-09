@@ -52,6 +52,7 @@ pub struct RoomListState {
     pub selected: usize,
     pub search_filter: Option<String>,
     pub room_call_members: HashMap<String, HashSet<String>>,
+    pub loading: bool,
     collapsed_spaces: HashMap<String, bool>,
 }
 
@@ -63,11 +64,15 @@ impl RoomListState {
             selected: 0,
             search_filter: None,
             room_call_members: HashMap::new(),
+            loading: false,
             collapsed_spaces: HashMap::new(),
         }
     }
 
     pub fn set_rooms(&mut self, rooms: Vec<RoomSummary>) {
+        if !rooms.is_empty() {
+            self.loading = false;
+        }
         self.rooms = rooms;
         self.rebuild_display_rows();
         if self.display_rows.is_empty() {

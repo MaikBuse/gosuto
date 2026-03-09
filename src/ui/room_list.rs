@@ -152,6 +152,23 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
         return;
     }
 
+    if app.room_list.loading && app.room_list.display_rows.is_empty() {
+        let anim = &app.room_list_anim;
+        let dots = match ((anim.pulse_phase / std::f32::consts::TAU * 3.0) as usize) % 3 {
+            0 => "·  ",
+            1 => "·· ",
+            _ => "···",
+        };
+        let text = format!("Loading rooms{dots}");
+        let style = theme::dim_style();
+        let text_width = text.chars().count() as u16;
+        let x = inner.x + inner.width.saturating_sub(text_width) / 2;
+        let y = inner.y + inner.height / 2;
+        let buf = frame.buffer_mut();
+        write_str_clipped(buf, x, y, &text, style, &inner, false);
+        return;
+    }
+
     let display_rows = &app.room_list.display_rows;
     let selected = app.room_list.selected;
     let anim = &app.room_list_anim;
