@@ -522,16 +522,7 @@ async fn main() -> Result<()> {
                                                 request.initial_state.push(enc_event.to_raw_any());
 
                                                 // Set call member event PL to 0 so both DM participants can use calls
-                                                use matrix_sdk::ruma::serde::Raw;
-                                                let pl_override = serde_json::json!({
-                                                    "events": {
-                                                        "m.call.member": 0,
-                                                        "org.matrix.msc3401.call.member": 0
-                                                    }
-                                                });
-                                                request.power_level_content_override = Some(
-                                                    Raw::from_json(serde_json::value::to_raw_value(&pl_override).expect("valid JSON"))
-                                                );
+                                                request.power_level_content_override = Some(matrix::rooms::call_power_level_override());
 
                                                 match client.create_room(request).await {
                                                     Ok(response) => {
@@ -596,16 +587,7 @@ async fn main() -> Result<()> {
                                     }
 
                                     // Set call member event PL to 0 so all participants can use calls
-                                    use matrix_sdk::ruma::serde::Raw;
-                                    let pl_override = serde_json::json!({
-                                        "events": {
-                                            "m.call.member": 0,
-                                            "org.matrix.msc3401.call.member": 0
-                                        }
-                                    });
-                                    request.power_level_content_override = Some(
-                                        Raw::from_json(serde_json::value::to_raw_value(&pl_override).expect("valid JSON"))
-                                    );
+                                    request.power_level_content_override = Some(matrix::rooms::call_power_level_override());
 
                                     match client.create_room(request).await {
                                         Ok(response) => {

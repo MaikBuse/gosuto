@@ -7,10 +7,23 @@ use matrix_sdk::ruma::events::room::history_visibility::HistoryVisibility;
 use matrix_sdk::ruma::events::space::child::SpaceChildEventContent;
 use tracing::{error, warn};
 
+use matrix_sdk::ruma::events::room::power_levels::RoomPowerLevelsEventContent;
+use matrix_sdk::ruma::serde::Raw;
+
 use crate::event::AppEvent;
 use crate::event::EventSender;
 use crate::event::WarnClosed;
 use crate::state::{RoomCategory, RoomMember, RoomSummary};
+
+pub fn call_power_level_override() -> Raw<RoomPowerLevelsEventContent> {
+    let pl = serde_json::json!({
+        "events": {
+            "m.call.member": 0,
+            "org.matrix.msc3401.call.member": 0
+        }
+    });
+    Raw::from_json(serde_json::value::to_raw_value(&pl).expect("valid JSON"))
+}
 
 pub async fn get_room_list(client: &Client) -> Vec<RoomSummary> {
     let joined = client.joined_rooms();
