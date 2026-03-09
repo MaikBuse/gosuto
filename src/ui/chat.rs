@@ -189,6 +189,28 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
                     ]));
                 }
 
+                // Prepend reply quote line if this message is a reply
+                if let Some(ref reply) = msg.in_reply_to {
+                    let reply_line = if reply.sender.is_empty() {
+                        Line::from(vec![
+                            Span::styled("     ", theme::dim_style()),
+                            Span::styled("| ", theme::reply_indicator_style()),
+                            Span::styled("[unknown message]", theme::dim_style()),
+                        ])
+                    } else {
+                        Line::from(vec![
+                            Span::styled("     ", theme::dim_style()),
+                            Span::styled("| ", theme::reply_indicator_style()),
+                            Span::styled(
+                                format!("{}: ", reply.sender),
+                                Style::default().fg(theme::sender_color(&reply.sender)),
+                            ),
+                            Span::styled(reply.body_preview.clone(), theme::dim_style()),
+                        ])
+                    };
+                    lines.insert(0, reply_line);
+                }
+
                 segments.push(ChatSegment::TextMessage {
                     lines,
                     msg_index: idx,

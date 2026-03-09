@@ -34,6 +34,28 @@ use crate::ui::room_list::RoomListAnimState;
 use crate::voip::audio::AudioPipeline;
 use crate::voip::{CallCommand, CallCommandSender, CallInfo, CallState};
 
+#[derive(Debug, Clone)]
+pub struct ReplyContext {
+    pub event_id: String,
+    pub sender: String,
+    pub body_preview: String,
+}
+
+pub(crate) fn truncate_preview(text: &str, max_len: usize) -> String {
+    let first_line = text.lines().next().unwrap_or("");
+    if first_line.len() <= max_len {
+        first_line.to_string()
+    } else {
+        format!("{}...", &first_line[..max_len])
+    }
+}
+
+pub struct PendingSend {
+    pub room_id: String,
+    pub body: String,
+    pub reply_to: Option<ReplyContext>,
+}
+
 pub struct App {
     pub running: bool,
     pub vim: VimState,
@@ -49,10 +71,11 @@ pub struct App {
     // Pending actions for main loop to process
     pub pending_logout: bool,
     pub pending_refetch: bool,
-    pending_send: Option<(String, String)>, // (room_id, body)
-    pending_join: Option<String>,           // room_id_or_alias
-    pending_leave: Option<String>,          // room_id
-    pending_dm: Option<String>,             // user_id
+    pending_send: Option<PendingSend>,
+    pub reply_context: Option<ReplyContext>,
+    pending_join: Option<String>,  // room_id_or_alias
+    pending_leave: Option<String>, // room_id
+    pending_dm: Option<String>,    // user_id
     pending_create_room: Option<CreateRoomParams>,
     pub pending_room_info: bool,
     pub pending_set_visibility: Option<(String, String)>, // (room_id, visibility)
@@ -147,6 +170,7 @@ impl App {
             pending_logout: false,
             pending_refetch: false,
             pending_send: None,
+            reply_context: None,
             pending_join: None,
             pending_leave: None,
             pending_dm: None,
@@ -214,6 +238,13 @@ impl App {
                 _ => "me".to_string(),
             };
 
+            let reply_to = self.reply_context.take();
+            let in_reply_to = reply_to.as_ref().map(|r| crate::state::ReplyInfo {
+                event_id: r.event_id.clone(),
+                sender: r.sender.clone(),
+                body_preview: r.body_preview.clone(),
+            });
+
             // Add optimistic message
             let msg = crate::state::DisplayMessage {
                 event_id: String::new(),
@@ -224,12 +255,17 @@ impl App {
                 is_notice: false,
                 pending: true,
                 verified: None,
+                in_reply_to,
             };
             self.messages.add_message(msg);
             self.messages.scroll_to_bottom();
 
             // Queue for main loop to send
-            self.pending_send = Some((room_id, body));
+            self.pending_send = Some(PendingSend {
+                room_id,
+                body,
+                reply_to,
+            });
         }
     }
 
@@ -258,7 +294,7 @@ impl App {
         )
     }
 
-    pub fn take_pending_send(&mut self) -> Option<(String, String)> {
+    pub fn take_pending_send(&mut self) -> Option<PendingSend> {
         self.pending_send.take()
     }
 

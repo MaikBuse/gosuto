@@ -85,6 +85,17 @@ pub async fn start_sync(
                     spawn_image_fetch(&room.client(), event.event_id.to_string(), img, &tx);
                 }
 
+                let in_reply_to = match &event.content.relates_to {
+                    Some(matrix_sdk::ruma::events::room::message::Relation::Reply {
+                        in_reply_to,
+                    }) => Some(crate::state::ReplyInfo {
+                        event_id: in_reply_to.event_id.to_string(),
+                        sender: String::new(),
+                        body_preview: String::new(),
+                    }),
+                    _ => None,
+                };
+
                 let msg = crate::state::DisplayMessage {
                     event_id: event.event_id.to_string(),
                     sender,
@@ -94,6 +105,7 @@ pub async fn start_sync(
                     is_notice,
                     pending: false,
                     verified: None,
+                    in_reply_to,
                 };
 
                 tx.send(AppEvent::NewMessage {

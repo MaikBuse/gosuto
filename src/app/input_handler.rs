@@ -19,7 +19,9 @@ impl App {
             InputResult::Quit | InputResult::Command(CommandAction::Quit) => {
                 self.running = false;
             }
-            InputResult::Escape => {}
+            InputResult::Escape => {
+                self.reply_context = None;
+            }
             InputResult::MoveUp => match self.vim.focus {
                 FocusPanel::RoomList => self.room_list.move_up(),
                 FocusPanel::Messages => self.messages.select_up(),
@@ -145,6 +147,22 @@ impl App {
             }
             InputResult::ShowWhichKey => {
                 self.which_key = Some(None);
+            }
+            InputResult::ReplyToSelected => {
+                if let Some(idx) = self.messages.selected_index
+                    && let Some(msg) = self.messages.messages.get(idx)
+                {
+                    if msg.event_id.is_empty() {
+                        return; // can't reply to pending messages
+                    }
+                    self.reply_context = Some(ReplyContext {
+                        event_id: msg.event_id.clone(),
+                        sender: msg.sender.clone(),
+                        body_preview: truncate_preview(msg.body_text(), 50),
+                    });
+                    self.messages.deselect();
+                    self.vim.enter_insert();
+                }
             }
             InputResult::VerifyMember => {
                 if self.verification_modal.is_some() {

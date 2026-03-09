@@ -54,6 +54,17 @@ pub async fn fetch_messages(
                     _ => continue,
                 };
 
+                let in_reply_to = match &content.relates_to {
+                    Some(matrix_sdk::ruma::events::room::message::Relation::Reply {
+                        in_reply_to,
+                    }) => Some(crate::state::ReplyInfo {
+                        event_id: in_reply_to.event_id.to_string(),
+                        sender: String::new(),
+                        body_preview: String::new(),
+                    }),
+                    _ => None,
+                };
+
                 let parsed = parse_message_type(&content.msgtype);
                 let ParsedMessage::Message {
                     content: msg_content,
@@ -78,6 +89,7 @@ pub async fn fetch_messages(
                     is_notice,
                     pending: false,
                     verified: None,
+                    in_reply_to,
                 });
             }
             Ok(matrix_sdk::ruma::events::AnySyncTimelineEvent::MessageLike(
@@ -106,6 +118,7 @@ pub async fn fetch_messages(
                     is_notice: false,
                     pending: false,
                     verified: None,
+                    in_reply_to: None,
                 });
             }
             _ => {
@@ -141,8 +154,11 @@ pub async fn send_message(
     client: &Client,
     room_id: &str,
     body: &str,
+    reply_to: Option<(&str, &str)>,
     tx: &EventSender,
 ) -> Result<()> {
+    use matrix_sdk::ruma::events::room::message::{AddMentions, ForwardThread, ReplyMetadata};
+
     let room_id_parsed: matrix_sdk::ruma::OwnedRoomId = room_id.try_into()?;
     let room = client
         .get_room(&room_id_parsed)
@@ -157,6 +173,14 @@ pub async fn send_message(
         RoomMessageEventContent::text_html(body, html_body)
     } else {
         RoomMessageEventContent::text_plain(body)
+    };
+    let content = if let Some((reply_eid_str, reply_sender_str)) = reply_to {
+        let reply_eid: matrix_sdk::ruma::OwnedEventId = reply_eid_str.try_into()?;
+        let reply_sender: matrix_sdk::ruma::OwnedUserId = reply_sender_str.try_into()?;
+        let metadata = ReplyMetadata::new(&reply_eid, &reply_sender, None);
+        content.make_reply_to(metadata, ForwardThread::Yes, AddMentions::No)
+    } else {
+        content
     };
     match room.send(content).await {
         Ok(response) => {

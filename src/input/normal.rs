@@ -34,7 +34,13 @@ pub fn handle_normal(key: KeyEvent, vim: &mut VimState) -> InputResult {
         KeyCode::Char('v') if vim.focus == FocusPanel::Members => InputResult::VerifyMember,
         KeyCode::Char('c') => InputResult::CallMember,
         KeyCode::Char('a') => InputResult::AnswerCall,
-        KeyCode::Char('r') => InputResult::RejectCall,
+        KeyCode::Char('r') => {
+            if vim.focus == FocusPanel::Messages {
+                InputResult::ReplyToSelected
+            } else {
+                InputResult::RejectCall
+            }
+        }
         KeyCode::Tab => InputResult::SwitchPanel,
         KeyCode::Char('l') => InputResult::FocusRight,
         KeyCode::Char('h') => InputResult::FocusLeft,
@@ -241,8 +247,17 @@ mod tests {
     #[test]
     fn r_rejects_call() {
         let mut vim = VimState::new();
+        vim.focus = FocusPanel::RoomList;
         let result = handle_normal(key(KeyCode::Char('r')), &mut vim);
         assert!(matches!(result, InputResult::RejectCall));
+    }
+
+    #[test]
+    fn r_replies_when_messages_focused() {
+        let mut vim = VimState::new();
+        vim.focus = FocusPanel::Messages;
+        let result = handle_normal(key(KeyCode::Char('r')), &mut vim);
+        assert!(matches!(result, InputResult::ReplyToSelected));
     }
 
     #[test]

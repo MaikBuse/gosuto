@@ -363,10 +363,11 @@ async fn main() -> Result<()> {
                         }
 
                         // Handle message sending
-                        if let Some((room_id, body)) = app.take_pending_send() {
+                        if let Some(pending) = app.take_pending_send() {
                             let tx = event_tx.clone();
                             spawn_with_client!(matrix_client, |client| async move {
-                                if let Err(e) = matrix::messages::send_message(&client, &room_id, &body, &tx).await {
+                                let reply_to = pending.reply_to.as_ref().map(|r| (r.event_id.as_str(), r.sender.as_str()));
+                                if let Err(e) = matrix::messages::send_message(&client, &pending.room_id, &pending.body, reply_to, &tx).await {
                                     error!("Failed to send message: {}", e);
                                 }
                             });

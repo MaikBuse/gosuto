@@ -1,7 +1,7 @@
 use ratatui::{
     Frame,
     layout::Rect,
-    style::Style,
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
 };
@@ -29,7 +29,7 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
                 let search = format!("/{}", app.vim.search_query);
                 (search, theme::CYAN)
             } else if app.vim.focus == FocusPanel::Messages {
-                ("j/k: navigate, Enter: select".to_string(), theme::DIM)
+                ("j/k: navigate, r: reply".to_string(), theme::DIM)
             } else if app.vim.focus == FocusPanel::Members {
                 ("Enter: dm, c: call, v: verify".to_string(), theme::DIM)
             } else {
@@ -79,18 +79,34 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
             ])]
         };
 
-    let paragraph = Paragraph::new(text_lines).block(block);
+    let mut all_lines = Vec::new();
+    if let Some(ref ctx) = app.reply_context {
+        all_lines.push(Line::from(vec![
+            Span::styled(" Replying to ", theme::reply_indicator_style()),
+            Span::styled(
+                &ctx.sender,
+                Style::default()
+                    .fg(theme::sender_color(&ctx.sender))
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(format!("  {}", ctx.body_preview), theme::dim_style()),
+        ]));
+    }
+    all_lines.extend(text_lines);
+
+    let paragraph = Paragraph::new(all_lines).block(block);
 
     frame.render_widget(paragraph, area);
 
     // Show cursor in insert/command mode
     if app.vim.mode == VimMode::Insert || app.vim.mode == VimMode::Command || app.vim.searching {
+        let reply_offset: u16 = if app.reply_context.is_some() { 1 } else { 0 };
         let (cursor_x, cursor_y) = match app.vim.mode {
             VimMode::Insert => {
                 let (row, col) = app.vim.cursor_row_col();
                 let line_prefix_len = if row == 0 { prefix.len() } else { 2 }; // "  " for continuation
                 let x = area.x + 1 + line_prefix_len as u16 + col as u16;
-                let y = area.y + 1 + row as u16;
+                let y = area.y + 1 + reply_offset + row as u16;
                 (x, y)
             }
             VimMode::Command => {

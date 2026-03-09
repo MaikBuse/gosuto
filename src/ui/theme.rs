@@ -35,6 +35,7 @@ pub const MUTED: Color = Color::Rgb(60, 60, 80);
 pub const BAR_EMPTY: Color = Color::Rgb(40, 40, 50);
 pub const METER_EMPTY: Color = Color::Rgb(30, 30, 40);
 pub const MESSAGE_SELECT_BG: Color = Color::Rgb(25, 30, 50);
+pub const REPLY_INDICATOR: Color = Color::Rgb(100, 180, 255);
 
 // Composite styles
 pub fn border_style() -> Style {
@@ -132,6 +133,10 @@ pub fn highlight_unfocused_style() -> Style {
 
 pub fn message_selected_style() -> Style {
     Style::default().bg(MESSAGE_SELECT_BG)
+}
+
+pub fn reply_indicator_style() -> Style {
+    Style::default().fg(REPLY_INDICATOR)
 }
 
 pub fn loading_style() -> Style {

@@ -141,8 +141,21 @@ impl App {
                     self.room_list.clear_unread(current_id);
                 }
             }
-            AppEvent::NewMessage { room_id, message } => {
+            AppEvent::NewMessage {
+                room_id,
+                mut message,
+            } => {
                 if self.messages.current_room_id.as_deref() == Some(&room_id) {
+                    if let Some(ref mut reply) = message.in_reply_to
+                        && let Some(original) = self
+                            .messages
+                            .messages
+                            .iter()
+                            .find(|m| m.event_id == reply.event_id)
+                    {
+                        reply.sender = original.sender.clone();
+                        reply.body_preview = truncate_preview(original.body_text(), 50);
+                    }
                     let eid = message.event_id.clone();
                     self.messages.add_message(message);
                     self.pending_read_receipt = Some((room_id.clone(), Some(eid)));
@@ -156,6 +169,28 @@ impl App {
                 if self.messages.current_room_id.as_deref() == Some(&room_id) {
                     let last_event_id = messages.last().map(|m| m.event_id.clone());
                     self.messages.prepend_messages(messages, has_more);
+                    // Resolve reply info from local messages
+                    let resolutions: HashMap<String, (String, String)> = self
+                        .messages
+                        .messages
+                        .iter()
+                        .filter(|m| !m.event_id.is_empty())
+                        .map(|m| {
+                            (
+                                m.event_id.clone(),
+                                (m.sender.clone(), truncate_preview(m.body_text(), 50)),
+                            )
+                        })
+                        .collect();
+                    for msg in &mut self.messages.messages {
+                        if let Some(ref mut reply) = msg.in_reply_to
+                            && reply.sender.is_empty()
+                            && let Some((sender, preview)) = resolutions.get(&reply.event_id)
+                        {
+                            reply.sender.clone_from(sender);
+                            reply.body_preview.clone_from(preview);
+                        }
+                    }
                     self.pending_read_receipt = Some((room_id.clone(), last_event_id));
                 }
             }

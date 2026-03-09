@@ -16,7 +16,7 @@ pub use change_password::{ChangePasswordAction, ChangePasswordState};
 pub use create_room::{CreateRoomAction, CreateRoomParams, CreateRoomState};
 pub use image_cache::ImageCache;
 pub use members::{MemberListState, RoomMember};
-pub use messages::{DisplayMessage, MessageContent, MessageState};
+pub use messages::{DisplayMessage, MessageContent, MessageState, ReplyInfo};
 pub use recovery::{
     HealingStep, RecoveryAction, RecoveryModalState, RecoveryStage, RecoveryTransition,
     recovery_key_action,

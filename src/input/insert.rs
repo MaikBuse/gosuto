@@ -11,7 +11,7 @@ pub fn handle_insert(key: KeyEvent, vim: &mut VimState) -> InputResult {
     match key.code {
         KeyCode::Esc => {
             vim.enter_normal();
-            InputResult::None
+            InputResult::Escape
         }
         KeyCode::Enter if key.modifiers.contains(KeyModifiers::ALT) => {
             vim.insert_char('\n');
@@ -55,7 +55,7 @@ mod tests {
         let mut vim = VimState::new();
         vim.enter_insert();
         let result = handle_insert(key(KeyCode::Esc), &mut vim);
-        assert!(matches!(result, InputResult::None));
+        assert!(matches!(result, InputResult::Escape));
         assert_eq!(vim.mode, VimMode::Normal);
     }
 

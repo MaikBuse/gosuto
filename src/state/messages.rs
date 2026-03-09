@@ -1,6 +1,13 @@
 use chrono::{DateTime, Local};
 
 #[derive(Debug, Clone)]
+pub struct ReplyInfo {
+    pub event_id: String,
+    pub sender: String,
+    pub body_preview: String,
+}
+
+#[derive(Debug, Clone)]
 pub enum MessageContent {
     Text(String),
     Image {
@@ -20,6 +27,7 @@ pub struct DisplayMessage {
     pub is_notice: bool,
     pub pending: bool,
     pub verified: Option<bool>,
+    pub in_reply_to: Option<ReplyInfo>,
 }
 
 impl DisplayMessage {
@@ -174,6 +182,7 @@ mod tests {
             is_notice: false,
             pending,
             verified: None,
+            in_reply_to: None,
         }
     }
 
