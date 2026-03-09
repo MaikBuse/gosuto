@@ -103,7 +103,6 @@ pub struct App {
     pub picker: ratatui_image::picker::Picker,
     pub image_cache: ImageCache,
     pub image_decode_tx: std::sync::mpsc::Sender<ImageDecodeResult>,
-    pub demo_mode: bool,
     // Recovery
     pub recovery: Option<RecoveryModalState>,
     pub pending_recovery: Option<RecoveryAction>,
@@ -188,7 +187,6 @@ impl App {
             picker,
             image_cache: ImageCache::new(),
             image_decode_tx,
-            demo_mode: false,
             recovery: None,
             pending_recovery: None,
             verification_modal: None,

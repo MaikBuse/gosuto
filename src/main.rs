@@ -2,7 +2,6 @@
 
 mod app;
 mod config;
-mod demo;
 mod event;
 mod fs_utils;
 mod global_ptt;
@@ -17,7 +16,6 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
-use chrono::Local;
 use crossterm::event::{Event, EventStream, KeyEventKind};
 use tokio::sync::Mutex;
 use tokio_stream::StreamExt;
@@ -127,8 +125,6 @@ async fn main() -> Result<()> {
     let (image_decode_tx, image_decode_rx) = std::sync::mpsc::channel();
     let mut app = App::new(event_tx.clone(), gosuto_config, picker, image_decode_tx);
 
-    let demo_mode = demo::is_demo_mode();
-
     // Shared Matrix client
     let matrix_client: Arc<Mutex<Option<matrix_sdk::Client>>> = Arc::new(Mutex::new(None));
 
@@ -139,68 +135,59 @@ async fn main() -> Result<()> {
     let (call_cmd_tx, call_cmd_rx) = voip::manager::command_channel();
     app.call_cmd_tx = Some(call_cmd_tx.clone());
 
-    if demo_mode {
-        info!("Starting in demo mode");
-        app.demo_mode = true;
-        app.login.homeserver = "https://gosuto.dev".to_string();
-        app.login.username = "ghost".to_string();
-        app.login.password = "demo".to_string();
-    } else {
-        // Try to restore session
-        match matrix::client::try_restore_session(&event_tx, accept_invalid_certs).await {
-            Ok(Some(client)) => {
-                *matrix_client.lock().await = Some(client.clone());
-                let tx = event_tx.clone();
-                let iv = incoming_verification.clone();
-                let cmd_tx = call_cmd_tx.clone();
-                tokio::spawn(async move {
-                    if let Err(e) =
-                        matrix::sync::start_sync(client, tx.clone(), iv, Some(cmd_tx)).await
-                    {
-                        error!("Sync error: {}", e);
-                        tx.send(AppEvent::SyncError(e.to_string()))
-                            .warn_closed("SyncError");
-                    }
-                });
+    // Try to restore session
+    match matrix::client::try_restore_session(&event_tx, accept_invalid_certs).await {
+        Ok(Some(client)) => {
+            *matrix_client.lock().await = Some(client.clone());
+            let tx = event_tx.clone();
+            let iv = incoming_verification.clone();
+            let cmd_tx = call_cmd_tx.clone();
+            tokio::spawn(async move {
+                if let Err(e) = matrix::sync::start_sync(client, tx.clone(), iv, Some(cmd_tx)).await
+                {
+                    error!("Sync error: {}", e);
+                    tx.send(AppEvent::SyncError(e.to_string()))
+                        .warn_closed("SyncError");
+                }
+            });
+        }
+        Ok(None) => {
+            info!("No stored session found");
+            if let Some(creds) = matrix::credentials::load_credentials() {
+                event_tx
+                    .send(AppEvent::AutoLogin {
+                        homeserver: creds.homeserver,
+                        username: creds.username,
+                        password: creds.password,
+                    })
+                    .warn_closed("AutoLogin");
             }
-            Ok(None) => {
-                info!("No stored session found");
-                if let Some(creds) = matrix::credentials::load_credentials() {
-                    event_tx
-                        .send(AppEvent::AutoLogin {
-                            homeserver: creds.homeserver,
-                            username: creds.username,
-                            password: creds.password,
-                        })
-                        .warn_closed("AutoLogin");
+        }
+        Err(e) => {
+            info!("Failed to restore session: {}", e);
+            // Clean up stale session and store to avoid repeated failures
+            if let Ok(session_path) = config::session_path() {
+                if let Ok(stored) = matrix::session::load_session(&session_path)
+                    && let Ok(store_path) =
+                        config::store_path_for_homeserver_unchecked(&stored.homeserver)
+                {
+                    info!("Removing stale store at {}", store_path.display());
+                    if let Err(e) = std::fs::remove_dir_all(&store_path) {
+                        info!("Could not remove store: {}", e);
+                    }
+                }
+                if let Err(e) = matrix::session::delete_session(&session_path) {
+                    tracing::warn!("Failed to delete session: {e}");
                 }
             }
-            Err(e) => {
-                info!("Failed to restore session: {}", e);
-                // Clean up stale session and store to avoid repeated failures
-                if let Ok(session_path) = config::session_path() {
-                    if let Ok(stored) = matrix::session::load_session(&session_path)
-                        && let Ok(store_path) =
-                            config::store_path_for_homeserver_unchecked(&stored.homeserver)
-                    {
-                        info!("Removing stale store at {}", store_path.display());
-                        if let Err(e) = std::fs::remove_dir_all(&store_path) {
-                            info!("Could not remove store: {}", e);
-                        }
-                    }
-                    if let Err(e) = matrix::session::delete_session(&session_path) {
-                        tracing::warn!("Failed to delete session: {e}");
-                    }
-                }
-                if let Some(creds) = matrix::credentials::load_credentials() {
-                    event_tx
-                        .send(AppEvent::AutoLogin {
-                            homeserver: creds.homeserver,
-                            username: creds.username,
-                            password: creds.password,
-                        })
-                        .warn_closed("AutoLogin");
-                }
+            if let Some(creds) = matrix::credentials::load_credentials() {
+                event_tx
+                    .send(AppEvent::AutoLogin {
+                        homeserver: creds.homeserver,
+                        username: creds.username,
+                        password: creds.password,
+                    })
+                    .warn_closed("AutoLogin");
             }
         }
     }
@@ -247,17 +234,15 @@ async fn main() -> Result<()> {
     let mic_active = app.mic_active.clone();
 
     // Spawn CallManager
-    if !demo_mode {
-        let call_manager = voip::manager::CallManager::new(
-            call_cmd_rx,
-            event_tx.clone(),
-            matrix_client.clone(),
-            shared_audio_config.clone(),
-            ptt_transmitting,
-            mic_active,
-        );
-        tokio::spawn(call_manager.run());
-    }
+    let call_manager = voip::manager::CallManager::new(
+        call_cmd_rx,
+        event_tx.clone(),
+        matrix_client.clone(),
+        shared_audio_config.clone(),
+        ptt_transmitting,
+        mic_active,
+    );
+    tokio::spawn(call_manager.run());
 
     // Spawn global PTT listener when push-to-talk is enabled
     if app.config.audio.push_to_talk {
@@ -312,17 +297,6 @@ async fn main() -> Result<()> {
                             while image_decode_rx.try_recv().is_ok() {}
 
                             if let Some(ref room_id) = new_room {
-                                if demo_mode {
-                                    event_tx.send(AppEvent::MessagesLoaded {
-                                        room_id: room_id.clone(),
-                                        messages: demo::demo_messages_for_room(room_id),
-                                        has_more: false,
-                                    }).warn_closed("MessagesLoaded");
-                                    event_tx.send(AppEvent::MembersLoaded {
-                                        room_id: room_id.clone(),
-                                        members: demo::demo_members_for_room(room_id),
-                                    }).warn_closed("MembersLoaded");
-                                } else {
                                 // Fetch messages
                                 let client_holder = matrix_client.clone();
                                 let tx = event_tx.clone();
@@ -359,16 +333,13 @@ async fn main() -> Result<()> {
                                 spawn_with_client!(matrix_client, |client| async move {
                                     matrix::rooms::mark_room_as_read(&client, &rid3, None).await;
                                 });
-                                } // else (not demo_mode)
                             }
                         }
 
                         // Re-fetch messages after verification
                         if app.pending_refetch {
                             app.pending_refetch = false;
-                            if !demo_mode
-                                && let Some(ref room_id) = app.messages.current_room_id.clone()
-                            {
+                            if let Some(ref room_id) = app.messages.current_room_id.clone() {
                                 app.messages.messages.clear();
                                 app.messages.loading = true;
                                 let tx = event_tx.clone();
@@ -388,26 +359,16 @@ async fn main() -> Result<()> {
 
                         // Handle message sending
                         if let Some((room_id, body)) = app.take_pending_send() {
-                            if demo_mode {
-                                event_tx.send(AppEvent::MessageSent {
-                                    room_id,
-                                    event_id: format!("$demo_{}", Local::now().timestamp_nanos_opt().unwrap_or(0)),
-                                    body,
-                                }).warn_closed("MessageSent");
-                            } else {
                             let tx = event_tx.clone();
                             spawn_with_client!(matrix_client, |client| async move {
                                 if let Err(e) = matrix::messages::send_message(&client, &room_id, &body, &tx).await {
                                     error!("Failed to send message: {}", e);
                                 }
                             });
-                            }
                         }
 
                         // Handle outgoing typing notice
-                        if let Some((room_id, typing)) = app.take_pending_typing_notice()
-                            && !demo_mode
-                        {
+                        if let Some((room_id, typing)) = app.take_pending_typing_notice() {
                             spawn_with_client!(matrix_client, |client| async move {
                                 let room_id_parsed: Result<matrix_sdk::ruma::OwnedRoomId, _> = room_id.as_str().try_into();
                                 if let Ok(id) = room_id_parsed
@@ -420,9 +381,7 @@ async fn main() -> Result<()> {
                         }
 
                         // Handle read receipt for new messages in open room
-                        if let Some((room_id, event_id)) = app.pending_read_receipt.take()
-                            && !demo_mode
-                        {
+                        if let Some((room_id, event_id)) = app.pending_read_receipt.take() {
                             spawn_with_client!(matrix_client, |client| async move {
                                 matrix::rooms::mark_room_as_read(&client, &room_id, event_id.as_deref()).await;
                             });
@@ -431,9 +390,6 @@ async fn main() -> Result<()> {
                         // Handle logout
                         if app.pending_logout {
                             app.pending_logout = false;
-                            if demo_mode {
-                                app.running = false;
-                            } else {
                             let client_holder = matrix_client.clone();
                             let tx = event_tx.clone();
                             tokio::spawn(async move {
@@ -445,14 +401,10 @@ async fn main() -> Result<()> {
                                 }
                                 tx.send(AppEvent::LoggedOut).warn_closed("LoggedOut");
                             });
-                            }
                         }
 
                         // Handle room join
                         if let Some(room_id) = app.take_pending_join() {
-                            if demo_mode {
-                                app.last_error = Some("Not available in demo mode".to_string());
-                            } else {
                             let tx = event_tx.clone();
                             spawn_with_client!(matrix_client, |client| async move {
                                 let room_id_parsed: Result<matrix_sdk::ruma::OwnedRoomOrAliasId, _> = room_id.as_str().try_into();
@@ -467,53 +419,8 @@ async fn main() -> Result<()> {
                                     }
                                 }
                             });
-                            }
                         }
 
-                        // Handle pending DM, room creation, leave, user config,
-                        // room info, visibility, topic, name, encryption, verification
-                        if demo_mode {
-                            // In demo mode, consume and discard server-dependent pending actions
-                            if app.take_pending_dm().is_some()
-                                || app.take_pending_create_room().is_some()
-                                || app.take_pending_leave().is_some()
-                                || app.take_pending_accept_invite().is_some()
-                                || app.take_pending_decline_invite().is_some()
-                                || app.take_pending_invite_user().is_some()
-                            {
-                                app.last_error = Some("Not available in demo mode".to_string());
-                            }
-                            if app.pending_user_config {
-                                app.pending_user_config = false;
-                                event_tx.send(AppEvent::UserConfigLoaded {
-                                    display_name: Some("Ghost".to_string()),
-                                    verified: true,
-                                    recovery_status: crate::event::RecoveryStatus::Disabled,
-                                }).warn_closed("UserConfigLoaded");
-                            }
-                            app.pending_set_display_name.take();
-                            app.pending_change_password.take();
-                            if app.pending_room_info {
-                                app.pending_room_info = false;
-                                let rid = app.room_info.room_id.clone();
-                                event_tx.send(AppEvent::RoomInfoLoaded {
-                                    room_id: rid,
-                                    name: Some("Demo Room".to_string()),
-                                    topic: Some("A demo room".to_string()),
-                                    history_visibility: "shared".to_string(),
-                                    encrypted: true,
-                                }).warn_closed("RoomInfoLoaded");
-                            }
-                            app.pending_set_visibility.take();
-                            app.pending_set_room_topic.take();
-                            app.pending_set_room_name.take();
-                            app.pending_enable_encryption.take();
-                            app.take_pending_verify();
-                            if app.pending_recovery.take().is_some() {
-                                app.last_error = Some("Not available in demo mode".to_string());
-                                app.recovery = None;
-                            }
-                        } else {
                         // Handle pending DM
                         if let Some(user_id_str) = app.take_pending_dm() {
                             let tx = event_tx.clone();
@@ -858,7 +765,6 @@ async fn main() -> Result<()> {
                                 app.verify_task_handle = Some(handle);
                             }
                         }
-                        } // !demo_mode
                     }
                     None => break,
                 }
@@ -868,64 +774,44 @@ async fn main() -> Result<()> {
 
         // Check for login trigger
         if app.is_logging_in() && !login_in_progress {
-            if demo_mode {
-                event_tx
-                    .send(AppEvent::LoginSuccess {
-                        user_id: "@ghost:gosuto.dev".to_string(),
-                        device_id: "DEMO_DEVICE".to_string(),
-                        homeserver: "https://gosuto.dev".to_string(),
-                    })
-                    .warn_closed("LoginSuccess");
-                event_tx
-                    .send(AppEvent::RoomListUpdated(demo::demo_rooms()))
-                    .warn_closed("RoomListUpdated");
-                event_tx
-                    .send(AppEvent::SyncStatus("demo mode".to_string()))
-                    .warn_closed("SyncStatus");
-            } else {
-                login_in_progress = true;
-                let (homeserver, username, password) = app.login_credentials();
-                let tx = event_tx.clone();
-                let client_holder = matrix_client.clone();
-                let iv = incoming_verification.clone();
-                let cmd_tx = call_cmd_tx.clone();
-                tokio::spawn(async move {
-                    match matrix::client::login(
-                        &homeserver,
-                        &username,
-                        &password,
-                        &tx,
-                        accept_invalid_certs,
-                    )
-                    .await
-                    {
-                        Ok(client) => {
-                            *client_holder.lock().await = Some(client.clone());
-                            let sync_tx = tx.clone();
-                            tokio::spawn(async move {
-                                if let Err(e) = matrix::sync::start_sync(
-                                    client,
-                                    sync_tx.clone(),
-                                    iv,
-                                    Some(cmd_tx),
-                                )
-                                .await
-                                {
-                                    error!("Sync error: {}", e);
-                                    sync_tx
-                                        .send(AppEvent::SyncError(e.to_string()))
-                                        .warn_closed("SyncError");
-                                }
-                            });
-                        }
-                        Err(e) => {
-                            error!("Login failed: {:#}", e);
-                            tx.send(AppEvent::LoginFailure(e.to_string()))
-                                .warn_closed("LoginFailure");
-                        }
+            login_in_progress = true;
+            let (homeserver, username, password) = app.login_credentials();
+            let tx = event_tx.clone();
+            let client_holder = matrix_client.clone();
+            let iv = incoming_verification.clone();
+            let cmd_tx = call_cmd_tx.clone();
+            tokio::spawn(async move {
+                match matrix::client::login(
+                    &homeserver,
+                    &username,
+                    &password,
+                    &tx,
+                    accept_invalid_certs,
+                )
+                .await
+                {
+                    Ok(client) => {
+                        *client_holder.lock().await = Some(client.clone());
+                        let sync_tx = tx.clone();
+                        tokio::spawn(async move {
+                            if let Err(e) =
+                                matrix::sync::start_sync(client, sync_tx.clone(), iv, Some(cmd_tx))
+                                    .await
+                            {
+                                error!("Sync error: {}", e);
+                                sync_tx
+                                    .send(AppEvent::SyncError(e.to_string()))
+                                    .warn_closed("SyncError");
+                            }
+                        });
                     }
-                });
-            }
+                    Err(e) => {
+                        error!("Login failed: {:#}", e);
+                        tx.send(AppEvent::LoginFailure(e.to_string()))
+                            .warn_closed("LoginFailure");
+                    }
+                }
+            });
         }
 
         // Reset login tracking when auth state changes away from LoggingIn
@@ -934,7 +820,7 @@ async fn main() -> Result<()> {
         }
 
         // Check for registration trigger
-        if !demo_mode && app.is_registering() && !registration_in_progress {
+        if app.is_registering() && !registration_in_progress {
             registration_in_progress = true;
             let (homeserver, username, password, token) = app.registration_credentials();
             let tx = event_tx.clone();
