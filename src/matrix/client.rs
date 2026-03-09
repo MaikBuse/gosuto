@@ -17,6 +17,14 @@ use crate::config;
 use crate::event::{AppEvent, EventSender, WarnClosed};
 use crate::matrix::session::{self, StoredSession};
 
+fn warn_if_insecure_url(url: &str) {
+    if url.starts_with("http://") {
+        warn!(
+            "Connecting over unencrypted HTTP — credentials and messages will be sent in plaintext"
+        );
+    }
+}
+
 async fn build_client_with_fallback(
     homeserver: &str,
     store_path: &std::path::Path,
@@ -27,6 +35,9 @@ async fn build_client_with_fallback(
         .sqlite_store(store_path, None)
         .with_encryption_settings(encryption_settings());
     if accept_invalid_certs {
+        warn!(
+            "TLS certificate verification is DISABLED — connections are vulnerable to MITM attacks"
+        );
         builder = builder.disable_ssl_verification();
     }
     match builder.build().await {
@@ -101,6 +112,7 @@ pub async fn try_restore_session(
     }
 
     let stored = session::load_session(&session_path)?;
+    warn_if_insecure_url(&stored.homeserver);
     debug!("Restoring session for {}", stored.user_id);
 
     let store_path = config::store_path_for_homeserver(&stored.homeserver)?;
@@ -111,6 +123,9 @@ pub async fn try_restore_session(
         .with_encryption_settings(encryption_settings());
 
     if accept_invalid_certs {
+        warn!(
+            "TLS certificate verification is DISABLED — connections are vulnerable to MITM attacks"
+        );
         builder = builder.disable_ssl_verification();
     }
 
@@ -167,6 +182,7 @@ pub async fn login(
     accept_invalid_certs: bool,
 ) -> Result<Client> {
     let homeserver = normalize_homeserver_url(homeserver);
+    warn_if_insecure_url(&homeserver);
     info!("Login requested for homeserver input: {}", homeserver);
 
     let store_path = config::store_path_for_homeserver(&homeserver)?;
@@ -217,6 +233,7 @@ pub async fn register(
     accept_invalid_certs: bool,
 ) -> Result<Client> {
     let homeserver = normalize_homeserver_url(homeserver);
+    warn_if_insecure_url(&homeserver);
     info!(
         "Registration requested for homeserver input: {}",
         homeserver

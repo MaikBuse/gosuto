@@ -8,7 +8,7 @@ use matrix_sdk::Client;
 use matrix_sdk::ruma::{OwnedDeviceId, OwnedRoomId};
 use tokio::sync::{Mutex, mpsc};
 use tokio::time::Instant;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, trace, warn};
 
 use crate::config::AudioConfig;
 use crate::event::{AppEvent, EventSender, WarnClosed};
@@ -756,7 +756,7 @@ impl CallManager {
 fn log_jwt_claims(token: &str) {
     let parts: Vec<&str> = token.split('.').collect();
     if parts.len() != 3 {
-        debug!("JWT: malformed token ({} parts)", parts.len());
+        trace!("JWT: malformed token ({} parts)", parts.len());
         return;
     }
 
@@ -767,7 +767,7 @@ fn log_jwt_claims(token: &str) {
             match base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(parts[1]) {
                 Ok(bytes) => bytes,
                 Err(e) => {
-                    debug!("JWT: failed to decode payload: {}", e);
+                    trace!("JWT: failed to decode payload: {}", e);
                     return;
                 }
             }
@@ -777,7 +777,7 @@ fn log_jwt_claims(token: &str) {
     let claims: serde_json::Value = match serde_json::from_slice(&payload) {
         Ok(v) => v,
         Err(e) => {
-            debug!("JWT: failed to parse payload JSON: {}", e);
+            trace!("JWT: failed to parse payload JSON: {}", e);
             return;
         }
     };
@@ -817,16 +817,16 @@ fn log_jwt_claims(token: &str) {
         }
     });
 
-    debug!(
+    trace!(
         "JWT grant: iss={}, roomJoin={}, canPublish={}, canSubscribe={}",
         iss, room_join, can_publish, can_subscribe
     );
-    debug!(
+    trace!(
         "JWT claims: video.room={}, sub={}, expired={}",
         room, sub, expired
     );
     if let Some(v) = video {
-        debug!("JWT full video grant: {}", v);
+        trace!("JWT full video grant: {}", v);
     }
 }
 

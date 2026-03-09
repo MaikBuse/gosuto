@@ -3,6 +3,8 @@ use std::path::Path;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
+use crate::fs_utils::write_private_file;
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct StoredSession {
     pub homeserver: String,
@@ -13,7 +15,7 @@ pub struct StoredSession {
 
 pub fn save_session(path: &Path, session: &StoredSession) -> Result<()> {
     let json = serde_json::to_string_pretty(session)?;
-    std::fs::write(path, json)?;
+    write_private_file(path, &json)?;
     Ok(())
 }
 

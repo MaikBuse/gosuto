@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use anyhow::Result;
 use tracing::{info, warn};
 
+use crate::fs_utils::write_private_file;
 use crate::ui::icons::{self, Icons};
 
 pub const APP_NAME: &str = "gosuto";
@@ -145,7 +146,7 @@ pub fn load_config() -> GosutoConfig {
             }
             match toml::to_string_pretty(&config) {
                 Ok(contents) => {
-                    if let Err(e) = std::fs::write(&path, &contents) {
+                    if let Err(e) = write_private_file(&path, &contents) {
                         warn!(
                             "Could not write default config to {}: {}",
                             path.display(),
@@ -174,7 +175,7 @@ pub fn save_config(config: &GosutoConfig) {
     }
     match toml::to_string_pretty(config) {
         Ok(contents) => {
-            if let Err(e) = std::fs::write(&path, &contents) {
+            if let Err(e) = write_private_file(&path, &contents) {
                 warn!("Could not write config to {}: {}", path.display(), e);
             }
         }

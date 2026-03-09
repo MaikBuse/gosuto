@@ -4,6 +4,7 @@ mod app;
 mod config;
 mod demo;
 mod event;
+mod fs_utils;
 mod global_ptt;
 mod input;
 mod matrix;
