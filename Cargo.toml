@@ -54,7 +54,6 @@ parking_lot = "0.12"
 # Utils
 dirs = "6"
 anyhow = "1"
-thiserror = "2"
 chrono = { version = "0.4", features = ["serde"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

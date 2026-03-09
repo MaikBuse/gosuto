@@ -151,64 +151,63 @@ pub async fn get_livekit_credentials(
         .json(&legacy_body)
         .send()
         .await;
-    let legacy_ok = legacy_result
-        .as_ref()
-        .is_ok_and(|r| r.status().is_success());
+    let (response, endpoint_used) = match legacy_result {
+        Ok(resp) if resp.status().is_success() => {
+            debug!("LiveKit /sfu/get succeeded");
+            (resp, "/sfu/get")
+        }
+        other => {
+            match other {
+                Ok(resp) => {
+                    let status = resp.status();
+                    let body = resp
+                        .text()
+                        .await
+                        .unwrap_or_else(|_| "<unreadable>".to_string());
+                    let truncated = &body[..body.floor_char_boundary(500)];
+                    error!(
+                        "LiveKit /sfu/get returned {} (body: {}), falling back to /get_token",
+                        status, truncated
+                    );
+                }
+                Err(e) => error!(
+                    "LiveKit /sfu/get network error ({}), falling back to /get_token",
+                    e
+                ),
+            }
 
-    let (response, endpoint_used) = if legacy_ok {
-        debug!("LiveKit /sfu/get succeeded");
-        (legacy_result.unwrap(), "/sfu/get")
-    } else {
-        match legacy_result {
-            Ok(resp) => {
+            // Fallback to new endpoint: /get_token (MSC4195)
+            let new_url = format!("{}/get_token", base);
+            let new_body = SfuRequest {
+                room_id: room_id.to_string(),
+                slot_id: "0".to_string(),
+                openid_token: make_openid_token(access_token),
+                member: MatrixRTCMember {
+                    id: format!("{}_{}", user_id, device_id),
+                    claimed_user_id: user_id.to_string(),
+                    claimed_device_id: device_id.to_string(),
+                },
+            };
+            let resp = http_client
+                .post(&new_url)
+                .json(&new_body)
+                .send()
+                .await
+                .context("Failed to contact LiveKit JWT service (/get_token)")?;
+            if !resp.status().is_success() {
                 let status = resp.status();
                 let body = resp
                     .text()
                     .await
                     .unwrap_or_else(|_| "<unreadable>".to_string());
-                let truncated = &body[..body.floor_char_boundary(500)];
-                error!(
-                    "LiveKit /sfu/get returned {} (body: {}), falling back to /get_token",
-                    status, truncated
+                anyhow::bail!(
+                    "LiveKit JWT service (/get_token) returned {}: {}",
+                    status,
+                    body
                 );
             }
-            Err(e) => error!(
-                "LiveKit /sfu/get network error ({}), falling back to /get_token",
-                e
-            ),
+            (resp, "/get_token")
         }
-
-        // Fallback to new endpoint: /get_token (MSC4195)
-        let new_url = format!("{}/get_token", base);
-        let new_body = SfuRequest {
-            room_id: room_id.to_string(),
-            slot_id: "0".to_string(),
-            openid_token: make_openid_token(access_token),
-            member: MatrixRTCMember {
-                id: format!("{}_{}", user_id, device_id),
-                claimed_user_id: user_id.to_string(),
-                claimed_device_id: device_id.to_string(),
-            },
-        };
-        let resp = http_client
-            .post(&new_url)
-            .json(&new_body)
-            .send()
-            .await
-            .context("Failed to contact LiveKit JWT service (/get_token)")?;
-        if !resp.status().is_success() {
-            let status = resp.status();
-            let body = resp
-                .text()
-                .await
-                .unwrap_or_else(|_| "<unreadable>".to_string());
-            anyhow::bail!(
-                "LiveKit JWT service (/get_token) returned {}: {}",
-                status,
-                body
-            );
-        }
-        (resp, "/get_token")
     };
 
     let raw_body = response

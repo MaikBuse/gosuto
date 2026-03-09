@@ -16,14 +16,20 @@ use crate::event::EventSender;
 use crate::event::WarnClosed;
 use crate::state::{RoomCategory, RoomMember, RoomSummary};
 
-pub fn call_power_level_override() -> Raw<RoomPowerLevelsEventContent> {
+pub fn call_power_level_override() -> Option<Raw<RoomPowerLevelsEventContent>> {
     let pl = serde_json::json!({
         "events": {
             "m.call.member": 0,
             "org.matrix.msc3401.call.member": 0
         }
     });
-    Raw::from_json(serde_json::value::to_raw_value(&pl).expect("valid JSON"))
+    match serde_json::value::to_raw_value(&pl) {
+        Ok(raw) => Some(Raw::from_json(raw)),
+        Err(e) => {
+            warn!("Failed to serialize call power level override: {e}");
+            None
+        }
+    }
 }
 
 fn resolve_room(client: &Client, room_id: &str, on_error: impl FnOnce(String)) -> Option<Room> {

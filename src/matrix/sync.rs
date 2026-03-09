@@ -428,8 +428,8 @@ fn dispatch_encryption_keys(
     let key_entries: Vec<&serde_json::Value> =
         if let Some(arr) = content.get("keys").and_then(|v| v.as_array()) {
             arr.iter().collect()
-        } else if content.get("keys").and_then(|v| v.as_object()).is_some() {
-            vec![content.get("keys").unwrap()]
+        } else if let Some(keys) = content.get("keys").filter(|v| v.as_object().is_some()) {
+            vec![keys]
         } else {
             return;
         };

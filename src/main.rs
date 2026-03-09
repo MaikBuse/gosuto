@@ -540,7 +540,7 @@ async fn main() -> Result<()> {
                                                 request.initial_state.push(enc_event.to_raw_any());
 
                                                 // Set call member event PL to 0 so both DM participants can use calls
-                                                request.power_level_content_override = Some(matrix::rooms::call_power_level_override());
+                                                request.power_level_content_override = matrix::rooms::call_power_level_override();
 
                                                 match client.create_room(request).await {
                                                     Ok(response) => {
@@ -601,7 +601,7 @@ async fn main() -> Result<()> {
                                     }
 
                                     // Set call member event PL to 0 so all participants can use calls
-                                    request.power_level_content_override = Some(matrix::rooms::call_power_level_override());
+                                    request.power_level_content_override = matrix::rooms::call_power_level_override();
 
                                     match client.create_room(request).await {
                                         Ok(response) => {

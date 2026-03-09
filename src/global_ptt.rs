@@ -57,7 +57,7 @@ pub fn spawn_listener(
         alive: alive.clone(),
     };
 
-    std::thread::Builder::new()
+    match std::thread::Builder::new()
         .name("ptt-listener".into())
         .spawn(move || {
             info!("PTT listener thread started");
@@ -86,8 +86,13 @@ pub fn spawn_listener(
                 warn!("{}", message);
                 error_tx.send(AppEvent::PttListenerFailed(message)).warn_closed("PttListenerFailed");
             }
-        })
-        .expect("failed to spawn PTT listener thread");
+        }) {
+        Ok(_) => {}
+        Err(e) => {
+            warn!("Failed to spawn PTT listener thread: {e}");
+            handle.alive.store(false, Ordering::Relaxed);
+        }
+    }
 
     handle
 }

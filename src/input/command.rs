@@ -240,9 +240,8 @@ pub fn handle_command(key: KeyEvent, vim: &mut VimState) -> InputResult {
                 return InputResult::None;
             }
 
-            if vim.completion.selected.is_some() {
+            if let Some(idx) = vim.completion.selected {
                 // Already navigating — accept current selection
-                let idx = vim.completion.selected.unwrap();
                 if let Some(cmd) = matches.get(idx) {
                     if cmd.takes_arg {
                         vim.command_buffer = format!("{} ", cmd.name);

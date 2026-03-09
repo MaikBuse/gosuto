@@ -170,8 +170,11 @@ pub fn save_config(config: &GosutoConfig) {
         Ok(dir) => dir.join("config.toml"),
         Err(_) => return,
     };
-    if let Some(parent) = path.parent() {
-        let _ = std::fs::create_dir_all(parent);
+    if let Some(parent) = path.parent()
+        && let Err(e) = std::fs::create_dir_all(parent)
+    {
+        warn!("Could not create config dir {}: {}", parent.display(), e);
+        return;
     }
     match toml::to_string_pretty(config) {
         Ok(contents) => {
@@ -235,8 +238,13 @@ pub fn cleanup_old_logs(path: &std::path::Path, max_days: u64) {
         if meta.is_file()
             && let Ok(modified) = meta.modified()
             && modified < cutoff
+            && let Err(e) = std::fs::remove_file(entry.path())
         {
-            let _ = std::fs::remove_file(entry.path());
+            warn!(
+                "Failed to remove old log file {}: {}",
+                entry.path().display(),
+                e
+            );
         }
     }
 }

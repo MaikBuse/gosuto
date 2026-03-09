@@ -187,16 +187,19 @@ fn create_resampler(from_rate: u32, to_rate: u32, chunk_size: usize) -> Option<S
         oversampling_factor: 128,
         window: WindowFunction::BlackmanHarris2,
     };
-    Some(
-        SincFixedIn::<f32>::new(
-            to_rate as f64 / from_rate as f64,
-            2.0,
-            params,
-            chunk_size,
-            1, // mono
-        )
-        .expect("Failed to create resampler"),
-    )
+    match SincFixedIn::<f32>::new(
+        to_rate as f64 / from_rate as f64,
+        2.0,
+        params,
+        chunk_size,
+        1, // mono
+    ) {
+        Ok(resampler) => Some(resampler),
+        Err(e) => {
+            error!("Failed to create resampler ({from_rate}→{to_rate}Hz): {e}");
+            None
+        }
+    }
 }
 
 /// Expand mono samples to multiple channels by duplicating each sample.
