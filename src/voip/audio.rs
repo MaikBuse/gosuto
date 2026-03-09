@@ -11,7 +11,8 @@ use livekit::webrtc::audio_source::native::NativeAudioSource;
 use livekit::webrtc::audio_stream::native::NativeAudioStream;
 use livekit::webrtc::prelude::AudioFrame;
 use rubato::{
-    Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction,
+    Async, FixedAsync, Resampler, SincInterpolationParameters, SincInterpolationType,
+    WindowFunction,
 };
 use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
@@ -176,7 +177,7 @@ fn resolve_input_stream_config(
 
 /// Create a sinc resampler for high-quality sample rate conversion.
 /// Returns None when rates match (no overhead in the common case).
-fn create_resampler(from_rate: u32, to_rate: u32, chunk_size: usize) -> Option<SincFixedIn<f32>> {
+fn create_resampler(from_rate: u32, to_rate: u32, chunk_size: usize) -> Option<Async<f32>> {
     if from_rate == to_rate {
         return None;
     }
@@ -187,12 +188,13 @@ fn create_resampler(from_rate: u32, to_rate: u32, chunk_size: usize) -> Option<S
         oversampling_factor: 128,
         window: WindowFunction::BlackmanHarris2,
     };
-    match SincFixedIn::<f32>::new(
+    match Async::<f32>::new_sinc(
         to_rate as f64 / from_rate as f64,
         2.0,
-        params,
+        &params,
         chunk_size,
         1, // mono
+        FixedAsync::Input,
     ) {
         Ok(resampler) => Some(resampler),
         Err(e) => {
@@ -501,12 +503,18 @@ impl AudioPipeline {
                     let mut output = Vec::new();
                     while mono_buffer.len() >= FRAME_SIZE {
                         let chunk: Vec<f32> = mono_buffer.drain(..FRAME_SIZE).collect();
-                        match resampler.process(&[chunk], None) {
-                            Ok(mut result) => output.extend(result.pop().unwrap_or_else(|| {
-                                warn!("Capture resampler returned no channels");
-                                Vec::new()
-                            })),
-                            Err(e) => error!("Capture resampler error: {}", e),
+                        let channels = [chunk];
+                        let input = audioadapter_buffers::direct::SequentialSliceOfVecs::new(
+                            &channels[..],
+                            1,
+                            FRAME_SIZE,
+                        );
+                        match input {
+                            Ok(adapter) => match resampler.process(&adapter, 0, None) {
+                                Ok(result) => output.extend(result.take_data()),
+                                Err(e) => error!("Capture resampler error: {}", e),
+                            },
+                            Err(e) => error!("Capture resampler adapter error: {}", e),
                         }
                     }
                     if output.is_empty() {
@@ -698,21 +706,28 @@ impl AudioPipeline {
                             mono_buffer.extend_from_slice(&f32_samples);
                             while mono_buffer.len() >= FRAME_SIZE {
                                 let chunk: Vec<f32> = mono_buffer.drain(..FRAME_SIZE).collect();
-                                match resampler.process(&[chunk], None) {
-                                    Ok(mut result) => {
-                                        let mut resampled = result.pop().unwrap_or_else(|| {
-                                            warn!("Playback resampler returned no channels");
-                                            Vec::new()
-                                        });
-                                        if device_channels > 1 {
-                                            resampled =
-                                                expand_channels(&resampled, device_channels);
+                                let channels = [chunk];
+                                let input =
+                                    audioadapter_buffers::direct::SequentialSliceOfVecs::new(
+                                        &channels[..],
+                                        1,
+                                        FRAME_SIZE,
+                                    );
+                                match input {
+                                    Ok(adapter) => match resampler.process(&adapter, 0, None) {
+                                        Ok(result) => {
+                                            let mut resampled = result.take_data();
+                                            if device_channels > 1 {
+                                                resampled =
+                                                    expand_channels(&resampled, device_channels);
+                                            }
+                                            audio_tx.send(resampled).warn_closed("audio playback");
                                         }
-                                        audio_tx.send(resampled).warn_closed("audio playback");
-                                    }
-                                    Err(e) => {
-                                        error!("Playback resampler error: {}", e);
-                                    }
+                                        Err(e) => {
+                                            error!("Playback resampler error: {}", e);
+                                        }
+                                    },
+                                    Err(e) => error!("Playback resampler adapter error: {}", e),
                                 }
                             }
                         } else {

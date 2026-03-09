@@ -287,7 +287,7 @@ impl CallManager {
 
         // 5. Generate E2EE encryption key
         let mut encryption_key = vec![0u8; 16];
-        if let Err(e) = getrandom::getrandom(&mut encryption_key) {
+        if let Err(e) = getrandom::fill(&mut encryption_key) {
             error!("Failed to generate encryption key: {}", e);
             if call_member_event_id.is_some()
                 && let Err(e) = matrixrtc::remove_call_member(&client, &room_id, &device_id).await
