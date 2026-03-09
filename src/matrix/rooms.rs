@@ -67,8 +67,6 @@ pub async fn get_room_list(client: &Client) -> Vec<RoomSummary> {
                     .strip_prefix('@')
                     .unwrap_or(uid.as_str())
                     .to_string();
-                let local_part = uid.localpart();
-
                 // Try to fetch the member's display name
                 let display = room
                     .get_member(&uid)
@@ -78,8 +76,8 @@ pub async fn get_room_list(client: &Client) -> Vec<RoomSummary> {
                     .and_then(|m| m.display_name().map(|n| n.to_string()));
 
                 match display {
-                    Some(dn) if dn != local_part => format!("{} ({})", dn, id_without_at),
-                    _ => id_without_at,
+                    Some(dn) => format!("{} ({})", dn, id_without_at),
+                    None => id_without_at,
                 }
             } else {
                 match room.display_name().await {
