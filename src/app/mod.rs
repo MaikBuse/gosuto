@@ -111,6 +111,7 @@ pub struct App {
     pub verification_modal: Option<crate::state::VerificationModalState>,
     pub pending_verify: Option<Option<String>>,
     pub verify_confirm_tx: Option<tokio::sync::oneshot::Sender<bool>>,
+    pub verify_task_handle: Option<tokio::task::JoinHandle<()>>,
     pub self_verified: bool,
     pub recovery_status: crate::event::RecoveryStatus,
     // Invitation support
@@ -193,6 +194,7 @@ impl App {
             verification_modal: None,
             pending_verify: None,
             verify_confirm_tx: None,
+            verify_task_handle: None,
             self_verified: false,
             recovery_status: crate::event::RecoveryStatus::Disabled,
             invite_prompt_room: None,

@@ -812,11 +812,14 @@ async fn main() -> Result<()> {
 
                         // Handle outgoing verification (:verify command)
                         if let Some(target) = app.take_pending_verify() {
+                            if let Some(handle) = app.verify_task_handle.take() {
+                                handle.abort();
+                            }
                             let tx = event_tx.clone();
                             let (confirm_tx, confirm_rx) = tokio::sync::oneshot::channel();
                             app.verify_confirm_tx = Some(confirm_tx);
 
-                            spawn_with_client!(matrix_client, |client| async move {
+                            let handle = spawn_with_client!(matrix_client, |client| async move {
                                 match target {
                                     None => {
                                         matrix::verification::start_self_verification(
@@ -832,22 +835,27 @@ async fn main() -> Result<()> {
                                     }
                                 }
                             });
+                            app.verify_task_handle = Some(handle);
                         }
 
                         // Handle incoming verification requests
                         {
                             let mut iv_guard = incoming_verification.lock().await;
                             if let Some(request) = iv_guard.take() {
+                                if let Some(handle) = app.verify_task_handle.take() {
+                                    handle.abort();
+                                }
                                 let tx = event_tx.clone();
                                 let (confirm_tx, confirm_rx) = tokio::sync::oneshot::channel();
                                 app.verify_confirm_tx = Some(confirm_tx);
 
-                                tokio::spawn(async move {
+                                let handle = tokio::spawn(async move {
                                     matrix::verification::handle_incoming_verification(
                                         request, tx, confirm_rx,
                                     )
                                     .await;
                                 });
+                                app.verify_task_handle = Some(handle);
                             }
                         }
                         } // !demo_mode

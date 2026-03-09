@@ -106,10 +106,17 @@ impl App {
 
     // ── Verification Modal ────────────────────────────
 
+    pub(crate) fn cancel_verification(&mut self) {
+        self.verify_confirm_tx = None;
+        self.verification_modal = None;
+        if let Some(handle) = self.verify_task_handle.take() {
+            handle.abort();
+        }
+    }
+
     pub(crate) fn handle_verify_modal_key(&mut self, key: KeyEvent) {
         if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
-            self.verification_modal = None;
-            self.verify_confirm_tx = None;
+            self.cancel_verification();
             self.running = false;
             return;
         }
@@ -136,23 +143,20 @@ impl App {
                     }
                 }
                 KeyCode::Esc => {
-                    self.verify_confirm_tx = None;
-                    self.verification_modal = None;
+                    self.cancel_verification();
                 }
                 _ => {}
             },
             Some(crate::state::VerificationStage::Completed)
             | Some(crate::state::VerificationStage::Failed(_)) => match key.code {
                 KeyCode::Enter | KeyCode::Esc => {
-                    self.verification_modal = None;
-                    self.verify_confirm_tx = None;
+                    self.cancel_verification();
                 }
                 _ => {}
             },
             Some(crate::state::VerificationStage::WaitingForOtherDevice) => {
                 if key.code == KeyCode::Esc {
-                    self.verify_confirm_tx = None;
-                    self.verification_modal = None;
+                    self.cancel_verification();
                 }
             }
             None => {}
