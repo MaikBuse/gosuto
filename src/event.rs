@@ -6,6 +6,14 @@ use tokio::sync::mpsc;
 use crate::state::{DisplayMessage, RoomMember, RoomSummary};
 use crate::voip::CallState;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum RecoveryStatus {
+    #[default]
+    Disabled,
+    Incomplete,
+    Enabled,
+}
+
 /// A oneshot sender wrapped so `AppEvent` can derive `Clone` + `Debug`.
 /// The first consumer calls `.take()` to extract the real sender.
 #[derive(Clone)]
@@ -126,7 +134,7 @@ pub enum AppEvent {
     UserConfigLoaded {
         display_name: Option<String>,
         verified: bool,
-        recovery_enabled: bool,
+        recovery_status: RecoveryStatus,
     },
     UserConfigUpdated,
     UserConfigError(String),

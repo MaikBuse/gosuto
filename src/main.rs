@@ -456,7 +456,7 @@ async fn main() -> Result<()> {
                                 let _ = event_tx.send(AppEvent::UserConfigLoaded {
                                     display_name: Some("Ghost".to_string()),
                                     verified: true,
-                                    recovery_enabled: false,
+                                    recovery_status: crate::event::RecoveryStatus::Disabled,
                                 });
                             }
                             app.pending_set_display_name.take();

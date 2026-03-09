@@ -76,9 +76,11 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
             let name_color = theme::sender_color(&member.user_id);
             let name_style = ratatui::style::Style::default().fg(name_color);
 
+            let id_label = member.user_id.strip_prefix('@').unwrap_or(&member.user_id);
+            let name_with_id = format!("{} ({})", member.display_name, id_label);
             let mut spans = vec![
                 Span::styled(prefix, prefix_style),
-                Span::styled(&member.display_name, name_style),
+                Span::styled(name_with_id, name_style),
             ];
 
             if member.verified == Some(true) {

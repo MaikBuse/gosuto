@@ -6,6 +6,7 @@ pub const CYAN: Color = Color::Rgb(0, 255, 255);
 pub const MAGENTA: Color = Color::Rgb(255, 0, 255);
 pub const GREEN: Color = Color::Rgb(0, 255, 128);
 pub const RED: Color = Color::Rgb(255, 80, 60);
+pub const YELLOW: Color = Color::Rgb(255, 200, 50);
 pub const TEXT: Color = Color::Rgb(220, 220, 230);
 pub const DIM: Color = Color::Rgb(120, 120, 140);
 pub const BORDER: Color = Color::Rgb(40, 50, 60);

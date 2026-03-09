@@ -86,10 +86,10 @@ pub fn render(state: &UserConfigState, icons: &Icons, frame: &mut Frame) {
 
     // RECOVERY (read-only)
     popup::write_str(buf, &bounds, label_x, row, "RECOVERY", label_s);
-    let (rec_text, rec_color) = if state.recovery_enabled {
-        ("yes", theme::GREEN)
-    } else {
-        ("no", theme::RED)
+    let (rec_text, rec_color) = match state.recovery_status {
+        crate::event::RecoveryStatus::Enabled => ("yes", theme::GREEN),
+        crate::event::RecoveryStatus::Incomplete => ("incomplete", theme::YELLOW),
+        crate::event::RecoveryStatus::Disabled => ("no", theme::RED),
     };
     popup::write_str(
         buf,

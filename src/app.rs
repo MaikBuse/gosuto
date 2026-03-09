@@ -169,7 +169,7 @@ pub struct UserConfigState {
     pub display_name_buffer: String,
     pub editing_display_name: bool,
     pub verified: bool,
-    pub recovery_enabled: bool,
+    pub recovery_status: crate::event::RecoveryStatus,
     pub selected_field: usize, // 0=display name
     pub loading: bool,
     pub saving: bool,
@@ -406,7 +406,7 @@ impl UserConfigState {
             display_name_buffer: String::new(),
             editing_display_name: false,
             verified: false,
-            recovery_enabled: false,
+            recovery_status: crate::event::RecoveryStatus::Disabled,
             selected_field: 0,
             loading: false,
             saving: false,
@@ -492,7 +492,7 @@ pub struct App {
     pub pending_verify: Option<Option<String>>,
     pub verify_confirm_tx: Option<tokio::sync::oneshot::Sender<bool>>,
     pub self_verified: bool,
-    pub recovery_enabled: bool,
+    pub recovery_status: crate::event::RecoveryStatus,
     // Invitation support
     pub invite_prompt_room: Option<String>,
     pending_accept_invite: Option<String>,
@@ -574,7 +574,7 @@ impl App {
             pending_verify: None,
             verify_confirm_tx: None,
             self_verified: false,
-            recovery_enabled: false,
+            recovery_status: crate::event::RecoveryStatus::Disabled,
             invite_prompt_room: None,
             pending_accept_invite: None,
             pending_decline_invite: None,
@@ -674,7 +674,7 @@ impl App {
                 self.login = LoginState::new();
                 self.sync_status = "disconnected".to_string();
                 self.self_verified = false;
-                self.recovery_enabled = false;
+                self.recovery_status = crate::event::RecoveryStatus::Disabled;
                 self.typing_users.clear();
                 self.last_typing_sent = None;
                 self.pending_typing_notice = None;
@@ -910,18 +910,16 @@ impl App {
             AppEvent::UserConfigLoaded {
                 display_name,
                 verified,
-                recovery_enabled,
+                recovery_status,
             } => {
                 if verified {
                     self.self_verified = true;
                 }
-                if recovery_enabled {
-                    self.recovery_enabled = true;
-                }
+                self.recovery_status = recovery_status;
                 if self.user_config.open {
                     self.user_config.display_name = display_name;
                     self.user_config.verified = verified || self.self_verified;
-                    self.user_config.recovery_enabled = recovery_enabled || self.recovery_enabled;
+                    self.user_config.recovery_status = recovery_status;
                     self.user_config.loading = false;
                 }
             }
@@ -1461,7 +1459,7 @@ impl App {
                         display_name_buffer: String::new(),
                         editing_display_name: false,
                         verified: self.self_verified,
-                        recovery_enabled: self.recovery_enabled,
+                        recovery_status: self.recovery_status,
                         selected_field: 0,
                         loading: true,
                         saving: false,
@@ -2562,7 +2560,7 @@ mod tests {
         app.handle_event(AppEvent::UserConfigLoaded {
             display_name: Some("Alice".to_string()),
             verified: true,
-            recovery_enabled: false,
+            recovery_status: crate::event::RecoveryStatus::Disabled,
         });
 
         assert!(!app.user_config.loading);
@@ -2580,7 +2578,7 @@ mod tests {
         app.handle_event(AppEvent::UserConfigLoaded {
             display_name: None,
             verified: true,
-            recovery_enabled: false,
+            recovery_status: crate::event::RecoveryStatus::Disabled,
         });
 
         assert!(app.self_verified);
@@ -2604,7 +2602,7 @@ mod tests {
         app.handle_event(AppEvent::UserConfigLoaded {
             display_name: Some("Bob".to_string()),
             verified: true,
-            recovery_enabled: false,
+            recovery_status: crate::event::RecoveryStatus::Disabled,
         });
         assert!(app.self_verified);
 

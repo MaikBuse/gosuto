@@ -193,12 +193,8 @@ impl RoomListState {
                         let mut sorted_members: Vec<&String> = members.iter().collect();
                         sorted_members.sort();
                         for user_id in sorted_members {
-                            let display_name = user_id
-                                .strip_prefix('@')
-                                .and_then(|s| s.split_once(':'))
-                                .map(|(local, _)| local)
-                                .unwrap_or(user_id)
-                                .to_string();
+                            let display_name =
+                                user_id.strip_prefix('@').unwrap_or(user_id).to_string();
                             rows.push(DisplayRow::CallParticipant { display_name });
                         }
                     }
@@ -248,12 +244,8 @@ impl RoomListState {
                         let mut sorted_members: Vec<&String> = members.iter().collect();
                         sorted_members.sort();
                         for user_id in sorted_members {
-                            let display_name = user_id
-                                .strip_prefix('@')
-                                .and_then(|s| s.split_once(':'))
-                                .map(|(local, _)| local)
-                                .unwrap_or(user_id)
-                                .to_string();
+                            let display_name =
+                                user_id.strip_prefix('@').unwrap_or(user_id).to_string();
                             rows.push(DisplayRow::CallParticipant { display_name });
                         }
                     }

@@ -17,12 +17,33 @@ pub async fn get_room_list(client: &Client) -> Vec<RoomSummary> {
 
     for room in &joined {
         let id = room.room_id().to_string();
-        let name = match room.display_name().await {
-            Ok(dn) => dn.to_string(),
-            Err(_) => id.clone(),
-        };
-
         let is_dm = room.is_direct().await.unwrap_or(false);
+
+        let name = if is_dm {
+            let target_name = room
+                .direct_targets()
+                .iter()
+                .next()
+                .and_then(|uid| uid.as_user_id().map(|u| u.to_owned()))
+                .map(|uid| {
+                    uid.as_str()
+                        .strip_prefix('@')
+                        .unwrap_or(uid.as_str())
+                        .to_string()
+                });
+            match target_name {
+                Some(n) => n,
+                None => match room.display_name().await {
+                    Ok(dn) => dn.to_string(),
+                    Err(_) => id.clone(),
+                },
+            }
+        } else {
+            match room.display_name().await {
+                Ok(dn) => dn.to_string(),
+                Err(_) => id.clone(),
+            }
+        };
         let is_space = room.is_space();
 
         let category = if is_space {

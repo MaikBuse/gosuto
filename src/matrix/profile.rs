@@ -1,7 +1,7 @@
 use matrix_sdk::Client;
 use tracing::error;
 
-use crate::event::{AppEvent, EventSender};
+use crate::event::{AppEvent, EventSender, RecoveryStatus};
 
 pub async fn fetch_user_config(client: &Client, tx: &EventSender) {
     let display_name = match client.account().get_display_name().await {
@@ -38,19 +38,16 @@ pub async fn fetch_user_config(client: &Client, tx: &EventSender) {
         matches!(vs, VerificationState::Verified)
     };
 
-    let recovery_state = client.encryption().recovery().state();
-    // Incomplete means recovery is set up on the server but private
-    // keys aren't cached locally — treat as enabled.
-    let recovery_enabled = matches!(
-        recovery_state,
-        matrix_sdk::encryption::recovery::RecoveryState::Enabled
-            | matrix_sdk::encryption::recovery::RecoveryState::Incomplete
-    );
+    let recovery_status = match client.encryption().recovery().state() {
+        matrix_sdk::encryption::recovery::RecoveryState::Enabled => RecoveryStatus::Enabled,
+        matrix_sdk::encryption::recovery::RecoveryState::Incomplete => RecoveryStatus::Incomplete,
+        _ => RecoveryStatus::Disabled,
+    };
 
     let _ = tx.send(AppEvent::UserConfigLoaded {
         display_name,
         verified,
-        recovery_enabled,
+        recovery_status,
     });
 }
 
