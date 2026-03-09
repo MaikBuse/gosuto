@@ -10,3 +10,7 @@ demo:
 # Tail the log file
 logs:
     tail -f ~/.local/share/gosuto/logs/gosuto.log*
+
+# Remove all log files
+clean-logs:
+    rm -f ~/.local/share/gosuto/logs/gosuto.log*
