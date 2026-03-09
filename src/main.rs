@@ -27,6 +27,17 @@ use app::App;
 use event::AppEvent;
 use event::WarnClosed;
 
+macro_rules! spawn_with_client {
+    ($holder:expr, |$client:ident| $body:expr) => {{
+        let holder = $holder.clone();
+        tokio::spawn(async move {
+            if let Some($client) = holder.lock().await.clone() {
+                $body.await;
+            }
+        })
+    }};
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     // Set up file-based logging (controlled by GOSUTO_LOG env var)
@@ -297,26 +308,17 @@ async fn main() -> Result<()> {
                                 });
 
                                 // Fetch members
-                                let client_holder2 = matrix_client.clone();
                                 let tx2 = event_tx.clone();
                                 let rid2 = room_id.clone();
-                                tokio::spawn(async move {
-                                    let client = { client_holder2.lock().await.clone() };
-                                    if let Some(client) = client {
-                                        matrix::rooms::fetch_room_members(&client, &rid2, &tx2).await;
-                                        // Check verification status for members
-                                        matrix::rooms::check_member_verification(&client, &rid2, &tx2).await;
-                                    }
+                                spawn_with_client!(matrix_client, |client| async move {
+                                    matrix::rooms::fetch_room_members(&client, &rid2, &tx2).await;
+                                    matrix::rooms::check_member_verification(&client, &rid2, &tx2).await;
                                 });
 
                                 // Send read receipt
-                                let client_holder3 = matrix_client.clone();
                                 let rid3 = room_id.clone();
-                                tokio::spawn(async move {
-                                    let client = { client_holder3.lock().await.clone() };
-                                    if let Some(client) = client {
-                                        matrix::rooms::mark_room_as_read(&client, &rid3, None).await;
-                                    }
+                                spawn_with_client!(matrix_client, |client| async move {
+                                    matrix::rooms::mark_room_as_read(&client, &rid3, None).await;
                                 });
                                 } // else (not demo_mode)
                             }
@@ -330,15 +332,11 @@ async fn main() -> Result<()> {
                             {
                                 app.messages.messages.clear();
                                 app.messages.loading = true;
-                                let client_holder = matrix_client.clone();
                                 let tx = event_tx.clone();
                                 let rid = room_id.clone();
                                 let sync_token = app.sync_token.clone();
-                                tokio::spawn(async move {
-                                    let client = { client_holder.lock().await.clone() };
-                                    if let Some(client) = client
-                                        && let Err(e) = matrix::messages::fetch_messages(&client, &rid, &tx, sync_token).await
-                                    {
+                                spawn_with_client!(matrix_client, |client| async move {
+                                    if let Err(e) = matrix::messages::fetch_messages(&client, &rid, &tx, sync_token).await {
                                         error!("Failed to re-fetch messages for {}: {:?}", rid, e);
                                         tx.send(AppEvent::FetchError {
                                             room_id: rid,
@@ -358,13 +356,9 @@ async fn main() -> Result<()> {
                                     body,
                                 }).warn_closed("MessageSent");
                             } else {
-                            let client_holder = matrix_client.clone();
                             let tx = event_tx.clone();
-                            tokio::spawn(async move {
-                                let client = { client_holder.lock().await.clone() };
-                                if let Some(client) = client
-                                    && let Err(e) = matrix::messages::send_message(&client, &room_id, &body, &tx).await
-                                {
+                            spawn_with_client!(matrix_client, |client| async move {
+                                if let Err(e) = matrix::messages::send_message(&client, &room_id, &body, &tx).await {
                                     error!("Failed to send message: {}", e);
                                 }
                             });
@@ -375,17 +369,13 @@ async fn main() -> Result<()> {
                         if let Some((room_id, typing)) = app.take_pending_typing_notice()
                             && !demo_mode
                         {
-                            let client_holder = matrix_client.clone();
-                            tokio::spawn(async move {
-                                let client = { client_holder.lock().await.clone() };
-                                if let Some(client) = client {
-                                    let room_id_parsed: Result<matrix_sdk::ruma::OwnedRoomId, _> = room_id.as_str().try_into();
-                                    if let Ok(id) = room_id_parsed
-                                        && let Some(room) = client.get_room(&id)
-                                        && let Err(e) = room.typing_notice(typing).await
-                                    {
-                                        tracing::warn!("typing_notice failed: {e}");
-                                    }
+                            spawn_with_client!(matrix_client, |client| async move {
+                                let room_id_parsed: Result<matrix_sdk::ruma::OwnedRoomId, _> = room_id.as_str().try_into();
+                                if let Ok(id) = room_id_parsed
+                                    && let Some(room) = client.get_room(&id)
+                                    && let Err(e) = room.typing_notice(typing).await
+                                {
+                                    tracing::warn!("typing_notice failed: {e}");
                                 }
                             });
                         }
@@ -394,12 +384,8 @@ async fn main() -> Result<()> {
                         if let Some((room_id, event_id)) = app.pending_read_receipt.take()
                             && !demo_mode
                         {
-                            let client_holder = matrix_client.clone();
-                            tokio::spawn(async move {
-                                let client = { client_holder.lock().await.clone() };
-                                if let Some(client) = client {
-                                    matrix::rooms::mark_room_as_read(&client, &room_id, event_id.as_deref()).await;
-                                }
+                            spawn_with_client!(matrix_client, |client| async move {
+                                matrix::rooms::mark_room_as_read(&client, &room_id, event_id.as_deref()).await;
                             });
                         }
 
@@ -428,21 +414,17 @@ async fn main() -> Result<()> {
                             if demo_mode {
                                 app.last_error = Some("Not available in demo mode".to_string());
                             } else {
-                            let client_holder = matrix_client.clone();
                             let tx = event_tx.clone();
-                            tokio::spawn(async move {
-                                let client = { client_holder.lock().await.clone() };
-                                if let Some(client) = client {
-                                    let room_id_parsed: Result<matrix_sdk::ruma::OwnedRoomOrAliasId, _> = room_id.as_str().try_into();
-                                    match room_id_parsed {
-                                        Ok(id) => {
-                                            if let Err(e) = client.join_room_by_id_or_alias(&id, &[]).await {
-                                                tx.send(AppEvent::SyncError(format!("Join failed: {}", e))).warn_closed("SyncError");
-                                            }
+                            spawn_with_client!(matrix_client, |client| async move {
+                                let room_id_parsed: Result<matrix_sdk::ruma::OwnedRoomOrAliasId, _> = room_id.as_str().try_into();
+                                match room_id_parsed {
+                                    Ok(id) => {
+                                        if let Err(e) = client.join_room_by_id_or_alias(&id, &[]).await {
+                                            tx.send(AppEvent::SyncError(format!("Join failed: {}", e))).warn_closed("SyncError");
                                         }
-                                        Err(e) => {
-                                            tx.send(AppEvent::SyncError(format!("Invalid room: {}", e))).warn_closed("SyncError");
-                                        }
+                                    }
+                                    Err(e) => {
+                                        tx.send(AppEvent::SyncError(format!("Invalid room: {}", e))).warn_closed("SyncError");
                                     }
                                 }
                             });
@@ -495,13 +477,10 @@ async fn main() -> Result<()> {
                         } else {
                         // Handle pending DM
                         if let Some(user_id_str) = app.take_pending_dm() {
-                            let client_holder = matrix_client.clone();
                             let tx = event_tx.clone();
-                            tokio::spawn(async move {
-                                let client = { client_holder.lock().await.clone() };
-                                if let Some(client) = client {
-                                    let user_id: Result<matrix_sdk::ruma::OwnedUserId, _> = user_id_str.as_str().try_into();
-                                    match user_id {
+                            spawn_with_client!(matrix_client, |client| async move {
+                                let user_id: Result<matrix_sdk::ruma::OwnedUserId, _> = user_id_str.as_str().try_into();
+                                match user_id {
                                         Ok(uid) => {
                                             // Check for existing DM room
                                             if let Some(room) = client.get_dm_room(&uid) {
@@ -540,18 +519,14 @@ async fn main() -> Result<()> {
                                             tx.send(AppEvent::SyncError(format!("Invalid user ID: {}", e))).warn_closed("SyncError");
                                         }
                                     }
-                                }
                             });
                         }
 
                         // Handle room creation
                         if let Some(params) = app.take_pending_create_room() {
-                            let client_holder = matrix_client.clone();
                             let tx = event_tx.clone();
-                            tokio::spawn(async move {
-                                let client = { client_holder.lock().await.clone() };
-                                if let Some(client) = client {
-                                    use matrix_sdk::ruma::api::client::room::create_room::v3::Request as CreateRoomRequest;
+                            spawn_with_client!(matrix_client, |client| async move {
+                                use matrix_sdk::ruma::api::client::room::create_room::v3::Request as CreateRoomRequest;
                                     use matrix_sdk::ruma::events::InitialStateEvent;
                                     use matrix_sdk::ruma::events::room::history_visibility::{
                                         HistoryVisibility, RoomHistoryVisibilityEventContent,
@@ -599,160 +574,111 @@ async fn main() -> Result<()> {
                                             tx.send(AppEvent::SyncError(format!("Failed to create room: {}", e))).warn_closed("SyncError");
                                         }
                                     }
-                                }
                             });
                         }
 
                         // Handle room leave
                         if let Some(room_id) = app.take_pending_leave() {
-                            let client_holder = matrix_client.clone();
                             let tx = event_tx.clone();
-                            tokio::spawn(async move {
-                                let client = { client_holder.lock().await.clone() };
-                                if let Some(client) = client {
-                                    let room_id_parsed: Result<matrix_sdk::ruma::OwnedRoomId, _> = room_id.as_str().try_into();
-                                    if let Ok(id) = room_id_parsed
-                                        && let Some(room) = client.get_room(&id)
-                                        && let Err(e) = room.leave().await
-                                    {
-                                        tx.send(AppEvent::SyncError(format!("Leave failed: {}", e))).warn_closed("SyncError");
-                                    }
+                            spawn_with_client!(matrix_client, |client| async move {
+                                let room_id_parsed: Result<matrix_sdk::ruma::OwnedRoomId, _> = room_id.as_str().try_into();
+                                if let Ok(id) = room_id_parsed
+                                    && let Some(room) = client.get_room(&id)
+                                    && let Err(e) = room.leave().await
+                                {
+                                    tx.send(AppEvent::SyncError(format!("Leave failed: {}", e))).warn_closed("SyncError");
                                 }
                             });
                         }
 
                         // Handle accept invite
                         if let Some(room_id) = app.take_pending_accept_invite() {
-                            let client_holder = matrix_client.clone();
                             let tx = event_tx.clone();
-                            tokio::spawn(async move {
-                                let client = { client_holder.lock().await.clone() };
-                                if let Some(client) = client {
-                                    matrix::rooms::accept_invite(&client, &room_id, &tx).await;
-                                }
+                            spawn_with_client!(matrix_client, |client| async move {
+                                matrix::rooms::accept_invite(&client, &room_id, &tx).await;
                             });
                         }
 
                         // Handle decline invite
                         if let Some(room_id) = app.take_pending_decline_invite() {
-                            let client_holder = matrix_client.clone();
                             let tx = event_tx.clone();
-                            tokio::spawn(async move {
-                                let client = { client_holder.lock().await.clone() };
-                                if let Some(client) = client {
-                                    matrix::rooms::decline_invite(&client, &room_id, &tx).await;
-                                }
+                            spawn_with_client!(matrix_client, |client| async move {
+                                matrix::rooms::decline_invite(&client, &room_id, &tx).await;
                             });
                         }
 
                         // Handle invite user
                         if let Some((room_id, user_id)) = app.take_pending_invite_user() {
-                            let client_holder = matrix_client.clone();
                             let tx = event_tx.clone();
-                            tokio::spawn(async move {
-                                let client = { client_holder.lock().await.clone() };
-                                if let Some(client) = client {
-                                    matrix::rooms::invite_user(&client, &room_id, &user_id, &tx).await;
-                                }
+                            spawn_with_client!(matrix_client, |client| async move {
+                                matrix::rooms::invite_user(&client, &room_id, &user_id, &tx).await;
                             });
                         }
 
                         // Handle user config fetch
                         if app.pending_user_config {
                             app.pending_user_config = false;
-                            let client_holder = matrix_client.clone();
                             let tx = event_tx.clone();
-                            tokio::spawn(async move {
-                                let client = { client_holder.lock().await.clone() };
-                                if let Some(client) = client {
-                                    matrix::profile::fetch_user_config(&client, &tx).await;
-                                }
+                            spawn_with_client!(matrix_client, |client| async move {
+                                matrix::profile::fetch_user_config(&client, &tx).await;
                             });
                         }
 
                         // Handle display name update
                         if let Some(name) = app.pending_set_display_name.take() {
-                            let client_holder = matrix_client.clone();
                             let tx = event_tx.clone();
-                            tokio::spawn(async move {
-                                let client = { client_holder.lock().await.clone() };
-                                if let Some(client) = client {
-                                    matrix::profile::set_user_display_name(&client, &name, &tx).await;
-                                }
+                            spawn_with_client!(matrix_client, |client| async move {
+                                matrix::profile::set_user_display_name(&client, &name, &tx).await;
                             });
                         }
 
                         // Handle password change
                         if let Some((current, new)) = app.pending_change_password.take() {
-                            let client_holder = matrix_client.clone();
                             let tx = event_tx.clone();
-                            tokio::spawn(async move {
-                                let client = { client_holder.lock().await.clone() };
-                                if let Some(client) = client {
-                                    matrix::profile::change_user_password(&client, &current, &new, &tx).await;
-                                }
+                            spawn_with_client!(matrix_client, |client| async move {
+                                matrix::profile::change_user_password(&client, &current, &new, &tx).await;
                             });
                         }
 
                         // Handle room info fetch
                         if app.pending_room_info {
                             app.pending_room_info = false;
-                            let client_holder = matrix_client.clone();
                             let tx = event_tx.clone();
                             let rid = app.room_info.room_id.clone();
-                            tokio::spawn(async move {
-                                let client = { client_holder.lock().await.clone() };
-                                if let Some(client) = client {
-                                    matrix::rooms::fetch_room_info(&client, &rid, &tx).await;
-                                }
+                            spawn_with_client!(matrix_client, |client| async move {
+                                matrix::rooms::fetch_room_info(&client, &rid, &tx).await;
                             });
                         }
 
                         // Handle visibility update
                         if let Some((room_id, visibility)) = app.pending_set_visibility.take() {
-                            let client_holder = matrix_client.clone();
                             let tx = event_tx.clone();
-                            tokio::spawn(async move {
-                                let client = { client_holder.lock().await.clone() };
-                                if let Some(client) = client {
-                                    matrix::rooms::set_history_visibility(&client, &room_id, &visibility, &tx).await;
-                                }
+                            spawn_with_client!(matrix_client, |client| async move {
+                                matrix::rooms::set_history_visibility(&client, &room_id, &visibility, &tx).await;
                             });
                         }
 
                         // Handle room topic update
                         if let Some((room_id, topic)) = app.pending_set_room_topic.take() {
-                            let client_holder = matrix_client.clone();
                             let tx = event_tx.clone();
-                            tokio::spawn(async move {
-                                let client = { client_holder.lock().await.clone() };
-                                if let Some(client) = client {
-                                    matrix::rooms::set_room_topic(&client, &room_id, &topic, &tx).await;
-                                }
+                            spawn_with_client!(matrix_client, |client| async move {
+                                matrix::rooms::set_room_topic(&client, &room_id, &topic, &tx).await;
                             });
                         }
 
                         // Handle room name update
                         if let Some((room_id, name)) = app.pending_set_room_name.take() {
-                            let client_holder = matrix_client.clone();
                             let tx = event_tx.clone();
-                            tokio::spawn(async move {
-                                let client = { client_holder.lock().await.clone() };
-                                if let Some(client) = client {
-                                    matrix::rooms::set_room_name(&client, &room_id, &name, &tx).await;
-                                }
+                            spawn_with_client!(matrix_client, |client| async move {
+                                matrix::rooms::set_room_name(&client, &room_id, &name, &tx).await;
                             });
                         }
 
                         // Handle encryption enable
                         if let Some(room_id) = app.pending_enable_encryption.take() {
-                            let client_holder = matrix_client.clone();
                             let tx = event_tx.clone();
-                            tokio::spawn(async move {
-                                let client = { client_holder.lock().await.clone() };
-                                if let Some(client) = client {
-                                    matrix::rooms::enable_encryption(&client, &room_id, &tx).await;
-                                }
+                            spawn_with_client!(matrix_client, |client| async move {
+                                matrix::rooms::enable_encryption(&client, &room_id, &tx).await;
                             });
                         }
 
@@ -769,12 +695,9 @@ async fn main() -> Result<()> {
                                     }
                                 }
                                 other => {
-                                    let client_holder = matrix_client.clone();
                                     let tx = event_tx.clone();
-                                    tokio::spawn(async move {
-                                        let client = { client_holder.lock().await.clone() };
-                                        if let Some(client) = client {
-                                            match other {
+                                    spawn_with_client!(matrix_client, |client| async move {
+                                        match other {
                                                 RecoveryAction::Check => {
                                                     client.encryption().wait_for_e2ee_initialization_tasks().await;
                                                     let state = client.encryption().recovery().state();
@@ -843,7 +766,6 @@ async fn main() -> Result<()> {
                                                 }
                                                 RecoveryAction::SubmitPassword(_) => unreachable!(),
                                             }
-                                        }
                                     });
                                 }
                             }
@@ -851,27 +773,23 @@ async fn main() -> Result<()> {
 
                         // Handle outgoing verification (:verify command)
                         if let Some(target) = app.take_pending_verify() {
-                            let client_holder = matrix_client.clone();
                             let tx = event_tx.clone();
                             let (confirm_tx, confirm_rx) = tokio::sync::oneshot::channel();
                             app.verify_confirm_tx = Some(confirm_tx);
 
-                            tokio::spawn(async move {
-                                let client = { client_holder.lock().await.clone() };
-                                if let Some(client) = client {
-                                    match target {
-                                        None => {
-                                            matrix::verification::start_self_verification(
-                                                client, tx, confirm_rx,
-                                            )
-                                            .await;
-                                        }
-                                        Some(user_id) => {
-                                            matrix::verification::start_user_verification(
-                                                client, &user_id, tx, confirm_rx,
-                                            )
-                                            .await;
-                                        }
+                            spawn_with_client!(matrix_client, |client| async move {
+                                match target {
+                                    None => {
+                                        matrix::verification::start_self_verification(
+                                            client, tx, confirm_rx,
+                                        )
+                                        .await;
+                                    }
+                                    Some(user_id) => {
+                                        matrix::verification::start_user_verification(
+                                            client, &user_id, tx, confirm_rx,
+                                        )
+                                        .await;
                                     }
                                 }
                             });
