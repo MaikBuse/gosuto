@@ -248,6 +248,7 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
             DisplayRow::Room { room_index, indent } => {
                 if let Some(room) = app.room_list.rooms.get(*room_index) {
                     let prefix = match room.category {
+                        RoomCategory::Invitation => icons.invite,
                         RoomCategory::Space => icons.space,
                         RoomCategory::Room => icons.room,
                         RoomCategory::DirectMessage => icons.dm,
@@ -334,6 +335,7 @@ pub fn render_tooltip(app: &App, frame: &mut Frame, room_list_area: Rect) {
                 None => return,
             };
             let prefix = match room.category {
+                RoomCategory::Invitation => icons.invite,
                 RoomCategory::Space => icons.space,
                 RoomCategory::Room => icons.room,
                 RoomCategory::DirectMessage => icons.dm,

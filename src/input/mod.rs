@@ -52,4 +52,7 @@ pub enum CommandAction {
     Recovery,
     ChangePassword,
     Verify(Option<String>),
+    AcceptInvite,
+    DeclineInvite,
+    InviteUser(String),
 }

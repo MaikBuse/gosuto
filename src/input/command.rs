@@ -55,14 +55,14 @@ pub const COMMANDS: &[CommandDef] = &[
     },
     CommandDef {
         name: "answer",
-        aliases: &["accept"],
+        aliases: &[],
         syntax: ":answer",
         description: "Answer incoming call",
         takes_arg: false,
     },
     CommandDef {
         name: "reject",
-        aliases: &["decline"],
+        aliases: &[],
         syntax: ":reject",
         description: "Reject incoming call",
         takes_arg: false,
@@ -142,6 +142,27 @@ pub const COMMANDS: &[CommandDef] = &[
         aliases: &["v"],
         syntax: ":verify [user]",
         description: "Start verification",
+        takes_arg: true,
+    },
+    CommandDef {
+        name: "accept",
+        aliases: &[],
+        syntax: ":accept",
+        description: "Accept room invitation",
+        takes_arg: false,
+    },
+    CommandDef {
+        name: "decline",
+        aliases: &[],
+        syntax: ":decline",
+        description: "Decline room invitation",
+        takes_arg: false,
+    },
+    CommandDef {
+        name: "invite",
+        aliases: &["inv"],
+        syntax: ":invite <user>",
+        description: "Invite user to current room",
         takes_arg: true,
     },
 ];
@@ -302,8 +323,17 @@ fn parse_command(input: &str) -> InputResult {
         }
         "logout" => InputResult::Command(CommandAction::Logout),
         "call" => InputResult::Command(CommandAction::Call),
-        "answer" | "accept" => InputResult::Command(CommandAction::Answer),
-        "reject" | "decline" => InputResult::Command(CommandAction::Reject),
+        "answer" => InputResult::Command(CommandAction::Answer),
+        "reject" => InputResult::Command(CommandAction::Reject),
+        "accept" => InputResult::Command(CommandAction::AcceptInvite),
+        "decline" => InputResult::Command(CommandAction::DeclineInvite),
+        "invite" | "inv" => {
+            if arg.is_empty() {
+                InputResult::None
+            } else {
+                InputResult::Command(CommandAction::InviteUser(arg.to_string()))
+            }
+        }
         "hangup" | "end" => InputResult::Command(CommandAction::Hangup),
         "rain" | "matrix" | "effects" => InputResult::Command(CommandAction::Rain),
         "glitch" => InputResult::Command(CommandAction::Glitch),
@@ -437,27 +467,56 @@ mod tests {
     }
 
     #[test]
-    fn parse_answer_alias_accept() {
+    fn parse_answer() {
         assert!(matches!(
             parse_command("answer"),
-            InputResult::Command(CommandAction::Answer)
-        ));
-        assert!(matches!(
-            parse_command("accept"),
             InputResult::Command(CommandAction::Answer)
         ));
     }
 
     #[test]
-    fn parse_reject_alias_decline() {
+    fn parse_reject() {
         assert!(matches!(
             parse_command("reject"),
             InputResult::Command(CommandAction::Reject)
         ));
+    }
+
+    #[test]
+    fn parse_accept_invite() {
+        assert!(matches!(
+            parse_command("accept"),
+            InputResult::Command(CommandAction::AcceptInvite)
+        ));
+    }
+
+    #[test]
+    fn parse_decline_invite() {
         assert!(matches!(
             parse_command("decline"),
-            InputResult::Command(CommandAction::Reject)
+            InputResult::Command(CommandAction::DeclineInvite)
         ));
+    }
+
+    #[test]
+    fn parse_invite_with_arg() {
+        let result = parse_command("invite @alice:matrix.org");
+        assert!(
+            matches!(result, InputResult::Command(CommandAction::InviteUser(ref u)) if u == "@alice:matrix.org")
+        );
+    }
+
+    #[test]
+    fn parse_invite_no_arg_returns_none() {
+        assert!(matches!(parse_command("invite"), InputResult::None));
+    }
+
+    #[test]
+    fn parse_invite_alias_inv() {
+        let result = parse_command("inv @bob:matrix.org");
+        assert!(
+            matches!(result, InputResult::Command(CommandAction::InviteUser(ref u)) if u == "@bob:matrix.org")
+        );
     }
 
     #[test]

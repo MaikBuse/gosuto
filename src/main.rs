@@ -445,6 +445,9 @@ async fn main() -> Result<()> {
                             if app.take_pending_dm().is_some()
                                 || app.take_pending_create_room().is_some()
                                 || app.take_pending_leave().is_some()
+                                || app.take_pending_accept_invite().is_some()
+                                || app.take_pending_decline_invite().is_some()
+                                || app.take_pending_invite_user().is_some()
                             {
                                 app.last_error = Some("Not available in demo mode".to_string());
                             }
@@ -624,6 +627,43 @@ async fn main() -> Result<()> {
                                 }
                             });
                         }
+
+                        // Handle accept invite
+                        if let Some(room_id) = app.take_pending_accept_invite() {
+                            let client_holder = matrix_client.clone();
+                            let tx = event_tx.clone();
+                            tokio::spawn(async move {
+                                let client = { client_holder.lock().await.clone() };
+                                if let Some(client) = client {
+                                    matrix::rooms::accept_invite(&client, &room_id, &tx).await;
+                                }
+                            });
+                        }
+
+                        // Handle decline invite
+                        if let Some(room_id) = app.take_pending_decline_invite() {
+                            let client_holder = matrix_client.clone();
+                            let tx = event_tx.clone();
+                            tokio::spawn(async move {
+                                let client = { client_holder.lock().await.clone() };
+                                if let Some(client) = client {
+                                    matrix::rooms::decline_invite(&client, &room_id, &tx).await;
+                                }
+                            });
+                        }
+
+                        // Handle invite user
+                        if let Some((room_id, user_id)) = app.take_pending_invite_user() {
+                            let client_holder = matrix_client.clone();
+                            let tx = event_tx.clone();
+                            tokio::spawn(async move {
+                                let client = { client_holder.lock().await.clone() };
+                                if let Some(client) = client {
+                                    matrix::rooms::invite_user(&client, &room_id, &user_id, &tx).await;
+                                }
+                            });
+                        }
+
                         // Handle user config fetch
                         if app.pending_user_config {
                             app.pending_user_config = false;

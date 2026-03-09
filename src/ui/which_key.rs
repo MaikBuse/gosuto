@@ -64,6 +64,11 @@ fn entries(cat: WhichKeyCategory) -> &'static [Entry] {
                 label: "DM user",
                 available: always,
             },
+            Entry {
+                key: 'i',
+                label: "Invite user",
+                available: room_selected,
+            },
         ],
         WhichKeyCategory::Call => &[
             Entry {

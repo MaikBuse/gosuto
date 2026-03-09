@@ -79,12 +79,30 @@ pub async fn get_room_list(client: &Client) -> Vec<RoomSummary> {
         }
     }
 
-    // Sort: spaces first, then rooms, then DMs
+    // Fetch invited rooms
+    for room in &client.invited_rooms() {
+        let id = room.room_id().to_string();
+        let name = match room.display_name().await {
+            Ok(dn) => dn.to_string(),
+            Err(_) => id.clone(),
+        };
+        rooms.push(RoomSummary {
+            id,
+            name,
+            category: RoomCategory::Invitation,
+            unread_count: 0,
+            is_space_child: false,
+            parent_space_id: None,
+        });
+    }
+
+    // Sort: invitations first, then spaces, rooms, DMs
     rooms.sort_by(|a, b| {
         let cat_order = |c: &RoomCategory| match c {
-            RoomCategory::Space => 0,
-            RoomCategory::Room => 1,
-            RoomCategory::DirectMessage => 2,
+            RoomCategory::Invitation => 0,
+            RoomCategory::Space => 1,
+            RoomCategory::Room => 2,
+            RoomCategory::DirectMessage => 3,
         };
         cat_order(&a.category)
             .cmp(&cat_order(&b.category))
@@ -406,5 +424,101 @@ pub async fn mark_room_as_read(client: &Client, room_id: &str, event_id_hint: Op
         .await
     {
         warn!("Failed to send read receipt for {}: {}", room_id, e);
+    }
+}
+
+pub async fn accept_invite(client: &Client, room_id: &str, tx: &EventSender) {
+    let room_id_parsed: Result<matrix_sdk::ruma::OwnedRoomId, _> = room_id.try_into();
+    let Ok(rid) = room_id_parsed else {
+        let _ = tx.send(AppEvent::InviteError {
+            error: format!("Invalid room ID: {}", room_id),
+        });
+        return;
+    };
+
+    let Some(room) = client.get_room(&rid) else {
+        let _ = tx.send(AppEvent::InviteError {
+            error: "Room not found".to_string(),
+        });
+        return;
+    };
+
+    match room.join().await {
+        Ok(_) => {
+            let _ = tx.send(AppEvent::InviteAccepted {
+                room_id: room_id.to_string(),
+            });
+        }
+        Err(e) => {
+            let _ = tx.send(AppEvent::InviteError {
+                error: format!("Failed to accept invite: {}", e),
+            });
+        }
+    }
+}
+
+pub async fn decline_invite(client: &Client, room_id: &str, tx: &EventSender) {
+    let room_id_parsed: Result<matrix_sdk::ruma::OwnedRoomId, _> = room_id.try_into();
+    let Ok(rid) = room_id_parsed else {
+        let _ = tx.send(AppEvent::InviteError {
+            error: format!("Invalid room ID: {}", room_id),
+        });
+        return;
+    };
+
+    let Some(room) = client.get_room(&rid) else {
+        let _ = tx.send(AppEvent::InviteError {
+            error: "Room not found".to_string(),
+        });
+        return;
+    };
+
+    match room.leave().await {
+        Ok(_) => {
+            let _ = tx.send(AppEvent::InviteDeclined);
+        }
+        Err(e) => {
+            let _ = tx.send(AppEvent::InviteError {
+                error: format!("Failed to decline invite: {}", e),
+            });
+        }
+    }
+}
+
+pub async fn invite_user(client: &Client, room_id: &str, user_id: &str, tx: &EventSender) {
+    let room_id_parsed: Result<matrix_sdk::ruma::OwnedRoomId, _> = room_id.try_into();
+    let Ok(rid) = room_id_parsed else {
+        let _ = tx.send(AppEvent::InviteError {
+            error: format!("Invalid room ID: {}", room_id),
+        });
+        return;
+    };
+
+    let uid_parsed: Result<matrix_sdk::ruma::OwnedUserId, _> = user_id.try_into();
+    let Ok(uid) = uid_parsed else {
+        let _ = tx.send(AppEvent::InviteError {
+            error: format!("Invalid user ID: {}", user_id),
+        });
+        return;
+    };
+
+    let Some(room) = client.get_room(&rid) else {
+        let _ = tx.send(AppEvent::InviteError {
+            error: "Room not found".to_string(),
+        });
+        return;
+    };
+
+    match room.invite_user_by_id(&uid).await {
+        Ok(_) => {
+            let _ = tx.send(AppEvent::UserInvited {
+                user_id: user_id.to_string(),
+            });
+        }
+        Err(e) => {
+            let _ = tx.send(AppEvent::InviteError {
+                error: format!("Failed to invite user: {}", e),
+            });
+        }
     }
 }

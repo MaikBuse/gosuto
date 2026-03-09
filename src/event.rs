@@ -161,6 +161,17 @@ pub enum AppEvent {
         user_id: String,
         verified: bool,
     },
+    // Invitation events
+    InviteAccepted {
+        room_id: String,
+    },
+    InviteDeclined,
+    UserInvited {
+        user_id: String,
+    },
+    InviteError {
+        error: String,
+    },
     // Image events
     ImageLoaded {
         event_id: String,

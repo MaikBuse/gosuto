@@ -8,6 +8,7 @@ pub mod create_room;
 pub mod effects;
 pub mod icons;
 pub mod input_bar;
+pub mod invite_prompt;
 pub mod layout;
 pub mod login;
 pub mod members;
@@ -149,6 +150,11 @@ pub fn render(app: &mut App, frame: &mut Frame) {
     // Verification modal
     if let Some(ref verify_state) = app.verification_modal {
         verify_modal::render(verify_state, frame);
+    }
+
+    // Invite prompt
+    if app.invite_prompt_room.is_some() {
+        invite_prompt::render(app, frame);
     }
 
     // Which-key leader popup

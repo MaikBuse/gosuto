@@ -22,6 +22,7 @@ pub struct Icons {
     pub home: &'static str,
     pub participant: &'static str,
     pub checkmark: &'static str,
+    pub invite: &'static str,
 }
 
 pub const UNICODE: Icons = Icons {
@@ -44,6 +45,7 @@ pub const UNICODE: Icons = Icons {
     home: "\u{2302}",
     participant: "\u{25B6}",
     checkmark: "\u{2713}",
+    invite: "\u{2709}",
 };
 
 pub const NERD: Icons = Icons {
@@ -66,6 +68,7 @@ pub const NERD: Icons = Icons {
     home: "\u{f015}",
     participant: "\u{f007}",
     checkmark: "\u{f058}",
+    invite: "\u{f0e0}",
 };
 
 pub fn icons(use_nerd_fonts: bool) -> &'static Icons {
@@ -97,6 +100,7 @@ mod tests {
         assert!(!i.home.is_empty());
         assert!(!i.participant.is_empty());
         assert!(!i.checkmark.is_empty());
+        assert!(!i.invite.is_empty());
     }
 
     #[test]
@@ -120,6 +124,7 @@ mod tests {
         assert!(!i.home.is_empty());
         assert!(!i.participant.is_empty());
         assert!(!i.checkmark.is_empty());
+        assert!(!i.invite.is_empty());
     }
 
     #[test]

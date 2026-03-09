@@ -493,6 +493,11 @@ pub struct App {
     pub verify_confirm_tx: Option<tokio::sync::oneshot::Sender<bool>>,
     pub self_verified: bool,
     pub recovery_enabled: bool,
+    // Invitation support
+    pub invite_prompt_room: Option<String>,
+    pending_accept_invite: Option<String>,
+    pending_decline_invite: Option<String>,
+    pending_invite_user: Option<(String, String)>,
 }
 
 impl App {
@@ -570,6 +575,10 @@ impl App {
             verify_confirm_tx: None,
             self_verified: false,
             recovery_enabled: false,
+            invite_prompt_room: None,
+            pending_accept_invite: None,
+            pending_decline_invite: None,
+            pending_invite_user: None,
         }
     }
 
@@ -597,6 +606,8 @@ impl App {
                     self.handle_verify_modal_key(key);
                 } else if self.recovery.is_some() {
                     self.handle_recovery_key(key);
+                } else if self.invite_prompt_room.is_some() {
+                    self.handle_invite_prompt_key(key);
                 } else if self.which_key.is_some() {
                     self.handle_which_key(key);
                 } else {
@@ -1030,6 +1041,22 @@ impl App {
                     member.verified = Some(verified);
                 }
             }
+            // Invitation events
+            AppEvent::InviteAccepted { room_id } => {
+                self.messages.set_room(Some(room_id));
+                self.vim.focus = FocusPanel::Messages;
+                self.chat_title_reveal.trigger();
+                self.pending_refetch = true;
+            }
+            AppEvent::InviteDeclined => {
+                self.pending_refetch = true;
+            }
+            AppEvent::UserInvited { user_id } => {
+                self.last_error = Some(format!("Invited {}", user_id));
+            }
+            AppEvent::InviteError { error } => {
+                self.last_error = Some(error);
+            }
             // Image events
             AppEvent::ImageLoaded {
                 event_id,
@@ -1168,9 +1195,13 @@ impl App {
                                 .emp_pulse
                                 .trigger_burst(self.room_list.selected as u16);
                             if let Some(room) = self.room_list.selected_room() {
-                                let room_id = room.id.clone();
-                                self.messages.set_room(Some(room_id));
-                                self.chat_title_reveal.trigger();
+                                if matches!(room.category, crate::state::RoomCategory::Invitation) {
+                                    self.invite_prompt_room = Some(room.id.clone());
+                                } else {
+                                    let room_id = room.id.clone();
+                                    self.messages.set_room(Some(room_id));
+                                    self.chat_title_reveal.trigger();
+                                }
                             }
                         }
                         _ => {} // SectionHeader: no-op
@@ -1479,6 +1510,62 @@ impl App {
             CommandAction::Verify(target) => {
                 self.pending_verify = Some(target);
             }
+            CommandAction::AcceptInvite => {
+                if let Some(room) = self.room_list.selected_room() {
+                    if matches!(room.category, crate::state::RoomCategory::Invitation) {
+                        self.pending_accept_invite = Some(room.id.clone());
+                    } else {
+                        self.last_error = Some("Selected room is not an invitation".to_string());
+                    }
+                } else {
+                    self.last_error = Some("No room selected".to_string());
+                }
+            }
+            CommandAction::DeclineInvite => {
+                if let Some(room) = self.room_list.selected_room() {
+                    if matches!(room.category, crate::state::RoomCategory::Invitation) {
+                        self.pending_decline_invite = Some(room.id.clone());
+                    } else {
+                        self.last_error = Some("Selected room is not an invitation".to_string());
+                    }
+                } else {
+                    self.last_error = Some("No room selected".to_string());
+                }
+            }
+            CommandAction::InviteUser(user) => {
+                if let Some(room_id) = self.messages.current_room_id.clone() {
+                    self.pending_invite_user = Some((room_id, user));
+                } else {
+                    self.last_error = Some("No room selected".to_string());
+                }
+            }
+        }
+    }
+
+    // ── Invite Prompt ────────────────────────────────
+
+    fn handle_invite_prompt_key(&mut self, key: KeyEvent) {
+        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
+            self.invite_prompt_room = None;
+            self.running = false;
+            return;
+        }
+
+        match key.code {
+            KeyCode::Enter => {
+                if let Some(room_id) = self.invite_prompt_room.take() {
+                    self.pending_accept_invite = Some(room_id);
+                }
+            }
+            KeyCode::Char('d') => {
+                if let Some(room_id) = self.invite_prompt_room.take() {
+                    self.pending_decline_invite = Some(room_id);
+                }
+            }
+            KeyCode::Esc => {
+                self.invite_prompt_room = None;
+            }
+            _ => {}
         }
     }
 
@@ -1617,6 +1704,7 @@ impl App {
                 'c' => self.handle_command(CommandAction::CreateRoom),
                 'e' => self.handle_command(CommandAction::RoomInfo),
                 'd' => self.vim.enter_command_with("dm "),
+                'i' => self.vim.enter_command_with("invite "),
                 _ => {}
             },
             WhichKeyCategory::Call => match key {
@@ -1704,6 +1792,18 @@ impl App {
 
     pub fn take_pending_typing_notice(&mut self) -> Option<(String, bool)> {
         self.pending_typing_notice.take()
+    }
+
+    pub fn take_pending_accept_invite(&mut self) -> Option<String> {
+        self.pending_accept_invite.take()
+    }
+
+    pub fn take_pending_decline_invite(&mut self) -> Option<String> {
+        self.pending_decline_invite.take()
+    }
+
+    pub fn take_pending_invite_user(&mut self) -> Option<(String, String)> {
+        self.pending_invite_user.take()
     }
 
     // ── Room Info ───────────────────────────────────────

@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone)]
 pub enum RoomCategory {
+    Invitation,
     Space,
     Room,
     DirectMessage,
@@ -81,6 +82,32 @@ impl RoomListState {
         let filter = self.search_filter.as_ref().map(|q| q.to_lowercase());
         let mut rows = Vec::new();
 
+        // Invitations section at the very top
+        let invites: Vec<usize> = self
+            .rooms
+            .iter()
+            .enumerate()
+            .filter(|(_, r)| matches!(r.category, RoomCategory::Invitation))
+            .filter(|(_, r)| {
+                filter
+                    .as_ref()
+                    .is_none_or(|q| r.name.to_lowercase().contains(q))
+            })
+            .map(|(i, _)| i)
+            .collect();
+
+        if !invites.is_empty() {
+            rows.push(DisplayRow::SectionHeader {
+                label: "INVITATIONS".to_string(),
+            });
+            for ii in invites {
+                rows.push(DisplayRow::Room {
+                    room_index: ii,
+                    indent: 0,
+                });
+            }
+        }
+
         // Collect space indices
         let spaces: Vec<usize> = self
             .rooms
@@ -98,7 +125,10 @@ impl RoomListState {
 
         let mut claimed_by_space: HashSet<usize> = HashSet::new();
         for (i, room) in self.rooms.iter().enumerate() {
-            if matches!(room.category, RoomCategory::DirectMessage) {
+            if matches!(
+                room.category,
+                RoomCategory::DirectMessage | RoomCategory::Invitation
+            ) {
                 continue;
             }
             if let Some(ref parent) = room.parent_space_id
@@ -706,6 +736,27 @@ mod tests {
         let mut state = RoomListState::new();
         state.move_down();
         assert_eq!(state.selected, 0);
+    }
+
+    #[test]
+    fn rebuild_invitations_section_at_top() {
+        let mut state = RoomListState::new();
+        state.set_rooms(vec![
+            room("!inv1:x", "Invite Room", RoomCategory::Invitation),
+            room("!a:x", "Room A", RoomCategory::Room),
+        ]);
+        // Should have: SectionHeader(INVITATIONS), Invite Room, SectionHeader(x), Room A
+        assert_eq!(state.display_rows.len(), 4);
+        assert!(
+            matches!(&state.display_rows[0], DisplayRow::SectionHeader { label } if label == "INVITATIONS")
+        );
+        assert!(matches!(
+            state.display_rows[1],
+            DisplayRow::Room {
+                room_index: 0,
+                indent: 0
+            }
+        ));
     }
 
     #[test]
