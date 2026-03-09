@@ -13,406 +13,18 @@ pub type ImageDecodeResult = (String, Result<(StatefulProtocol, u32, u32), Strin
 use crate::config::GosutoConfig;
 use crate::event::{AppEvent, EventSender};
 use crate::input::{self, CommandAction, FocusPanel, InputResult, VimState};
-use crate::state::{AuthState, ImageCache, MemberListState, MessageState, RoomListState};
+use crate::state::{
+    AudioSettingsAction, AudioSettingsState, AuthState, ChangePasswordAction, ChangePasswordState,
+    CreateRoomAction, CreateRoomParams, CreateRoomState, ImageCache, MemberListState, MessageState,
+    RecoveryAction, RecoveryModalState, RecoveryStage, RecoveryTransition, RoomInfoAction,
+    RoomInfoState, RoomListState, UserConfigAction, UserConfigState, recovery_key_action,
+};
 use crate::ui::call_overlay::TransmissionPopup;
 use crate::ui::effects::{EffectsState, TextReveal};
 use crate::ui::login::LoginState;
 use crate::ui::room_list::RoomListAnimState;
 use crate::voip::audio::AudioPipeline;
 use crate::voip::{CallCommand, CallCommandSender, CallInfo, CallState};
-
-pub const HISTORY_VISIBILITY_OPTIONS: &[&str] = &["shared", "invited", "joined", "world_readable"];
-
-pub struct RoomInfoState {
-    pub open: bool,
-    pub room_id: String,
-    pub name: Option<String>,
-    pub topic: Option<String>,
-    pub history_visibility: String,
-    pub encrypted: bool,
-    pub encryption_selection: String,
-    pub selected_field: usize,
-    pub loading: bool,
-    pub saving: bool,
-    pub editing_name: bool,
-    pub name_buffer: String,
-    pub editing_topic: bool,
-    pub topic_buffer: String,
-    pub topic_save_pending: bool,
-}
-
-pub struct CreateRoomState {
-    pub open: bool,
-    pub selected_field: usize, // 0=name, 1=topic, 2=history, 3=encrypted, 4=create button
-    pub name_buffer: String,
-    pub editing_name: bool,
-    pub topic_buffer: String,
-    pub editing_topic: bool,
-    pub history_visibility: String,
-    pub encrypted: String, // "yes" (default) or "no"
-    pub creating: bool,
-}
-
-impl CreateRoomState {
-    pub fn new() -> Self {
-        Self {
-            open: false,
-            selected_field: 0,
-            name_buffer: String::new(),
-            editing_name: false,
-            topic_buffer: String::new(),
-            editing_topic: false,
-            history_visibility: "shared".to_string(),
-            encrypted: "yes".to_string(),
-            creating: false,
-        }
-    }
-}
-
-pub struct CreateRoomParams {
-    pub name: String,
-    pub topic: Option<String>,
-    pub history_visibility: String,
-    pub encrypted: bool,
-}
-
-impl RoomInfoState {
-    pub fn new() -> Self {
-        Self {
-            open: false,
-            room_id: String::new(),
-            name: None,
-            topic: None,
-            history_visibility: "shared".to_string(),
-            encrypted: false,
-            encryption_selection: "no".to_string(),
-            selected_field: 0,
-            loading: false,
-            saving: false,
-            editing_name: false,
-            name_buffer: String::new(),
-            editing_topic: false,
-            topic_buffer: String::new(),
-            topic_save_pending: false,
-        }
-    }
-}
-
-pub struct AudioSettingsState {
-    pub open: bool,
-    pub selected_field: usize,
-    pub input_devices: Vec<String>,
-    pub output_devices: Vec<String>,
-    pub input_device_idx: usize,
-    pub output_device_idx: usize,
-    pub input_volume: f32,
-    pub output_volume: f32,
-    pub voice_activity: bool,
-    pub sensitivity: f32,
-    pub push_to_talk: bool,
-    pub push_to_talk_key: Option<String>,
-    pub capturing_ptt_key: bool,
-    pub ptt_error: Option<String>,
-    pub vad_hold_ms: u64,
-    pub mic_level: f32,
-    pub mic_test_running: Arc<AtomicBool>,
-}
-
-impl AudioSettingsState {
-    pub fn new() -> Self {
-        Self {
-            open: false,
-            selected_field: 0,
-            input_devices: vec!["Default".to_string()],
-            output_devices: vec!["Default".to_string()],
-            input_device_idx: 0,
-            output_device_idx: 0,
-            input_volume: 1.0,
-            output_volume: 1.0,
-            voice_activity: false,
-            sensitivity: 0.15,
-            push_to_talk: false,
-            push_to_talk_key: None,
-            capturing_ptt_key: false,
-            ptt_error: None,
-            vad_hold_ms: 300,
-            mic_level: 0.0,
-            mic_test_running: Arc::new(AtomicBool::new(false)),
-        }
-    }
-
-    pub fn visible_fields(&self) -> Vec<usize> {
-        let mut fields = vec![0, 1, 2, 3, 4];
-        if self.voice_activity {
-            fields.push(5); // sensitivity
-            fields.push(8); // vad hold
-        }
-        fields.push(6);
-        if self.push_to_talk {
-            fields.push(7);
-        }
-        fields
-    }
-
-    pub fn current_field(&self) -> usize {
-        let visible = self.visible_fields();
-        visible.get(self.selected_field).copied().unwrap_or(0)
-    }
-}
-
-pub struct UserConfigState {
-    pub open: bool,
-    pub user_id: String,
-    pub device_id: String,
-    pub homeserver: String,
-    pub display_name: Option<String>,
-    pub display_name_buffer: String,
-    pub editing_display_name: bool,
-    pub verified: bool,
-    pub recovery_status: crate::event::RecoveryStatus,
-    pub selected_field: usize, // 0=display name
-    pub loading: bool,
-    pub saving: bool,
-}
-
-// ── Recovery Modal ─────────────────────────────────────
-
-/// Steps in the automatic healing process that runs when `recover()` succeeds
-/// but the account's encryption state is still incomplete.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum HealingStep {
-    /// Generating and uploading cross-signing keys (master, self-signing, user-signing).
-    CrossSigning,
-    /// Creating or enabling server-side key backup.
-    Backup,
-    /// Re-exporting all secrets into a new secret storage key.
-    ExportSecrets,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum RecoveryStage {
-    Checking,
-    Disabled,
-    Enabled,
-    Incomplete,
-    EnterKey,
-    Recovering,
-    Creating,
-    NeedPassword,
-    Healing(HealingStep),
-    ShowKey(String),
-    ConfirmReset,
-    Resetting,
-    Error(String),
-}
-
-pub struct RecoveryModalState {
-    pub stage: RecoveryStage,
-    pub key_buffer: String,
-    pub confirm_buffer: String,
-    pub copied: bool,
-    pub password_buffer: String,
-    pub password_tx: Option<tokio::sync::oneshot::Sender<String>>,
-}
-
-impl RecoveryModalState {
-    pub fn new() -> Self {
-        Self {
-            stage: RecoveryStage::Checking,
-            key_buffer: String::new(),
-            confirm_buffer: String::new(),
-            copied: false,
-            password_buffer: String::new(),
-            password_tx: None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum RecoveryAction {
-    Check,
-    Create,
-    Recover(String),
-    Reset,
-    SubmitPassword(String),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum RecoveryTransition {
-    None,
-    Close,
-    Pending(RecoveryAction),
-}
-
-pub fn recovery_key_action(
-    state: &mut RecoveryModalState,
-    code: KeyCode,
-    _modifiers: KeyModifiers,
-    clipboard: Option<&mut arboard::Clipboard>,
-) -> RecoveryTransition {
-    match &state.stage {
-        RecoveryStage::Checking
-        | RecoveryStage::Recovering
-        | RecoveryStage::Creating
-        | RecoveryStage::Healing(_)
-        | RecoveryStage::Resetting => {
-            if code == KeyCode::Esc {
-                return RecoveryTransition::Close;
-            }
-            RecoveryTransition::None
-        }
-        RecoveryStage::NeedPassword => match code {
-            KeyCode::Char(c) => {
-                state.password_buffer.push(c);
-                RecoveryTransition::None
-            }
-            KeyCode::Backspace => {
-                state.password_buffer.pop();
-                RecoveryTransition::None
-            }
-            KeyCode::Enter => {
-                if state.password_buffer.is_empty() {
-                    RecoveryTransition::None
-                } else {
-                    let pw = state.password_buffer.clone();
-                    state.password_buffer.clear();
-                    state.stage = RecoveryStage::Healing(HealingStep::CrossSigning);
-                    RecoveryTransition::Pending(RecoveryAction::SubmitPassword(pw))
-                }
-            }
-            KeyCode::Esc => RecoveryTransition::Close,
-            _ => RecoveryTransition::None,
-        },
-        RecoveryStage::Disabled => match code {
-            KeyCode::Enter => {
-                state.stage = RecoveryStage::Creating;
-                RecoveryTransition::Pending(RecoveryAction::Create)
-            }
-            KeyCode::Esc => RecoveryTransition::Close,
-            _ => RecoveryTransition::None,
-        },
-        RecoveryStage::Enabled => match code {
-            KeyCode::Char('r') => {
-                state.stage = RecoveryStage::ConfirmReset;
-                RecoveryTransition::None
-            }
-            KeyCode::Esc => RecoveryTransition::Close,
-            _ => RecoveryTransition::None,
-        },
-        RecoveryStage::Incomplete => match code {
-            KeyCode::Char('e') => {
-                state.stage = RecoveryStage::EnterKey;
-                RecoveryTransition::None
-            }
-            KeyCode::Char('r') => {
-                state.stage = RecoveryStage::ConfirmReset;
-                RecoveryTransition::None
-            }
-            KeyCode::Esc => RecoveryTransition::Close,
-            _ => RecoveryTransition::None,
-        },
-        RecoveryStage::EnterKey => match code {
-            KeyCode::Char(c) => {
-                state.key_buffer.push(c);
-                RecoveryTransition::None
-            }
-            KeyCode::Backspace => {
-                state.key_buffer.pop();
-                RecoveryTransition::None
-            }
-            KeyCode::Enter => {
-                if state.key_buffer.is_empty() {
-                    RecoveryTransition::None
-                } else {
-                    let key = state.key_buffer.clone();
-                    state.stage = RecoveryStage::Recovering;
-                    RecoveryTransition::Pending(RecoveryAction::Recover(key))
-                }
-            }
-            KeyCode::Esc => RecoveryTransition::Close,
-            _ => RecoveryTransition::None,
-        },
-        RecoveryStage::ConfirmReset => match code {
-            KeyCode::Char(c) => {
-                state.confirm_buffer.push(c);
-                RecoveryTransition::None
-            }
-            KeyCode::Backspace => {
-                state.confirm_buffer.pop();
-                RecoveryTransition::None
-            }
-            KeyCode::Enter => {
-                if state.confirm_buffer == "yes" {
-                    state.stage = RecoveryStage::Resetting;
-                    RecoveryTransition::Pending(RecoveryAction::Reset)
-                } else {
-                    state.confirm_buffer.clear();
-                    RecoveryTransition::None
-                }
-            }
-            KeyCode::Esc => RecoveryTransition::Close,
-            _ => RecoveryTransition::None,
-        },
-        RecoveryStage::ShowKey(_) => match code {
-            KeyCode::Char('c') => {
-                if let RecoveryStage::ShowKey(ref key) = state.stage
-                    && let Some(clip) = clipboard
-                {
-                    let _ = clip.set_text(key.clone());
-                    state.copied = true;
-                }
-                RecoveryTransition::None
-            }
-            KeyCode::Enter | KeyCode::Esc => RecoveryTransition::Close,
-            _ => RecoveryTransition::None,
-        },
-        RecoveryStage::Error(_) => match code {
-            KeyCode::Enter | KeyCode::Esc => RecoveryTransition::Close,
-            _ => RecoveryTransition::None,
-        },
-    }
-}
-
-pub struct ChangePasswordState {
-    pub open: bool,
-    pub selected_field: usize, // 0=current, 1=new, 2=confirm
-    pub current_buffer: String,
-    pub new_buffer: String,
-    pub confirm_buffer: String,
-    pub saving: bool,
-}
-
-impl ChangePasswordState {
-    pub fn new() -> Self {
-        Self {
-            open: false,
-            selected_field: 0,
-            current_buffer: String::new(),
-            new_buffer: String::new(),
-            confirm_buffer: String::new(),
-            saving: false,
-        }
-    }
-}
-
-impl UserConfigState {
-    pub fn new() -> Self {
-        Self {
-            open: false,
-            user_id: String::new(),
-            device_id: String::new(),
-            homeserver: String::new(),
-            display_name: None,
-            display_name_buffer: String::new(),
-            editing_display_name: false,
-            verified: false,
-            recovery_status: crate::event::RecoveryStatus::Disabled,
-            selected_field: 0,
-            loading: false,
-            saving: false,
-        }
-    }
-}
 
 pub struct App {
     pub running: bool,
@@ -1813,149 +1425,23 @@ impl App {
             return;
         }
 
-        if self.room_info.loading || self.room_info.saving {
-            if key.code == KeyCode::Esc {
+        match self.room_info.handle_key(key) {
+            RoomInfoAction::None => {}
+            RoomInfoAction::Close => {
                 self.room_info.open = false;
             }
-            return;
-        }
-
-        // Inline name editing mode
-        if self.room_info.editing_name {
-            match key.code {
-                KeyCode::Esc => {
-                    self.room_info.editing_name = false;
-                    self.room_info.name_buffer.clear();
-                }
-                KeyCode::Enter => {
-                    let new_name = self.room_info.name_buffer.clone();
-                    if !new_name.is_empty() {
-                        let room_id = self.room_info.room_id.clone();
-                        self.room_info.saving = true;
-                        self.room_info.editing_name = false;
-                        self.pending_set_room_name = Some((room_id, new_name));
-                    } else {
-                        self.room_info.editing_name = false;
-                        self.room_info.name_buffer.clear();
-                    }
-                }
-                KeyCode::Backspace => {
-                    self.room_info.name_buffer.pop();
-                }
-                KeyCode::Char(c) => {
-                    self.room_info.name_buffer.push(c);
-                }
-                _ => {}
+            RoomInfoAction::SetName(room_id, name) => {
+                self.pending_set_room_name = Some((room_id, name));
             }
-            return;
-        }
-
-        // Inline topic editing mode
-        if self.room_info.editing_topic {
-            match key.code {
-                KeyCode::Esc => {
-                    self.room_info.editing_topic = false;
-                    self.room_info.topic_buffer.clear();
-                }
-                KeyCode::Enter => {
-                    let new_topic = self.room_info.topic_buffer.clone();
-                    let room_id = self.room_info.room_id.clone();
-                    self.room_info.saving = true;
-                    self.room_info.editing_topic = false;
-                    self.room_info.topic_save_pending = true;
-                    self.pending_set_room_topic = Some((room_id, new_topic));
-                }
-                KeyCode::Backspace => {
-                    self.room_info.topic_buffer.pop();
-                }
-                KeyCode::Char(c) => {
-                    self.room_info.topic_buffer.push(c);
-                }
-                _ => {}
+            RoomInfoAction::SetTopic(room_id, topic) => {
+                self.pending_set_room_topic = Some((room_id, topic));
             }
-            return;
-        }
-
-        match key.code {
-            KeyCode::Esc => {
-                self.room_info.open = false;
+            RoomInfoAction::SetVisibility(room_id, vis) => {
+                self.pending_set_visibility = Some((room_id, vis));
             }
-            KeyCode::Char('j') | KeyCode::Down => {
-                let max_field = if self.room_info.encrypted { 2 } else { 3 };
-                if self.room_info.selected_field < max_field {
-                    self.room_info.selected_field += 1;
-                }
+            RoomInfoAction::EnableEncryption(room_id) => {
+                self.pending_enable_encryption = Some(room_id);
             }
-            KeyCode::Char('k') | KeyCode::Up => {
-                if self.room_info.selected_field > 0 {
-                    self.room_info.selected_field -= 1;
-                }
-            }
-            KeyCode::Char('h') | KeyCode::Left => {
-                self.cycle_room_info_field(-1);
-            }
-            KeyCode::Char('l') | KeyCode::Right => {
-                self.cycle_room_info_field(1);
-            }
-            KeyCode::Enter => {
-                match self.room_info.selected_field {
-                    0 => {
-                        // Enter name editing mode
-                        self.room_info.editing_name = true;
-                        self.room_info.name_buffer =
-                            self.room_info.name.clone().unwrap_or_default();
-                    }
-                    1 => {
-                        // Enter topic editing mode
-                        self.room_info.editing_topic = true;
-                        self.room_info.topic_buffer =
-                            self.room_info.topic.clone().unwrap_or_default();
-                    }
-                    2 => {
-                        // Save current history visibility
-                        let room_id = self.room_info.room_id.clone();
-                        let vis = self.room_info.history_visibility.clone();
-                        self.room_info.saving = true;
-                        self.pending_set_visibility = Some((room_id, vis));
-                    }
-                    3 => {
-                        // Enable encryption (only reachable when not already encrypted)
-                        if self.room_info.encryption_selection == "yes" {
-                            let room_id = self.room_info.room_id.clone();
-                            self.room_info.saving = true;
-                            self.pending_enable_encryption = Some(room_id);
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            _ => {}
-        }
-    }
-
-    fn cycle_room_info_field(&mut self, dir: i32) {
-        if self.room_info.selected_field == 2 {
-            // Cycle history visibility
-            let opts = HISTORY_VISIBILITY_OPTIONS;
-            let current_idx = opts
-                .iter()
-                .position(|&v| v == self.room_info.history_visibility)
-                .unwrap_or(0);
-            let len = opts.len();
-            let new_idx = if dir > 0 {
-                (current_idx + 1) % len
-            } else {
-                (current_idx + len - 1) % len
-            };
-            self.room_info.history_visibility = opts[new_idx].to_string();
-        } else if self.room_info.selected_field == 3 {
-            // Toggle encryption selection between "no" and "yes"
-            let _ = dir; // direction doesn't matter for a binary toggle
-            self.room_info.encryption_selection = if self.room_info.encryption_selection == "no" {
-                "yes".to_string()
-            } else {
-                "no".to_string()
-            };
         }
     }
 
@@ -1968,133 +1454,17 @@ impl App {
             return;
         }
 
-        if self.create_room.creating {
-            if key.code == KeyCode::Esc {
-                self.create_room.open = false;
-                self.create_room.creating = false;
-            }
-            return;
-        }
-
-        // Inline name editing mode
-        if self.create_room.editing_name {
-            match key.code {
-                KeyCode::Esc => {
-                    self.create_room.editing_name = false;
-                    self.create_room.name_buffer.clear();
-                }
-                KeyCode::Enter => {
-                    self.create_room.editing_name = false;
-                }
-                KeyCode::Backspace => {
-                    self.create_room.name_buffer.pop();
-                }
-                KeyCode::Char(c) => {
-                    self.create_room.name_buffer.push(c);
-                }
-                _ => {}
-            }
-            return;
-        }
-
-        // Inline topic editing mode
-        if self.create_room.editing_topic {
-            match key.code {
-                KeyCode::Esc => {
-                    self.create_room.editing_topic = false;
-                    self.create_room.topic_buffer.clear();
-                }
-                KeyCode::Enter => {
-                    self.create_room.editing_topic = false;
-                }
-                KeyCode::Backspace => {
-                    self.create_room.topic_buffer.pop();
-                }
-                KeyCode::Char(c) => {
-                    self.create_room.topic_buffer.push(c);
-                }
-                _ => {}
-            }
-            return;
-        }
-
-        match key.code {
-            KeyCode::Esc => {
+        match self.create_room.handle_key(key) {
+            CreateRoomAction::None => {}
+            CreateRoomAction::Close => {
                 self.create_room.open = false;
             }
-            KeyCode::Char('j') | KeyCode::Down => {
-                if self.create_room.selected_field < 4 {
-                    self.create_room.selected_field += 1;
-                }
+            CreateRoomAction::Error(msg) => {
+                self.last_error = Some(msg);
             }
-            KeyCode::Char('k') | KeyCode::Up => {
-                if self.create_room.selected_field > 0 {
-                    self.create_room.selected_field -= 1;
-                }
+            CreateRoomAction::Create(params) => {
+                self.pending_create_room = Some(params);
             }
-            KeyCode::Char('h') | KeyCode::Left => {
-                self.cycle_create_room_field(-1);
-            }
-            KeyCode::Char('l') | KeyCode::Right => {
-                self.cycle_create_room_field(1);
-            }
-            KeyCode::Enter => {
-                match self.create_room.selected_field {
-                    0 => {
-                        self.create_room.editing_name = true;
-                    }
-                    1 => {
-                        self.create_room.editing_topic = true;
-                    }
-                    2 | 3 => {
-                        // h/l already handles cycling; Enter does nothing extra here
-                    }
-                    4 => {
-                        // CREATE button
-                        if self.create_room.name_buffer.trim().is_empty() {
-                            self.last_error = Some("Room name is required".to_string());
-                            return;
-                        }
-                        let topic = if self.create_room.topic_buffer.trim().is_empty() {
-                            None
-                        } else {
-                            Some(self.create_room.topic_buffer.clone())
-                        };
-                        self.pending_create_room = Some(CreateRoomParams {
-                            name: self.create_room.name_buffer.clone(),
-                            topic,
-                            history_visibility: self.create_room.history_visibility.clone(),
-                            encrypted: self.create_room.encrypted == "yes",
-                        });
-                        self.create_room.creating = true;
-                    }
-                    _ => {}
-                }
-            }
-            _ => {}
-        }
-    }
-
-    fn cycle_create_room_field(&mut self, dir: i32) {
-        if self.create_room.selected_field == 2 {
-            let opts = HISTORY_VISIBILITY_OPTIONS;
-            let current_idx = opts
-                .iter()
-                .position(|&v| v == self.create_room.history_visibility)
-                .unwrap_or(0);
-            let len = opts.len();
-            let new_idx = if dir > 0 {
-                (current_idx + 1) % len
-            } else {
-                (current_idx + len - 1) % len
-            };
-            self.create_room.history_visibility = opts[new_idx].to_string();
-        } else if self.create_room.selected_field == 3 {
-            self.create_room.encrypted = if self.create_room.encrypted == "no" {
-                "yes".to_string()
-            } else {
-                "no".to_string()
-            };
         }
     }
 
@@ -2107,65 +1477,18 @@ impl App {
             return;
         }
 
-        if self.user_config.loading || self.user_config.saving {
-            if key.code == KeyCode::Esc {
+        match self.user_config.handle_key(key) {
+            UserConfigAction::None => {}
+            UserConfigAction::Close => {
                 self.user_config.open = false;
             }
-            return;
-        }
-
-        // Inline display name editing mode
-        if self.user_config.editing_display_name {
-            match key.code {
-                KeyCode::Esc => {
-                    self.user_config.editing_display_name = false;
-                    self.user_config.display_name_buffer.clear();
-                }
-                KeyCode::Enter => {
-                    let new_name = self.user_config.display_name_buffer.clone();
-                    if !new_name.is_empty() {
-                        self.user_config.saving = true;
-                        self.user_config.editing_display_name = false;
-                        self.pending_set_display_name = Some(new_name);
-                    } else {
-                        self.user_config.editing_display_name = false;
-                        self.user_config.display_name_buffer.clear();
-                    }
-                }
-                KeyCode::Backspace => {
-                    self.user_config.display_name_buffer.pop();
-                }
-                KeyCode::Char(c) => {
-                    self.user_config.display_name_buffer.push(c);
-                }
-                _ => {}
+            UserConfigAction::SetDisplayName(name) => {
+                self.pending_set_display_name = Some(name);
             }
-            return;
-        }
-
-        match key.code {
-            KeyCode::Esc => {
+            UserConfigAction::OpenChangePassword => {
                 self.user_config.open = false;
+                self.handle_command(CommandAction::ChangePassword);
             }
-            KeyCode::Char('j') | KeyCode::Down => {
-                self.user_config.selected_field = (self.user_config.selected_field + 1).min(1);
-            }
-            KeyCode::Char('k') | KeyCode::Up => {
-                self.user_config.selected_field = self.user_config.selected_field.saturating_sub(1);
-            }
-            KeyCode::Enter => {
-                if self.user_config.selected_field == 0 {
-                    // Enter display name editing mode
-                    self.user_config.editing_display_name = true;
-                    self.user_config.display_name_buffer =
-                        self.user_config.display_name.clone().unwrap_or_default();
-                } else if self.user_config.selected_field == 1 {
-                    // Open change password popup
-                    self.user_config.open = false;
-                    self.handle_command(CommandAction::ChangePassword);
-                }
-            }
-            _ => {}
         }
     }
 
@@ -2178,66 +1501,17 @@ impl App {
             return;
         }
 
-        if self.change_password.saving {
-            if key.code == KeyCode::Esc {
+        match self.change_password.handle_key(key) {
+            ChangePasswordAction::None => {}
+            ChangePasswordAction::Close => {
                 self.change_password.open = false;
             }
-            return;
-        }
-
-        match key.code {
-            KeyCode::Esc => {
-                self.change_password = ChangePasswordState::new();
+            ChangePasswordAction::Error(msg) => {
+                self.last_error = Some(msg);
             }
-            KeyCode::Char('j') | KeyCode::Down => {
-                self.change_password.selected_field =
-                    (self.change_password.selected_field + 1).min(2);
+            ChangePasswordAction::Submit(current, new) => {
+                self.pending_change_password = Some((current, new));
             }
-            KeyCode::Char('k') | KeyCode::Up => {
-                self.change_password.selected_field =
-                    self.change_password.selected_field.saturating_sub(1);
-            }
-            KeyCode::Enter => {
-                if self.change_password.selected_field < 2 {
-                    self.change_password.selected_field += 1;
-                } else {
-                    // Submit
-                    if self.change_password.new_buffer != self.change_password.confirm_buffer {
-                        self.last_error = Some("Passwords do not match".to_string());
-                        self.change_password = ChangePasswordState::new();
-                        return;
-                    }
-                    if self.change_password.current_buffer.is_empty()
-                        || self.change_password.new_buffer.is_empty()
-                    {
-                        self.last_error = Some("Password cannot be empty".to_string());
-                        self.change_password = ChangePasswordState::new();
-                        return;
-                    }
-                    let current = std::mem::take(&mut self.change_password.current_buffer);
-                    let new = std::mem::take(&mut self.change_password.new_buffer);
-                    self.change_password.confirm_buffer.clear();
-                    self.change_password.saving = true;
-                    self.pending_change_password = Some((current, new));
-                }
-            }
-            KeyCode::Backspace => match self.change_password.selected_field {
-                0 => {
-                    self.change_password.current_buffer.pop();
-                }
-                1 => {
-                    self.change_password.new_buffer.pop();
-                }
-                _ => {
-                    self.change_password.confirm_buffer.pop();
-                }
-            },
-            KeyCode::Char(c) => match self.change_password.selected_field {
-                0 => self.change_password.current_buffer.push(c),
-                1 => self.change_password.new_buffer.push(c),
-                _ => self.change_password.confirm_buffer.push(c),
-            },
-            _ => {}
         }
     }
 
@@ -2378,129 +1652,22 @@ impl App {
             return;
         }
 
-        // Swallow terminal keys while rdev captures the PTT key
-        if self.audio_settings.capturing_ptt_key {
-            return;
-        }
-
-        let visible = self.audio_settings.visible_fields();
-        let max_sel = visible.len().saturating_sub(1);
-
-        match key.code {
-            KeyCode::Esc => {
+        match self.audio_settings.handle_key(key) {
+            AudioSettingsAction::None => {}
+            AudioSettingsAction::Close => {
                 self.close_audio_settings();
             }
-            KeyCode::Char('j') | KeyCode::Down => {
-                self.audio_settings.selected_field =
-                    (self.audio_settings.selected_field + 1).min(max_sel);
-            }
-            KeyCode::Char('k') | KeyCode::Up => {
-                self.audio_settings.selected_field =
-                    self.audio_settings.selected_field.saturating_sub(1);
-            }
-            KeyCode::Char('h') | KeyCode::Left => {
-                self.adjust_audio_field(-1);
-            }
-            KeyCode::Char('l') | KeyCode::Right => {
-                self.adjust_audio_field(1);
-            }
-            KeyCode::Enter | KeyCode::Char(' ') => {
-                let field = self.audio_settings.current_field();
-                match field {
-                    4 => {
-                        self.audio_settings.voice_activity = !self.audio_settings.voice_activity;
-                        if self.audio_settings.voice_activity {
-                            self.audio_settings.push_to_talk = false;
-                        }
-                    }
-                    6 => {
-                        self.audio_settings.push_to_talk = !self.audio_settings.push_to_talk;
-                        if self.audio_settings.push_to_talk {
-                            self.audio_settings.voice_activity = false;
-                        }
-                    }
-                    7 => {
-                        self.audio_settings.ptt_error = None;
-                        self.ensure_global_ptt_listener();
-                        if let Some(ref handle) = self.global_ptt {
-                            self.audio_settings.capturing_ptt_key = true;
-                            handle.capturing.store(true, Ordering::Relaxed);
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            _ => {}
-        }
-    }
-
-    fn adjust_audio_field(&mut self, dir: i32) {
-        let field = self.audio_settings.current_field();
-        match field {
-            0 => {
-                // Input device
-                let len = self.audio_settings.input_devices.len();
-                if dir > 0 {
-                    self.audio_settings.input_device_idx =
-                        (self.audio_settings.input_device_idx + 1) % len;
-                } else {
-                    self.audio_settings.input_device_idx =
-                        (self.audio_settings.input_device_idx + len - 1) % len;
-                }
-                // Restart mic test with new device
+            AudioSettingsAction::StartMicTest => {
                 self.start_mic_test();
             }
-            1 => {
-                // Output device
-                let len = self.audio_settings.output_devices.len();
-                if dir > 0 {
-                    self.audio_settings.output_device_idx =
-                        (self.audio_settings.output_device_idx + 1) % len;
-                } else {
-                    self.audio_settings.output_device_idx =
-                        (self.audio_settings.output_device_idx + len - 1) % len;
+            AudioSettingsAction::CapturePttKey => {
+                self.ensure_global_ptt_listener();
+                if let Some(ref handle) = self.global_ptt {
+                    self.audio_settings.capturing_ptt_key = true;
+                    handle.capturing.store(true, Ordering::Relaxed);
                 }
             }
-            2 => {
-                // Input volume
-                let step = 0.05;
-                self.audio_settings.input_volume =
-                    (self.audio_settings.input_volume + dir as f32 * step).clamp(0.0, 1.0);
-            }
-            3 => {
-                // Output volume
-                let step = 0.05;
-                self.audio_settings.output_volume =
-                    (self.audio_settings.output_volume + dir as f32 * step).clamp(0.0, 1.0);
-            }
-            4 => {
-                // Voice activity toggle
-                self.audio_settings.voice_activity = dir > 0;
-                if self.audio_settings.voice_activity {
-                    self.audio_settings.push_to_talk = false;
-                }
-            }
-            5 => {
-                // Sensitivity
-                let step = 0.05;
-                self.audio_settings.sensitivity =
-                    (self.audio_settings.sensitivity + dir as f32 * step).clamp(0.0, 1.0);
-            }
-            6 => {
-                // Push to talk toggle
-                self.audio_settings.push_to_talk = dir > 0;
-                if self.audio_settings.push_to_talk {
-                    self.audio_settings.voice_activity = false;
-                }
-            }
-            8 => {
-                // VAD hold ms
-                let step: i64 = 50;
-                let new_val =
-                    (self.audio_settings.vad_hold_ms as i64 + i64::from(dir) * step).clamp(0, 1000);
-                self.audio_settings.vad_hold_ms = new_val as u64;
-            }
-            _ => {}
+            AudioSettingsAction::ToggleVad | AudioSettingsAction::TogglePtt => {}
         }
     }
 
@@ -2542,6 +1709,7 @@ mod tests {
     use super::*;
     use crate::config::GosutoConfig;
     use crate::event::AppEvent;
+    use crate::state::{HealingStep, RecoveryStage};
 
     fn test_app() -> App {
         let (event_tx, _rx) = tokio::sync::mpsc::unbounded_channel();
@@ -2650,194 +1818,6 @@ mod tests {
         assert_eq!(app.sync_token, Some("tok2".to_string()));
     }
 
-    // ── Recovery transition tests ─────────────────────
-
-    fn modal() -> RecoveryModalState {
-        RecoveryModalState::new()
-    }
-
-    fn act(m: &mut RecoveryModalState, code: KeyCode) -> RecoveryTransition {
-        recovery_key_action(m, code, KeyModifiers::NONE, None)
-    }
-
-    #[test]
-    fn checking_esc_closes() {
-        let mut m = modal();
-        assert_eq!(act(&mut m, KeyCode::Esc), RecoveryTransition::Close);
-    }
-
-    #[test]
-    fn disabled_enter_creates() {
-        let mut m = modal();
-        m.stage = RecoveryStage::Disabled;
-        let t = act(&mut m, KeyCode::Enter);
-        assert_eq!(m.stage, RecoveryStage::Creating);
-        assert_eq!(t, RecoveryTransition::Pending(RecoveryAction::Create));
-    }
-
-    #[test]
-    fn disabled_esc_closes() {
-        let mut m = modal();
-        m.stage = RecoveryStage::Disabled;
-        assert_eq!(act(&mut m, KeyCode::Esc), RecoveryTransition::Close);
-    }
-
-    #[test]
-    fn enabled_r_confirm_reset() {
-        let mut m = modal();
-        m.stage = RecoveryStage::Enabled;
-        let t = act(&mut m, KeyCode::Char('r'));
-        assert_eq!(m.stage, RecoveryStage::ConfirmReset);
-        assert_eq!(t, RecoveryTransition::None);
-    }
-
-    #[test]
-    fn enabled_esc_closes() {
-        let mut m = modal();
-        m.stage = RecoveryStage::Enabled;
-        assert_eq!(act(&mut m, KeyCode::Esc), RecoveryTransition::Close);
-    }
-
-    #[test]
-    fn incomplete_e_enter_key() {
-        let mut m = modal();
-        m.stage = RecoveryStage::Incomplete;
-        let t = act(&mut m, KeyCode::Char('e'));
-        assert_eq!(m.stage, RecoveryStage::EnterKey);
-        assert_eq!(t, RecoveryTransition::None);
-    }
-
-    #[test]
-    fn incomplete_r_confirm_reset() {
-        let mut m = modal();
-        m.stage = RecoveryStage::Incomplete;
-        let t = act(&mut m, KeyCode::Char('r'));
-        assert_eq!(m.stage, RecoveryStage::ConfirmReset);
-        assert_eq!(t, RecoveryTransition::None);
-    }
-
-    #[test]
-    fn enter_key_char_appends() {
-        let mut m = modal();
-        m.stage = RecoveryStage::EnterKey;
-        act(&mut m, KeyCode::Char('a'));
-        act(&mut m, KeyCode::Char('b'));
-        assert_eq!(m.key_buffer, "ab");
-    }
-
-    #[test]
-    fn enter_key_backspace_pops() {
-        let mut m = modal();
-        m.stage = RecoveryStage::EnterKey;
-        m.key_buffer = "abc".to_string();
-        act(&mut m, KeyCode::Backspace);
-        assert_eq!(m.key_buffer, "ab");
-    }
-
-    #[test]
-    fn enter_key_enter_nonempty_recovers() {
-        let mut m = modal();
-        m.stage = RecoveryStage::EnterKey;
-        m.key_buffer = "my-key".to_string();
-        let t = act(&mut m, KeyCode::Enter);
-        assert_eq!(m.stage, RecoveryStage::Recovering);
-        assert_eq!(
-            t,
-            RecoveryTransition::Pending(RecoveryAction::Recover("my-key".to_string()))
-        );
-    }
-
-    #[test]
-    fn enter_key_enter_empty_noop() {
-        let mut m = modal();
-        m.stage = RecoveryStage::EnterKey;
-        let t = act(&mut m, KeyCode::Enter);
-        assert_eq!(m.stage, RecoveryStage::EnterKey);
-        assert_eq!(t, RecoveryTransition::None);
-    }
-
-    #[test]
-    fn confirm_reset_yes_resets() {
-        let mut m = modal();
-        m.stage = RecoveryStage::ConfirmReset;
-        act(&mut m, KeyCode::Char('y'));
-        act(&mut m, KeyCode::Char('e'));
-        act(&mut m, KeyCode::Char('s'));
-        let t = act(&mut m, KeyCode::Enter);
-        assert_eq!(m.stage, RecoveryStage::Resetting);
-        assert_eq!(t, RecoveryTransition::Pending(RecoveryAction::Reset));
-    }
-
-    #[test]
-    fn confirm_reset_no_clears() {
-        let mut m = modal();
-        m.stage = RecoveryStage::ConfirmReset;
-        act(&mut m, KeyCode::Char('n'));
-        act(&mut m, KeyCode::Char('o'));
-        let t = act(&mut m, KeyCode::Enter);
-        assert_eq!(m.stage, RecoveryStage::ConfirmReset);
-        assert_eq!(t, RecoveryTransition::None);
-        assert!(m.confirm_buffer.is_empty());
-    }
-
-    #[test]
-    fn show_key_c_copies() {
-        let mut m = modal();
-        m.stage = RecoveryStage::ShowKey("key123".to_string());
-        // Without clipboard, copied stays false but no crash
-        let t = act(&mut m, KeyCode::Char('c'));
-        assert_eq!(t, RecoveryTransition::None);
-    }
-
-    #[test]
-    fn show_key_enter_closes() {
-        let mut m = modal();
-        m.stage = RecoveryStage::ShowKey("key123".to_string());
-        assert_eq!(act(&mut m, KeyCode::Enter), RecoveryTransition::Close);
-    }
-
-    #[test]
-    fn show_key_esc_closes() {
-        let mut m = modal();
-        m.stage = RecoveryStage::ShowKey("key123".to_string());
-        assert_eq!(act(&mut m, KeyCode::Esc), RecoveryTransition::Close);
-    }
-
-    #[test]
-    fn creating_ignores_keys() {
-        let mut m = modal();
-        m.stage = RecoveryStage::Creating;
-        assert_eq!(act(&mut m, KeyCode::Char('x')), RecoveryTransition::None);
-    }
-
-    #[test]
-    fn recovering_ignores_keys() {
-        let mut m = modal();
-        m.stage = RecoveryStage::Recovering;
-        assert_eq!(act(&mut m, KeyCode::Char('x')), RecoveryTransition::None);
-    }
-
-    #[test]
-    fn resetting_ignores_keys() {
-        let mut m = modal();
-        m.stage = RecoveryStage::Resetting;
-        assert_eq!(act(&mut m, KeyCode::Char('x')), RecoveryTransition::None);
-    }
-
-    #[test]
-    fn error_enter_closes() {
-        let mut m = modal();
-        m.stage = RecoveryStage::Error("oops".to_string());
-        assert_eq!(act(&mut m, KeyCode::Enter), RecoveryTransition::Close);
-    }
-
-    #[test]
-    fn error_esc_closes() {
-        let mut m = modal();
-        m.stage = RecoveryStage::Error("oops".to_string());
-        assert_eq!(act(&mut m, KeyCode::Esc), RecoveryTransition::Close);
-    }
-
     #[test]
     fn recovery_command_opens_modal() {
         let mut app = test_app();
@@ -2878,20 +1858,6 @@ mod tests {
     }
 
     #[test]
-    fn healing_stage_esc_closes() {
-        let mut m = modal();
-        m.stage = RecoveryStage::Healing(HealingStep::CrossSigning);
-        assert_eq!(act(&mut m, KeyCode::Esc), RecoveryTransition::Close);
-    }
-
-    #[test]
-    fn healing_stage_ignores_keys() {
-        let mut m = modal();
-        m.stage = RecoveryStage::Healing(HealingStep::Backup);
-        assert_eq!(act(&mut m, KeyCode::Char('x')), RecoveryTransition::None);
-    }
-
-    #[test]
     fn healing_progress_updates_stage() {
         let mut app = test_app();
         app.recovery = Some(RecoveryModalState::new());
@@ -2918,54 +1884,6 @@ mod tests {
     }
 
     #[test]
-    fn need_password_char_appends() {
-        let mut m = modal();
-        m.stage = RecoveryStage::NeedPassword;
-        act(&mut m, KeyCode::Char('a'));
-        act(&mut m, KeyCode::Char('b'));
-        assert_eq!(m.password_buffer, "ab");
-    }
-
-    #[test]
-    fn need_password_backspace_pops() {
-        let mut m = modal();
-        m.stage = RecoveryStage::NeedPassword;
-        m.password_buffer = "abc".to_string();
-        act(&mut m, KeyCode::Backspace);
-        assert_eq!(m.password_buffer, "ab");
-    }
-
-    #[test]
-    fn need_password_enter_submits() {
-        let mut m = modal();
-        m.stage = RecoveryStage::NeedPassword;
-        m.password_buffer = "secret".to_string();
-        let t = act(&mut m, KeyCode::Enter);
-        assert_eq!(m.stage, RecoveryStage::Healing(HealingStep::CrossSigning));
-        assert_eq!(
-            t,
-            RecoveryTransition::Pending(RecoveryAction::SubmitPassword("secret".to_string()))
-        );
-        assert!(m.password_buffer.is_empty());
-    }
-
-    #[test]
-    fn need_password_enter_empty_noop() {
-        let mut m = modal();
-        m.stage = RecoveryStage::NeedPassword;
-        let t = act(&mut m, KeyCode::Enter);
-        assert_eq!(m.stage, RecoveryStage::NeedPassword);
-        assert_eq!(t, RecoveryTransition::None);
-    }
-
-    #[test]
-    fn need_password_esc_closes() {
-        let mut m = modal();
-        m.stage = RecoveryStage::NeedPassword;
-        assert_eq!(act(&mut m, KeyCode::Esc), RecoveryTransition::Close);
-    }
-
-    #[test]
     fn need_password_event_sets_stage() {
         use crate::event::PasswordSender;
 
@@ -2981,17 +1899,12 @@ mod tests {
         assert!(modal.password_buffer.is_empty());
     }
 
-    // ── Tests for heal_recovery skip-cross-signing path ──
-
     #[test]
     fn healing_skips_cross_signing_starts_at_backup() {
-        // When cross-signing is already complete, heal_recovery sends Backup
-        // as the first progress event (skipping CrossSigning).
         let mut app = test_app();
         app.recovery = Some(RecoveryModalState::new());
         app.recovery.as_mut().unwrap().stage = RecoveryStage::Recovering;
 
-        // First healing event is Backup (cross-signing was skipped)
         app.handle_event(AppEvent::RecoveryHealingProgress(HealingStep::Backup));
         assert_eq!(
             app.recovery.as_ref().unwrap().stage,
@@ -3001,8 +1914,6 @@ mod tests {
 
     #[test]
     fn healing_backup_then_export_without_cross_signing() {
-        // Simulates the full skip-cross-signing heal path:
-        // Backup → ExportSecrets → ShowKey
         let mut app = test_app();
         app.recovery = Some(RecoveryModalState::new());
 
@@ -3029,8 +1940,6 @@ mod tests {
 
     #[test]
     fn healing_full_path_with_cross_signing() {
-        // Simulates the full heal path when cross-signing IS needed:
-        // CrossSigning → (password) → Backup → ExportSecrets → ShowKey
         let mut app = test_app();
         app.recovery = Some(RecoveryModalState::new());
 
@@ -3040,7 +1949,6 @@ mod tests {
             RecoveryStage::Healing(HealingStep::CrossSigning)
         );
 
-        // Password prompt interrupts healing
         let (tx, _rx) = tokio::sync::oneshot::channel();
         app.handle_event(AppEvent::RecoveryNeedPassword(
             crate::event::PasswordSender::new(tx),
@@ -3050,7 +1958,6 @@ mod tests {
             RecoveryStage::NeedPassword
         );
 
-        // After password submitted, healing resumes at Backup
         app.handle_event(AppEvent::RecoveryHealingProgress(HealingStep::Backup));
         assert_eq!(
             app.recovery.as_ref().unwrap().stage,
@@ -3074,8 +1981,6 @@ mod tests {
 
     #[test]
     fn healing_from_resetting_stage() {
-        // When Reset triggers heal_recovery (Incomplete state), the stage
-        // transitions from Resetting → Healing
         let mut app = test_app();
         app.recovery = Some(RecoveryModalState::new());
         app.recovery.as_mut().unwrap().stage = RecoveryStage::Resetting;

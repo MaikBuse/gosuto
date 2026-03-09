@@ -2,7 +2,7 @@ use ratatui::Frame;
 use ratatui::buffer::Buffer;
 use ratatui::style::{Color, Modifier, Style};
 
-use crate::app::{CreateRoomState, HISTORY_VISIBILITY_OPTIONS};
+use crate::state::{CreateRoomState, HISTORY_VISIBILITY_OPTIONS};
 use crate::ui::icons::Icons;
 use crate::ui::popup;
 use crate::ui::theme;

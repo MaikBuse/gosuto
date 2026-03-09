@@ -3,7 +3,7 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 
-use crate::app::AudioSettingsState;
+use crate::state::AudioSettingsState;
 use crate::ui::icons::Icons;
 use crate::ui::popup;
 use crate::ui::theme;

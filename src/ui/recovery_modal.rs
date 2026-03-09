@@ -1,7 +1,7 @@
 use ratatui::Frame;
 use ratatui::style::{Modifier, Style};
 
-use crate::app::{HealingStep, RecoveryModalState, RecoveryStage};
+use crate::state::{HealingStep, RecoveryModalState, RecoveryStage};
 use crate::ui::popup;
 use crate::ui::theme;
 

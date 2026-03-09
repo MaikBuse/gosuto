@@ -1,7 +1,7 @@
 use ratatui::Frame;
 use ratatui::style::{Color, Modifier, Style};
 
-use crate::app::{HISTORY_VISIBILITY_OPTIONS, RoomInfoState};
+use crate::state::{HISTORY_VISIBILITY_OPTIONS, RoomInfoState};
 use crate::ui::icons::Icons;
 use crate::ui::popup;
 use crate::ui::theme;

@@ -144,9 +144,9 @@ pub enum AppEvent {
     PttKeyCaptured(String),
     PttListenerFailed(String),
     // Recovery events
-    RecoveryStateChecked(crate::app::RecoveryStage),
+    RecoveryStateChecked(crate::state::RecoveryStage),
     RecoveryKeyReady(String),
-    RecoveryHealingProgress(crate::app::HealingStep),
+    RecoveryHealingProgress(crate::state::HealingStep),
     RecoveryRecovered,
     RecoveryNeedPassword(PasswordSender),
     RecoveryError(String),

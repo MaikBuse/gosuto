@@ -453,8 +453,8 @@ pub async fn logout(client: &Client) -> Result<()> {
 ///
 /// Returns the new recovery key string that the user must save.
 pub async fn heal_recovery(client: &Client, tx: &EventSender) -> Result<String> {
-    use crate::app::HealingStep;
     use crate::event::PasswordSender;
+    use crate::state::HealingStep;
 
     // Step 1: Reset cross-signing keys (only if incomplete)
     let needs_cross_signing = client

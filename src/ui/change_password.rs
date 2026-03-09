@@ -1,7 +1,7 @@
 use ratatui::Frame;
 use ratatui::style::{Modifier, Style};
 
-use crate::app::ChangePasswordState;
+use crate::state::ChangePasswordState;
 use crate::ui::icons::Icons;
 use crate::ui::popup;
 use crate::ui::theme;

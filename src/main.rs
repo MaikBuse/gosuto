@@ -765,7 +765,7 @@ async fn main() -> Result<()> {
 
                         // Handle recovery actions
                         if let Some(action) = app.pending_recovery.take() {
-                            use app::RecoveryAction;
+                            use state::RecoveryAction;
                             match action {
                                 RecoveryAction::SubmitPassword(password) => {
                                     if let Some(ref mut modal) = app.recovery
@@ -786,10 +786,10 @@ async fn main() -> Result<()> {
                                                     let state = client.encryption().recovery().state();
                                                     use matrix_sdk::encryption::recovery::RecoveryState;
                                                     let stage = match state {
-                                                        RecoveryState::Enabled => app::RecoveryStage::Enabled,
-                                                        RecoveryState::Disabled => app::RecoveryStage::Disabled,
-                                                        RecoveryState::Incomplete => app::RecoveryStage::Incomplete,
-                                                        _ => app::RecoveryStage::Disabled,
+                                                        RecoveryState::Enabled => state::RecoveryStage::Enabled,
+                                                        RecoveryState::Disabled => state::RecoveryStage::Disabled,
+                                                        RecoveryState::Incomplete => state::RecoveryStage::Incomplete,
+                                                        _ => state::RecoveryStage::Disabled,
                                                     };
                                                     let _ = tx.send(AppEvent::RecoveryStateChecked(stage));
                                                 }
