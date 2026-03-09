@@ -164,6 +164,35 @@ impl App {
                     self.vim.enter_insert();
                 }
             }
+            InputResult::ReactToSelected => {
+                if let Some(idx) = self.messages.selected_index
+                    && let Some(msg) = self.messages.messages.get(idx)
+                {
+                    if msg.event_id.is_empty() {
+                        return; // can't react to pending messages
+                    }
+                    let own_id = match &self.auth {
+                        AuthState::LoggedIn { user_id, .. } => user_id.clone(),
+                        _ => return,
+                    };
+                    let existing_own_reactions: Vec<String> = msg
+                        .reactions
+                        .iter()
+                        .filter(|r| r.senders.iter().any(|s| s.user_id == own_id))
+                        .map(|r| r.key.clone())
+                        .collect();
+                    self.reaction_picker = Some(ReactionPickerState {
+                        event_id: msg.event_id.clone(),
+                        quick_pick_index: 0,
+                        existing_own_reactions,
+                        in_grid: false,
+                        grid_index: 0,
+                        filter: String::new(),
+                        filter_active: false,
+                        scroll_offset: 0,
+                    });
+                }
+            }
             InputResult::VerifyMember => {
                 if self.verification_modal.is_some() {
                     self.last_error = Some("A verification is already in progress".to_string());

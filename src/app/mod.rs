@@ -56,6 +56,35 @@ pub struct PendingSend {
     pub reply_to: Option<ReplyContext>,
 }
 
+pub const QUICK_EMOJIS: &[&str] = &[
+    "\u{1F44D}",
+    "\u{2764}\u{FE0F}",
+    "\u{1F602}",
+    "\u{1F389}",
+    "\u{1F62E}",
+    "\u{1F622}",
+    "\u{1F914}",
+    "\u{1F440}",
+];
+
+pub struct ReactionPickerState {
+    pub event_id: String,
+    pub quick_pick_index: usize,
+    pub existing_own_reactions: Vec<String>,
+    pub in_grid: bool,
+    pub grid_index: usize,
+    pub filter: String,
+    pub filter_active: bool,
+    pub scroll_offset: usize,
+}
+
+pub struct PendingReaction {
+    pub room_id: String,
+    pub target_event_id: String,
+    pub emoji_key: String,
+    pub toggle_off_reaction_event_id: Option<String>,
+}
+
 pub struct App {
     pub running: bool,
     pub vim: VimState,
@@ -143,6 +172,9 @@ pub struct App {
     pending_accept_invite: Option<String>,
     pending_decline_invite: Option<String>,
     pending_invite_user: Option<(String, String)>,
+    // Reaction picker
+    pub reaction_picker: Option<ReactionPickerState>,
+    pending_reaction: Option<PendingReaction>,
 }
 
 impl App {
@@ -227,6 +259,8 @@ impl App {
             pending_accept_invite: None,
             pending_decline_invite: None,
             pending_invite_user: None,
+            reaction_picker: None,
+            pending_reaction: None,
         }
     }
 
@@ -256,6 +290,7 @@ impl App {
                 pending: true,
                 verified: None,
                 in_reply_to,
+                reactions: Vec::new(),
             };
             self.messages.add_message(msg);
             self.messages.scroll_to_bottom();
@@ -332,5 +367,9 @@ impl App {
 
     pub fn take_pending_verify(&mut self) -> Option<Option<String>> {
         self.pending_verify.take()
+    }
+
+    pub fn take_pending_reaction(&mut self) -> Option<PendingReaction> {
+        self.pending_reaction.take()
     }
 }

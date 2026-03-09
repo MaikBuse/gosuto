@@ -33,7 +33,13 @@ pub fn handle_normal(key: KeyEvent, vim: &mut VimState) -> InputResult {
         KeyCode::Char('G') => InputResult::MoveBottom,
         KeyCode::Char('v') if vim.focus == FocusPanel::Members => InputResult::VerifyMember,
         KeyCode::Char('c') => InputResult::CallMember,
-        KeyCode::Char('a') => InputResult::AnswerCall,
+        KeyCode::Char('a') => {
+            if vim.focus == FocusPanel::Messages {
+                InputResult::ReactToSelected
+            } else {
+                InputResult::AnswerCall
+            }
+        }
         KeyCode::Char('r') => {
             if vim.focus == FocusPanel::Messages {
                 InputResult::ReplyToSelected
@@ -240,8 +246,17 @@ mod tests {
     #[test]
     fn a_answers_call() {
         let mut vim = VimState::new();
+        vim.focus = FocusPanel::RoomList;
         let result = handle_normal(key(KeyCode::Char('a')), &mut vim);
         assert!(matches!(result, InputResult::AnswerCall));
+    }
+
+    #[test]
+    fn a_reacts_when_messages_focused() {
+        let mut vim = VimState::new();
+        vim.focus = FocusPanel::Messages;
+        let result = handle_normal(key(KeyCode::Char('a')), &mut vim);
+        assert!(matches!(result, InputResult::ReactToSelected));
     }
 
     #[test]

@@ -106,6 +106,7 @@ pub async fn start_sync(
                     pending: false,
                     verified: None,
                     in_reply_to,
+                    reactions: Vec::new(),
                 };
 
                 tx.send(AppEvent::NewMessage {
@@ -113,6 +114,53 @@ pub async fn start_sync(
                     message: msg,
                 })
                 .warn_closed("NewMessage");
+            }
+        },
+    );
+
+    // Register event handler for reaction events
+    let reaction_tx = tx.clone();
+    client.add_event_handler(
+        move |event: matrix_sdk::ruma::events::reaction::OriginalSyncReactionEvent,
+              room: matrix_sdk::Room| {
+            let tx = reaction_tx.clone();
+            async move {
+                let room_id = room.room_id().to_string();
+                let sender = event.sender.to_string();
+                let reaction_event_id = event.event_id.to_string();
+                let emoji_key = event.content.relates_to.key.clone();
+                let target_event_id = event.content.relates_to.event_id.to_string();
+
+                tx.send(AppEvent::ReactionReceived {
+                    room_id,
+                    target_event_id,
+                    reaction_event_id,
+                    emoji_key,
+                    sender,
+                })
+                .warn_closed("ReactionReceived");
+            }
+        },
+    );
+
+    // Register event handler for redaction events (reaction removal)
+    let redaction_tx = tx.clone();
+    client.add_event_handler(
+        move |event: matrix_sdk::ruma::events::room::redaction::OriginalSyncRoomRedactionEvent,
+              room: matrix_sdk::Room| {
+            let tx = redaction_tx.clone();
+            async move {
+                let Some(redacted_id) = event.redacts else {
+                    return;
+                };
+                let room_id = room.room_id().to_string();
+                let reaction_event_id = redacted_id.to_string();
+
+                tx.send(AppEvent::ReactionRedacted {
+                    room_id,
+                    reaction_event_id,
+                })
+                .warn_closed("ReactionRedacted");
             }
         },
     );

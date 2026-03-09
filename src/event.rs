@@ -185,6 +185,25 @@ pub enum AppEvent {
     InviteError {
         error: String,
     },
+    // Reaction events
+    ReactionReceived {
+        room_id: String,
+        target_event_id: String,
+        reaction_event_id: String,
+        emoji_key: String,
+        sender: String,
+    },
+    ReactionSent {
+        room_id: String,
+        target_event_id: String,
+        reaction_event_id: String,
+        emoji_key: String,
+        sender: String,
+    },
+    ReactionRedacted {
+        room_id: String,
+        reaction_event_id: String,
+    },
     // Image events
     ImageLoaded {
         event_id: String,

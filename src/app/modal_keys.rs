@@ -243,6 +243,183 @@ impl App {
         }
     }
 
+    // ── Reaction Picker ────────────────────────────────
+
+    pub(crate) fn handle_reaction_picker_key(&mut self, key: KeyEvent) {
+        use crate::ui::emoji_data::filtered_emojis;
+
+        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
+            self.reaction_picker = None;
+            self.running = false;
+            return;
+        }
+
+        let Some(ref mut picker) = self.reaction_picker else {
+            return;
+        };
+
+        const GRID_COLS: usize = 8;
+
+        if picker.filter_active {
+            // Filter input mode
+            match key.code {
+                KeyCode::Char(c) => {
+                    picker.filter.push(c);
+                    let count = filtered_emojis(&picker.filter).len();
+                    if picker.grid_index >= count {
+                        picker.grid_index = count.saturating_sub(1);
+                    }
+                }
+                KeyCode::Backspace => {
+                    picker.filter.pop();
+                    let count = filtered_emojis(&picker.filter).len();
+                    if picker.grid_index >= count {
+                        picker.grid_index = count.saturating_sub(1);
+                    }
+                }
+                KeyCode::Enter => {
+                    picker.filter_active = false;
+                    picker.in_grid = true;
+                    picker.grid_index = 0;
+                    picker.scroll_offset = 0;
+                }
+                KeyCode::Esc => {
+                    if picker.filter.is_empty() {
+                        picker.filter_active = false;
+                    } else {
+                        picker.filter.clear();
+                        picker.filter_active = false;
+                    }
+                }
+                _ => {}
+            }
+            return;
+        }
+
+        if picker.in_grid {
+            // Grid navigation mode
+            let filtered = filtered_emojis(&picker.filter);
+            let count = filtered.len();
+            if count == 0 {
+                match key.code {
+                    KeyCode::Char('/') => {
+                        picker.filter_active = true;
+                    }
+                    KeyCode::Esc => {
+                        picker.in_grid = false;
+                    }
+                    _ => {}
+                }
+                return;
+            }
+
+            match key.code {
+                KeyCode::Char('h') | KeyCode::Left => {
+                    picker.grid_index = picker.grid_index.saturating_sub(1);
+                }
+                KeyCode::Char('l') | KeyCode::Right => {
+                    picker.grid_index = (picker.grid_index + 1).min(count - 1);
+                }
+                KeyCode::Char('j') | KeyCode::Down => {
+                    let next = picker.grid_index + GRID_COLS;
+                    if next < count {
+                        picker.grid_index = next;
+                    }
+                }
+                KeyCode::Char('k') | KeyCode::Up => {
+                    if picker.grid_index < GRID_COLS {
+                        // Move back to quick row
+                        picker.in_grid = false;
+                    } else {
+                        picker.grid_index -= GRID_COLS;
+                    }
+                }
+                KeyCode::Enter => {
+                    let emoji = filtered[picker.grid_index].emoji.to_string();
+                    self.confirm_reaction(emoji);
+                }
+                KeyCode::Char('/') => {
+                    picker.filter_active = true;
+                }
+                KeyCode::Esc => {
+                    picker.in_grid = false;
+                }
+                _ => {}
+            }
+        } else {
+            // Quick row mode
+            match key.code {
+                KeyCode::Char('h') | KeyCode::Left => {
+                    picker.quick_pick_index = picker.quick_pick_index.saturating_sub(1);
+                }
+                KeyCode::Char('l') | KeyCode::Right => {
+                    let max = QUICK_EMOJIS.len().saturating_sub(1);
+                    picker.quick_pick_index = (picker.quick_pick_index + 1).min(max);
+                }
+                KeyCode::Char(c @ '1'..='8') => {
+                    let idx = (c as usize) - ('1' as usize);
+                    if idx < QUICK_EMOJIS.len() {
+                        picker.quick_pick_index = idx;
+                    }
+                }
+                KeyCode::Enter => {
+                    let emoji = QUICK_EMOJIS[picker.quick_pick_index].to_string();
+                    self.confirm_reaction(emoji);
+                }
+                KeyCode::Char('j') | KeyCode::Down => {
+                    picker.in_grid = true;
+                    picker.grid_index = 0;
+                    picker.scroll_offset = 0;
+                }
+                KeyCode::Char('/') => {
+                    picker.filter_active = true;
+                }
+                KeyCode::Esc => {
+                    self.reaction_picker = None;
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn confirm_reaction(&mut self, emoji: String) {
+        let Some(picker) = self.reaction_picker.take() else {
+            return;
+        };
+        let Some(room_id) = self.messages.current_room_id.clone() else {
+            return;
+        };
+
+        let toggle_off = if picker.existing_own_reactions.contains(&emoji) {
+            // Find the reaction_event_id for this emoji from the message
+            self.messages
+                .messages
+                .iter()
+                .find(|m| m.event_id == picker.event_id)
+                .and_then(|msg| {
+                    msg.reactions.iter().find(|r| r.key == emoji).and_then(|r| {
+                        let own_id = match &self.auth {
+                            AuthState::LoggedIn { user_id, .. } => user_id.as_str(),
+                            _ => return None,
+                        };
+                        r.senders
+                            .iter()
+                            .find(|s| s.user_id == own_id)
+                            .map(|s| s.reaction_event_id.clone())
+                    })
+                })
+        } else {
+            None
+        };
+
+        self.pending_reaction = Some(PendingReaction {
+            room_id,
+            target_event_id: picker.event_id,
+            emoji_key: emoji,
+            toggle_off_reaction_event_id: toggle_off,
+        });
+    }
+
     // ── Which-Key Leader Popup ────────────────────────
 
     pub(crate) fn handle_which_key(&mut self, key: KeyEvent) {

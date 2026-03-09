@@ -2294,6 +2294,7 @@ dependencies = [
  "getrandom 0.4.2",
  "image",
  "keyring",
+ "libc",
  "livekit",
  "matrix-sdk",
  "nix 0.31.2",

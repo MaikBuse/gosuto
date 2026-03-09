@@ -9,7 +9,7 @@ use ratatui_image::ResizeEncodeRender;
 
 use crate::app::App;
 use crate::input::FocusPanel;
-use crate::state::MessageContent;
+use crate::state::{AuthState, MessageContent};
 use crate::ui::{panel, theme};
 
 enum ChatSegment<'a> {
@@ -209,6 +209,26 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
                         ])
                     };
                     lines.insert(0, reply_line);
+                }
+
+                if !msg.reactions.is_empty() {
+                    let own_id = match &app.auth {
+                        AuthState::LoggedIn { user_id, .. } => user_id.as_str(),
+                        _ => "",
+                    };
+                    let mut reaction_spans = vec![Span::styled("      ", theme::dim_style())];
+                    for reaction in &msg.reactions {
+                        let is_own = reaction.senders.iter().any(|s| s.user_id == own_id);
+                        let badge = format!(" {} {} ", reaction.key, reaction.senders.len());
+                        let style = if is_own {
+                            theme::reaction_own_badge_style()
+                        } else {
+                            theme::reaction_badge_style()
+                        };
+                        reaction_spans.push(Span::styled(badge, style));
+                        reaction_spans.push(Span::raw(" "));
+                    }
+                    lines.push(Line::from(reaction_spans));
                 }
 
                 segments.push(ChatSegment::TextMessage {

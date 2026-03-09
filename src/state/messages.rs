@@ -8,6 +8,18 @@ pub struct ReplyInfo {
 }
 
 #[derive(Debug, Clone)]
+pub struct ReactionSender {
+    pub user_id: String,
+    pub reaction_event_id: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct Reaction {
+    pub key: String,
+    pub senders: Vec<ReactionSender>,
+}
+
+#[derive(Debug, Clone)]
 pub enum MessageContent {
     Text(String),
     Image {
@@ -28,6 +40,7 @@ pub struct DisplayMessage {
     pub pending: bool,
     pub verified: Option<bool>,
     pub in_reply_to: Option<ReplyInfo>,
+    pub reactions: Vec<Reaction>,
 }
 
 impl DisplayMessage {
@@ -155,6 +168,70 @@ impl MessageState {
         }
     }
 
+    pub fn add_reaction(
+        &mut self,
+        target_event_id: &str,
+        emoji_key: &str,
+        sender: &str,
+        reaction_event_id: &str,
+    ) {
+        if let Some(msg) = self
+            .messages
+            .iter_mut()
+            .find(|m| m.event_id == target_event_id)
+        {
+            if let Some(reaction) = msg.reactions.iter_mut().find(|r| r.key == emoji_key) {
+                if !reaction.senders.iter().any(|s| s.user_id == sender) {
+                    reaction.senders.push(ReactionSender {
+                        user_id: sender.to_string(),
+                        reaction_event_id: reaction_event_id.to_string(),
+                    });
+                }
+            } else {
+                msg.reactions.push(Reaction {
+                    key: emoji_key.to_string(),
+                    senders: vec![ReactionSender {
+                        user_id: sender.to_string(),
+                        reaction_event_id: reaction_event_id.to_string(),
+                    }],
+                });
+            }
+        }
+    }
+
+    #[cfg(test)]
+    pub fn remove_reaction(&mut self, target_event_id: &str, emoji_key: &str, sender: &str) {
+        if let Some(msg) = self
+            .messages
+            .iter_mut()
+            .find(|m| m.event_id == target_event_id)
+        {
+            if let Some(reaction) = msg.reactions.iter_mut().find(|r| r.key == emoji_key) {
+                reaction.senders.retain(|s| s.user_id != sender);
+            }
+            msg.reactions.retain(|r| !r.senders.is_empty());
+        }
+    }
+
+    pub fn remove_reaction_by_event_id(&mut self, reaction_event_id: &str) {
+        for msg in &mut self.messages {
+            let mut changed = false;
+            for reaction in &mut msg.reactions {
+                let before = reaction.senders.len();
+                reaction
+                    .senders
+                    .retain(|s| s.reaction_event_id != reaction_event_id);
+                if reaction.senders.len() != before {
+                    changed = true;
+                }
+            }
+            if changed {
+                msg.reactions.retain(|r| !r.senders.is_empty());
+                return;
+            }
+        }
+    }
+
     pub fn confirm_sent(&mut self, pending_body: &str, event_id: &str) {
         if let Some(msg) = self
             .messages
@@ -183,6 +260,7 @@ mod tests {
             pending,
             verified: None,
             in_reply_to: None,
+            reactions: Vec::new(),
         }
     }
 
@@ -444,5 +522,80 @@ mod tests {
         assert!(state.is_selecting());
         state.set_room(Some("!room2:example.com".to_string()));
         assert_eq!(state.selected_index, None);
+    }
+
+    // --- Reactions ---
+
+    #[test]
+    fn add_reaction_creates_new_entry() {
+        let mut state = MessageState::new();
+        state.add_message(make_msg("$1", "hello", false));
+        state.add_reaction("$1", "👍", "@alice:x", "$r1");
+        assert_eq!(state.messages[0].reactions.len(), 1);
+        assert_eq!(state.messages[0].reactions[0].key, "👍");
+        assert_eq!(state.messages[0].reactions[0].senders.len(), 1);
+        assert_eq!(
+            state.messages[0].reactions[0].senders[0].user_id,
+            "@alice:x"
+        );
+    }
+
+    #[test]
+    fn add_reaction_upserts_same_emoji() {
+        let mut state = MessageState::new();
+        state.add_message(make_msg("$1", "hello", false));
+        state.add_reaction("$1", "👍", "@alice:x", "$r1");
+        state.add_reaction("$1", "👍", "@bob:x", "$r2");
+        assert_eq!(state.messages[0].reactions.len(), 1);
+        assert_eq!(state.messages[0].reactions[0].senders.len(), 2);
+    }
+
+    #[test]
+    fn add_reaction_dedup_same_sender() {
+        let mut state = MessageState::new();
+        state.add_message(make_msg("$1", "hello", false));
+        state.add_reaction("$1", "👍", "@alice:x", "$r1");
+        state.add_reaction("$1", "👍", "@alice:x", "$r1");
+        assert_eq!(state.messages[0].reactions[0].senders.len(), 1);
+    }
+
+    #[test]
+    fn remove_reaction_by_sender() {
+        let mut state = MessageState::new();
+        state.add_message(make_msg("$1", "hello", false));
+        state.add_reaction("$1", "👍", "@alice:x", "$r1");
+        state.add_reaction("$1", "👍", "@bob:x", "$r2");
+        state.remove_reaction("$1", "👍", "@alice:x");
+        assert_eq!(state.messages[0].reactions[0].senders.len(), 1);
+        assert_eq!(state.messages[0].reactions[0].senders[0].user_id, "@bob:x");
+    }
+
+    #[test]
+    fn remove_reaction_removes_empty_entry() {
+        let mut state = MessageState::new();
+        state.add_message(make_msg("$1", "hello", false));
+        state.add_reaction("$1", "👍", "@alice:x", "$r1");
+        state.remove_reaction("$1", "👍", "@alice:x");
+        assert!(state.messages[0].reactions.is_empty());
+    }
+
+    #[test]
+    fn remove_reaction_by_event_id_works() {
+        let mut state = MessageState::new();
+        state.add_message(make_msg("$1", "hello", false));
+        state.add_reaction("$1", "👍", "@alice:x", "$r1");
+        state.add_reaction("$1", "👍", "@bob:x", "$r2");
+        state.remove_reaction_by_event_id("$r1");
+        assert_eq!(state.messages[0].reactions[0].senders.len(), 1);
+        assert_eq!(state.messages[0].reactions[0].senders[0].user_id, "@bob:x");
+    }
+
+    #[test]
+    fn remove_reaction_by_event_id_cleans_empty() {
+        let mut state = MessageState::new();
+        state.add_message(make_msg("$1", "hello", false));
+        state.add_reaction("$1", "👍", "@alice:x", "$r1");
+        state.remove_reaction_by_event_id("$r1");
+        assert!(state.messages[0].reactions.is_empty());
     }
 }

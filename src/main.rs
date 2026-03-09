@@ -112,6 +112,11 @@ async fn main() -> Result<()> {
 
     terminal::init_keyboard_enhancement();
 
+    // Suppress native-library stderr writes (e.g. "VAAPI is supported") that
+    // would bleed through the TUI as visual artifacts.
+    #[cfg(unix)]
+    let saved_stderr = terminal::suppress_stderr();
+
     // Restore terminal on panic so spawned-task panics produce readable output
     // instead of corrupting the raw-mode terminal.
     let default_hook = std::panic::take_hook();
@@ -371,6 +376,36 @@ async fn main() -> Result<()> {
                                     error!("Failed to send message: {}", e);
                                 }
                             });
+                        }
+
+                        // Handle reaction sending
+                        if let Some(pending) = app.take_pending_reaction() {
+                            let tx = event_tx.clone();
+                            if let Some(reaction_eid) = pending.toggle_off_reaction_event_id {
+                                let rid = pending.room_id;
+                                spawn_with_client!(matrix_client, |client| async move {
+                                    let _ = matrix::messages::redact_reaction(
+                                        &client, &rid, &reaction_eid, &tx,
+                                    )
+                                    .await;
+                                });
+                            } else {
+                                let rid = pending.room_id;
+                                let target_eid = pending.target_event_id;
+                                let emoji = pending.emoji_key;
+                                let sender = match &app.auth {
+                                    crate::state::AuthState::LoggedIn { user_id, .. } => {
+                                        user_id.clone()
+                                    }
+                                    _ => String::new(),
+                                };
+                                spawn_with_client!(matrix_client, |client| async move {
+                                    let _ = matrix::messages::send_reaction(
+                                        &client, &rid, &target_eid, &emoji, &sender, &tx,
+                                    )
+                                    .await;
+                                });
+                            }
                         }
 
                         // Handle outgoing typing notice
@@ -975,6 +1010,10 @@ async fn main() -> Result<()> {
             .store(false, std::sync::atomic::Ordering::Relaxed);
     }
     let _ = call_cmd_tx.send(voip::manager::CallCommand::Shutdown);
+    #[cfg(unix)]
+    if let Some(ref fd) = saved_stderr {
+        terminal::restore_stderr(fd);
+    }
     terminal::restore()?;
     info!("gōsuto shut down cleanly");
 

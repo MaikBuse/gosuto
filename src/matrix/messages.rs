@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use anyhow::Result;
 use matrix_sdk::Client;
 use matrix_sdk::room::MessagesOptions;
@@ -9,7 +11,7 @@ use crate::event::{AppEvent, EventSender, WarnClosed};
 use crate::matrix::message_parsing::{
     ParsedMessage, millis_to_local, parse_message_type, spawn_image_fetch,
 };
-use crate::state::{DisplayMessage, MessageContent};
+use crate::state::{DisplayMessage, MessageContent, Reaction, ReactionSender};
 
 pub async fn fetch_messages(
     client: &Client,
@@ -32,6 +34,8 @@ pub async fn fetch_messages(
     let mut messages: Vec<DisplayMessage> = Vec::new();
     let chunk_size = response.chunk.len();
     let mut skipped = 0usize;
+    // key: target_event_id → Vec<(emoji_key, sender, reaction_event_id)>
+    let mut reaction_map: HashMap<String, Vec<(String, String, String)>> = HashMap::new();
 
     for event in &response.chunk {
         let timeline_event = event.raw().deserialize();
@@ -90,6 +94,7 @@ pub async fn fetch_messages(
                     pending: false,
                     verified: None,
                     in_reply_to,
+                    reactions: Vec::new(),
                 });
             }
             Ok(matrix_sdk::ruma::events::AnySyncTimelineEvent::MessageLike(
@@ -119,7 +124,24 @@ pub async fn fetch_messages(
                     pending: false,
                     verified: None,
                     in_reply_to: None,
+                    reactions: Vec::new(),
                 });
+            }
+            Ok(matrix_sdk::ruma::events::AnySyncTimelineEvent::MessageLike(
+                matrix_sdk::ruma::events::AnySyncMessageLikeEvent::Reaction(reaction_event),
+            )) => {
+                if let matrix_sdk::ruma::events::reaction::SyncReactionEvent::Original(orig) =
+                    reaction_event
+                {
+                    let target = orig.content.relates_to.event_id.to_string();
+                    let emoji_key = orig.content.relates_to.key.clone();
+                    let sender = orig.sender.to_string();
+                    let reaction_eid = orig.event_id.to_string();
+                    reaction_map
+                        .entry(target)
+                        .or_default()
+                        .push((emoji_key, sender, reaction_eid));
+                }
             }
             _ => {
                 skipped += 1;
@@ -127,11 +149,38 @@ pub async fn fetch_messages(
         }
     }
 
+    // Attach historical reactions to their target messages
+    let mut total_reactions = 0usize;
+    for msg in &mut messages {
+        if let Some(entries) = reaction_map.remove(&msg.event_id) {
+            for (emoji_key, sender, reaction_eid) in entries {
+                if let Some(reaction) = msg.reactions.iter_mut().find(|r| r.key == emoji_key) {
+                    if !reaction.senders.iter().any(|s| s.user_id == sender) {
+                        reaction.senders.push(ReactionSender {
+                            user_id: sender,
+                            reaction_event_id: reaction_eid,
+                        });
+                    }
+                } else {
+                    msg.reactions.push(Reaction {
+                        key: emoji_key,
+                        senders: vec![ReactionSender {
+                            user_id: sender,
+                            reaction_event_id: reaction_eid,
+                        }],
+                    });
+                }
+            }
+            total_reactions += msg.reactions.len();
+        }
+    }
+
     debug!(
-        "Fetched {} events for room {}: {} messages, {} skipped non-message events",
+        "Fetched {} events for room {}: {} messages, {} reactions, {} skipped non-message events",
         chunk_size,
         room_id,
         messages.len(),
+        total_reactions,
         skipped
     );
 
@@ -200,6 +249,78 @@ pub async fn send_message(
         }
     }
 
+    Ok(())
+}
+
+pub async fn send_reaction(
+    client: &Client,
+    room_id: &str,
+    event_id: &str,
+    emoji_key: &str,
+    sender: &str,
+    tx: &EventSender,
+) -> Result<()> {
+    use matrix_sdk::ruma::events::reaction::ReactionEventContent;
+    use matrix_sdk::ruma::events::relation::Annotation;
+
+    let room_id_parsed: matrix_sdk::ruma::OwnedRoomId = room_id.try_into()?;
+    let event_id_parsed: matrix_sdk::ruma::OwnedEventId = event_id.try_into()?;
+    let room = client
+        .get_room(&room_id_parsed)
+        .ok_or_else(|| anyhow::anyhow!("Room not found: {}", room_id))?;
+
+    let annotation = Annotation::new(event_id_parsed, emoji_key.to_string());
+    let content = ReactionEventContent::new(annotation);
+    match room.send(content).await {
+        Ok(response) => {
+            tx.send(AppEvent::ReactionSent {
+                room_id: room_id.to_string(),
+                target_event_id: event_id.to_string(),
+                reaction_event_id: response.event_id.to_string(),
+                emoji_key: emoji_key.to_string(),
+                sender: sender.to_string(),
+            })
+            .warn_closed("ReactionSent");
+        }
+        Err(e) => {
+            error!("Failed to send reaction: {}", e);
+            tx.send(AppEvent::SendError {
+                error: e.to_string(),
+            })
+            .warn_closed("SendError");
+        }
+    }
+    Ok(())
+}
+
+pub async fn redact_reaction(
+    client: &Client,
+    room_id: &str,
+    reaction_event_id: &str,
+    tx: &EventSender,
+) -> Result<()> {
+    let room_id_parsed: matrix_sdk::ruma::OwnedRoomId = room_id.try_into()?;
+    let reaction_eid: matrix_sdk::ruma::OwnedEventId = reaction_event_id.try_into()?;
+    let room = client
+        .get_room(&room_id_parsed)
+        .ok_or_else(|| anyhow::anyhow!("Room not found: {}", room_id))?;
+
+    match room.redact(&reaction_eid, None, None).await {
+        Ok(_) => {
+            tx.send(AppEvent::ReactionRedacted {
+                room_id: room_id.to_string(),
+                reaction_event_id: reaction_event_id.to_string(),
+            })
+            .warn_closed("ReactionRedacted");
+        }
+        Err(e) => {
+            error!("Failed to redact reaction: {}", e);
+            tx.send(AppEvent::SendError {
+                error: e.to_string(),
+            })
+            .warn_closed("SendError");
+        }
+    }
     Ok(())
 }
 

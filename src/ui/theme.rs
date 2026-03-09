@@ -36,6 +36,8 @@ pub const BAR_EMPTY: Color = Color::Rgb(40, 40, 50);
 pub const METER_EMPTY: Color = Color::Rgb(30, 30, 40);
 pub const MESSAGE_SELECT_BG: Color = Color::Rgb(25, 30, 50);
 pub const REPLY_INDICATOR: Color = Color::Rgb(100, 180, 255);
+pub const REACTION_BG: Color = Color::Rgb(30, 35, 55);
+pub const REACTION_OWN_BG: Color = Color::Rgb(25, 50, 70);
 
 // Composite styles
 pub fn border_style() -> Style {
@@ -137,6 +139,14 @@ pub fn message_selected_style() -> Style {
 
 pub fn reply_indicator_style() -> Style {
     Style::default().fg(REPLY_INDICATOR)
+}
+
+pub fn reaction_badge_style() -> Style {
+    Style::default().fg(TEXT).bg(REACTION_BG)
+}
+
+pub fn reaction_own_badge_style() -> Style {
+    Style::default().fg(CYAN).bg(REACTION_OWN_BG)
 }
 
 pub fn loading_style() -> Style {

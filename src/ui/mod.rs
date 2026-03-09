@@ -6,6 +6,7 @@ pub mod completion_popup;
 pub mod configure;
 pub mod create_room;
 pub mod effects;
+pub mod emoji_data;
 pub mod form_field;
 pub mod icons;
 pub mod input_bar;
@@ -15,6 +16,7 @@ pub mod login;
 pub mod members;
 pub mod panel;
 pub mod popup;
+pub mod reaction_picker;
 pub mod recovery_modal;
 pub mod room_info;
 pub mod room_list;
@@ -161,6 +163,11 @@ pub fn render(app: &mut App, frame: &mut Frame) {
     // Invite prompt
     if app.invite_prompt_room.is_some() {
         invite_prompt::render(app, frame);
+    }
+
+    // Reaction picker
+    if app.reaction_picker.is_some() {
+        reaction_picker::render(app, frame);
     }
 
     // Which-key leader popup

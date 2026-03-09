@@ -30,6 +30,7 @@ pub enum InputResult {
     TypingActivity,
     VerifyMember,
     ReplyToSelected,
+    ReactToSelected,
     Escape,
 }
 
