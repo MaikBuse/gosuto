@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.6.0](https://github.com/MaikBuse/gosuto/compare/v0.5.0...v0.6.0) (2026-03-09)
+
+
+### Features
+
+* add --profile flag for multi-instance support ([8baad5f](https://github.com/MaikBuse/gosuto/commit/8baad5f9b276e75838c6aa92b64810edeb027479))
+* add action menu to :verify command ([bdcf9c6](https://github.com/MaikBuse/gosuto/commit/bdcf9c60850a38088b5cf0352664e57b385fa598))
+* add loading indicator for room list during initial sync ([8df8334](https://github.com/MaikBuse/gosuto/commit/8df8334d7a2897840c9af72d4b31d335d0b30384))
+* add members pane tooltip and improve DM name format ([9cfd8e8](https://github.com/MaikBuse/gosuto/commit/9cfd8e80a3fc3a3b71a4209d548137c49bbb63ff))
+* add message selection mode to Messages panel ([5209c29](https://github.com/MaikBuse/gosuto/commit/5209c29b11215b3644ec8f0f1bc5488d2451cbe9))
+* add room invitation support ([9cb4bf3](https://github.com/MaikBuse/gosuto/commit/9cb4bf3372241e45a4a22138599ed220adeeb6d8))
+* improve recovery status granularity, DM naming, and member display ([5bd1626](https://github.com/MaikBuse/gosuto/commit/5bd162667d7744b796a2ec875c07cfae99e840df))
+
+
+### Bug Fixes
+
+* abort orphaned verification tasks on cancellation ([8c2c9df](https://github.com/MaikBuse/gosuto/commit/8c2c9df675c45f04a094c4eaf2e896dd9b4a5554))
+* force-exit to prevent rdev listener thread from lingering after shutdown ([b47121c](https://github.com/MaikBuse/gosuto/commit/b47121c6dbd9978e716dafc7baecaf483eb387cc))
+* handle in-room verification requests from other users ([f2bd58c](https://github.com/MaikBuse/gosuto/commit/f2bd58c47b376b3ad4f5a00b901b89c71a8e368e))
+* pin CI workflows to rust 1.93.1, fix verification and clippy lints ([ad7f2c4](https://github.com/MaikBuse/gosuto/commit/ad7f2c4f2d023f6701cba965aa19be5e8a19e4b4))
+* replace panicking unwrap/expect calls with proper error handling ([88b4acd](https://github.com/MaikBuse/gosuto/commit/88b4acd046df67fc7a90f779a67ad6321db1017d))
+* replace rdev::grab() with passive evdev listener to prevent stuck keys ([112db45](https://github.com/MaikBuse/gosuto/commit/112db457958303d7df961bcfe5f022ad3165462a))
+* restrict file permissions and warn on insecure connections ([727938b](https://github.com/MaikBuse/gosuto/commit/727938be7fa12b63b3a0660bc22b6aed9c3550cf))
+* scope debug logging to gosuto, suppress noisy dependencies ([6553edd](https://github.com/MaikBuse/gosuto/commit/6553edd871bcdc670606c2352349d654dc7f99c9))
+* suppress transmission popup flash during initial sync ([6880980](https://github.com/MaikBuse/gosuto/commit/68809806cc10d0df381c475259af21bf943aadba))
+* sync audio config to CallManager when settings change ([ef38696](https://github.com/MaikBuse/gosuto/commit/ef38696fef1f10d524f9cbfacb65ca6fd7913f46))
+
 ## [0.5.0](https://github.com/MaikBuse/gosuto/compare/v0.4.0...v0.5.0) (2026-03-08)
 
 

@@ -1,6 +1,6 @@
 [package]
 name = "gosuto"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2024"
 description = "Gōsuto (ゴースト) — a cyberpunk terminal Matrix client with vim motions"
 license = "Apache-2.0 OR MIT"
