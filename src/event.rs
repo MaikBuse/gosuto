@@ -165,6 +165,9 @@ pub enum AppEvent {
         reason: String,
     },
     VerificationError(String),
+    // Cross-signing reset events
+    CrossSigningResetCompleted,
+    CrossSigningResetError(String),
     // Member verification status
     MemberVerificationStatus {
         room_id: String,

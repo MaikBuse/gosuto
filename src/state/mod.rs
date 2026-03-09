@@ -32,10 +32,13 @@ pub struct VerificationModalState {
     pub stage: VerificationStage,
     pub sender: String,
     pub emojis: Vec<(String, String)>,
+    pub user_id_buffer: String,
 }
 
 #[derive(Debug, PartialEq)]
 pub enum VerificationStage {
+    ChooseAction { selected: u8 },
+    EnterUserId,
     WaitingForOtherDevice,
     EmojiConfirmation,
     Completed,

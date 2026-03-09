@@ -142,6 +142,7 @@ impl App {
                         stage: crate::state::VerificationStage::WaitingForOtherDevice,
                         sender: uid.clone(),
                         emojis: vec![],
+                        user_id_buffer: String::new(),
                     });
                     self.pending_verify = Some(Some(uid));
                 }

@@ -4,11 +4,12 @@ use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 
 use crate::state::{VerificationModalState, VerificationStage};
-use crate::ui::popup;
 use crate::ui::theme;
+use crate::ui::{form_field, popup};
 
 const POPUP_WIDTH: u16 = 48;
 const POPUP_HEIGHT: u16 = 14;
+const MENU_HEIGHT: u16 = 12;
 
 pub fn render(state: &VerificationModalState, frame: &mut Frame) {
     let area = frame.area();
@@ -17,7 +18,12 @@ pub fn render(state: &VerificationModalState, frame: &mut Frame) {
     }
 
     let popup_w = POPUP_WIDTH.min(area.width.saturating_sub(4));
-    let popup_h = POPUP_HEIGHT.min(area.height.saturating_sub(4));
+    let popup_h = match state.stage {
+        VerificationStage::ChooseAction { .. } | VerificationStage::EnterUserId => {
+            MENU_HEIGHT.min(area.height.saturating_sub(4))
+        }
+        _ => POPUP_HEIGHT.min(area.height.saturating_sub(4)),
+    };
     let popup_area = popup::centered_rect(popup_w, popup_h, area);
     let buf = frame.buffer_mut();
     let bounds = *buf.area();
@@ -29,6 +35,55 @@ pub fn render(state: &VerificationModalState, frame: &mut Frame) {
     let inner_w = (right - left) as usize;
 
     match &state.stage {
+        VerificationStage::ChooseAction { selected } => {
+            let options = [
+                "Verify this device",
+                "Verify a user",
+                "Reset cross-signing keys",
+            ];
+            let y_start = popup_area.y + 3;
+
+            for (i, label) in options.iter().enumerate() {
+                let sel = *selected == i as u8;
+                let marker = if sel { "▸ " } else { "  " };
+                let text = format!("{marker}{label}");
+                let color = if sel { theme::CYAN } else { theme::TEXT };
+                let style = if sel {
+                    Style::default()
+                        .fg(color)
+                        .bg(theme::BG)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(color).bg(theme::BG)
+                };
+                popup::write_str(buf, &bounds, left, y_start + i as u16 * 2, &text, style);
+            }
+
+            popup::render_hint(
+                buf,
+                &bounds,
+                popup_area,
+                "j/k navigate  Enter select  Esc cancel",
+            );
+        }
+        VerificationStage::EnterUserId => {
+            let label = "User ID:";
+            let label_y = popup_area.y + 3;
+            popup::write_str(
+                buf,
+                &bounds,
+                left,
+                label_y,
+                label,
+                Style::default().fg(theme::TEXT).bg(theme::BG),
+            );
+
+            let value_x = left;
+            let value_y = label_y + 2;
+            form_field::render_editing(buf, value_x, right, value_y, &state.user_id_buffer);
+
+            popup::render_hint(buf, &bounds, popup_area, "Enter verify  Esc back");
+        }
         VerificationStage::WaitingForOtherDevice => {
             let line1 = format!(
                 "Verifying: {}",

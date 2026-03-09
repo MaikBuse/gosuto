@@ -749,6 +749,26 @@ async fn main() -> Result<()> {
                             app.verify_task_handle = Some(handle);
                         }
 
+                        // Handle cross-signing reset
+                        if app.pending_reset_cross_signing {
+                            app.pending_reset_cross_signing = false;
+                            let tx = event_tx.clone();
+                            spawn_with_client!(matrix_client, |client| async move {
+                                match matrix::client::reset_cross_signing_with_uia(&client, &tx)
+                                    .await
+                                {
+                                    Ok(()) => {
+                                        tx.send(AppEvent::CrossSigningResetCompleted)
+                                            .warn_closed("CrossSigningResetCompleted");
+                                    }
+                                    Err(e) => {
+                                        tx.send(AppEvent::CrossSigningResetError(e.to_string()))
+                                            .warn_closed("CrossSigningResetError");
+                                    }
+                                }
+                            });
+                        }
+
                         // Handle incoming verification requests
                         {
                             let mut iv_guard = incoming_verification.lock().await;

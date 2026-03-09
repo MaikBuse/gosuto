@@ -124,6 +124,86 @@ impl App {
         let stage = self.verification_modal.as_ref().map(|m| &m.stage);
 
         match stage {
+            Some(crate::state::VerificationStage::ChooseAction { selected }) => {
+                let sel = *selected;
+                match key.code {
+                    KeyCode::Up | KeyCode::Char('k') => {
+                        if let Some(ref mut modal) = self.verification_modal {
+                            modal.stage = crate::state::VerificationStage::ChooseAction {
+                                selected: sel.saturating_sub(1),
+                            };
+                        }
+                    }
+                    KeyCode::Down | KeyCode::Char('j') => {
+                        if let Some(ref mut modal) = self.verification_modal {
+                            modal.stage = crate::state::VerificationStage::ChooseAction {
+                                selected: (sel + 1).min(2),
+                            };
+                        }
+                    }
+                    KeyCode::Enter => match sel {
+                        0 => {
+                            // Self-verify
+                            if let Some(ref mut modal) = self.verification_modal {
+                                modal.stage =
+                                    crate::state::VerificationStage::WaitingForOtherDevice;
+                            }
+                            self.pending_verify = Some(None);
+                        }
+                        1 => {
+                            // Verify a user — show text input
+                            if let Some(ref mut modal) = self.verification_modal {
+                                modal.user_id_buffer.clear();
+                                modal.stage = crate::state::VerificationStage::EnterUserId;
+                            }
+                        }
+                        2 => {
+                            // Reset cross-signing keys
+                            self.pending_reset_cross_signing = true;
+                            self.cancel_verification();
+                        }
+                        _ => {}
+                    },
+                    KeyCode::Esc => {
+                        self.cancel_verification();
+                    }
+                    _ => {}
+                }
+            }
+            Some(crate::state::VerificationStage::EnterUserId) => match key.code {
+                KeyCode::Char(c) => {
+                    if let Some(ref mut modal) = self.verification_modal {
+                        modal.user_id_buffer.push(c);
+                    }
+                }
+                KeyCode::Backspace => {
+                    if let Some(ref mut modal) = self.verification_modal {
+                        modal.user_id_buffer.pop();
+                    }
+                }
+                KeyCode::Enter => {
+                    let user_id = self
+                        .verification_modal
+                        .as_ref()
+                        .map(|m| m.user_id_buffer.clone())
+                        .unwrap_or_default();
+                    if user_id.is_empty() {
+                        self.last_error = Some("User ID cannot be empty".to_string());
+                        return;
+                    }
+                    if let Some(ref mut modal) = self.verification_modal {
+                        modal.sender = user_id.clone();
+                        modal.stage = crate::state::VerificationStage::WaitingForOtherDevice;
+                    }
+                    self.pending_verify = Some(Some(user_id));
+                }
+                KeyCode::Esc => {
+                    if let Some(ref mut modal) = self.verification_modal {
+                        modal.stage = crate::state::VerificationStage::ChooseAction { selected: 1 };
+                    }
+                }
+                _ => {}
+            },
             Some(crate::state::VerificationStage::EmojiConfirmation) => match key.code {
                 KeyCode::Char('y') | KeyCode::Char('Y') => {
                     if let Some(tx) = self.verify_confirm_tx.take()

@@ -417,6 +417,7 @@ impl App {
                         stage: crate::state::VerificationStage::WaitingForOtherDevice,
                         sender,
                         emojis: vec![],
+                        user_id_buffer: String::new(),
                     });
                 }
             }
@@ -425,6 +426,7 @@ impl App {
                     stage: crate::state::VerificationStage::EmojiConfirmation,
                     sender,
                     emojis,
+                    user_id_buffer: String::new(),
                 });
             }
             AppEvent::VerificationCompleted => {
@@ -439,6 +441,13 @@ impl App {
                 if let Some(ref mut modal) = self.verification_modal {
                     modal.stage = crate::state::VerificationStage::Failed(reason);
                 }
+            }
+            AppEvent::CrossSigningResetCompleted => {
+                self.last_error = Some("Cross-signing keys reset successfully".to_string());
+                self.pending_refetch = true;
+            }
+            AppEvent::CrossSigningResetError(err) => {
+                self.last_error = Some(err);
             }
             AppEvent::VerificationError(err) => {
                 if self.verification_modal.is_some() {

@@ -193,18 +193,27 @@ impl App {
             CommandAction::Verify(target) => {
                 if self.verification_modal.is_some() {
                     self.last_error = Some("A verification is already in progress".to_string());
-                } else if let Some(sender) = target.clone().or_else(|| match &self.auth {
-                    AuthState::LoggedIn { user_id, .. } => Some(user_id.clone()),
-                    _ => None,
-                }) {
+                } else if let Some(ref user_id) = target {
+                    // Explicit target — skip menu, go straight to verification
                     self.verification_modal = Some(crate::state::VerificationModalState {
                         stage: crate::state::VerificationStage::WaitingForOtherDevice,
-                        sender,
+                        sender: user_id.clone(),
                         emojis: vec![],
+                        user_id_buffer: String::new(),
                     });
                     self.pending_verify = Some(target);
                 } else {
-                    self.last_error = Some("Cannot verify: no target user specified".to_string());
+                    // No target — show action menu
+                    let sender = match &self.auth {
+                        AuthState::LoggedIn { user_id, .. } => user_id.clone(),
+                        _ => String::new(),
+                    };
+                    self.verification_modal = Some(crate::state::VerificationModalState {
+                        stage: crate::state::VerificationStage::ChooseAction { selected: 0 },
+                        sender,
+                        emojis: vec![],
+                        user_id_buffer: String::new(),
+                    });
                 }
             }
             CommandAction::AcceptInvite => {

@@ -307,6 +307,7 @@ fn verification_request_received_does_not_overwrite_existing_modal() {
         stage: crate::state::VerificationStage::EmojiConfirmation,
         sender: "@alice:example.com".to_string(),
         emojis: vec![],
+        user_id_buffer: String::new(),
     });
 
     app.handle_event(AppEvent::VerificationRequestReceived {
@@ -331,6 +332,7 @@ fn concurrent_verify_command_blocked() {
         stage: crate::state::VerificationStage::WaitingForOtherDevice,
         sender: "@alice:example.com".to_string(),
         emojis: vec![],
+        user_id_buffer: String::new(),
     });
 
     app.handle_command(CommandAction::Verify(None));
@@ -348,6 +350,7 @@ fn concurrent_verify_member_blocked() {
         stage: crate::state::VerificationStage::WaitingForOtherDevice,
         sender: "@alice:example.com".to_string(),
         emojis: vec![],
+        user_id_buffer: String::new(),
     });
     app.members_list.members.push(crate::state::RoomMember {
         user_id: "@bob:example.com".to_string(),

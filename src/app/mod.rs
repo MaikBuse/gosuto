@@ -109,6 +109,7 @@ pub struct App {
     // Verification
     pub verification_modal: Option<crate::state::VerificationModalState>,
     pub pending_verify: Option<Option<String>>,
+    pub pending_reset_cross_signing: bool,
     pub verify_confirm_tx: Option<tokio::sync::oneshot::Sender<bool>>,
     pub verify_task_handle: Option<tokio::task::JoinHandle<()>>,
     pub self_verified: bool,
@@ -191,6 +192,7 @@ impl App {
             pending_recovery: None,
             verification_modal: None,
             pending_verify: None,
+            pending_reset_cross_signing: false,
             verify_confirm_tx: None,
             verify_task_handle: None,
             self_verified: false,
