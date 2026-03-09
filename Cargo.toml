@@ -48,6 +48,9 @@ reqwest = { version = "0.12", default-features = false, features = [
 # Crypto
 getrandom = "0.2"
 
+# Synchronization
+parking_lot = "0.12"
+
 # Utils
 dirs = "6"
 anyhow = "1"

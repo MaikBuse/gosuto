@@ -233,7 +233,7 @@ impl App {
                     self.audio_settings.push_to_talk_key = Some(name.clone());
                     self.audio_settings.capturing_ptt_key = false;
                     if let Some(ref handle) = self.global_ptt {
-                        *handle.ptt_key.lock().unwrap() = name;
+                        *handle.ptt_key.lock() = name;
                     }
                 }
             }
@@ -1601,7 +1601,7 @@ impl App {
         if self.config.audio.push_to_talk {
             self.ensure_global_ptt_listener();
             if let Some(ref handle) = self.global_ptt {
-                *handle.ptt_key.lock().unwrap() = self
+                *handle.ptt_key.lock() = self
                     .config
                     .audio
                     .push_to_talk_key

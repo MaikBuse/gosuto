@@ -1,5 +1,7 @@
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+
+use parking_lot::Mutex;
 
 use tracing::{info, warn};
 
@@ -105,19 +107,13 @@ fn handle_ptt_event(
             let _ = event_tx.send(AppEvent::PttKeyCaptured(key_name.to_string()));
             capturing.store(false, Ordering::Relaxed);
         } else if active.load(Ordering::Relaxed) {
-            let current_key = ptt_key_shared
-                .lock()
-                .unwrap_or_else(|p| p.into_inner())
-                .clone();
+            let current_key = ptt_key_shared.lock().clone();
             if !current_key.is_empty() && key_name == current_key {
                 ptt_transmitting.store(true, Ordering::Relaxed);
             }
         }
     } else if active.load(Ordering::Relaxed) {
-        let current_key = ptt_key_shared
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .clone();
+        let current_key = ptt_key_shared.lock().clone();
         if !current_key.is_empty() && key_name == current_key {
             ptt_transmitting.store(false, Ordering::Relaxed);
         }

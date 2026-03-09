@@ -182,7 +182,7 @@ async fn main() -> Result<()> {
     });
 
     // Shared audio config for CallManager
-    let shared_audio_config = Arc::new(std::sync::Mutex::new(app.config.audio.clone()));
+    let shared_audio_config = Arc::new(parking_lot::RwLock::new(app.config.audio.clone()));
     let ptt_transmitting = app.ptt_transmitting.clone();
     let mic_active = app.mic_active.clone();
 

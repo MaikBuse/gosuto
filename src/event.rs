@@ -1,4 +1,6 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+
+use parking_lot::Mutex;
 
 use crossterm::event::KeyEvent;
 use tokio::sync::mpsc;
@@ -25,7 +27,7 @@ impl PasswordSender {
     }
 
     pub fn take(&self) -> Option<tokio::sync::oneshot::Sender<String>> {
-        self.0.lock().ok()?.take()
+        self.0.lock().take()
     }
 }
 

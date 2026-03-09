@@ -577,9 +577,9 @@ impl AudioPipeline {
 
         // Channel for decoded audio samples
         let (audio_tx, audio_rx) = mpsc::unbounded_channel::<Vec<f32>>();
-        let audio_rx = Arc::new(std::sync::Mutex::new(audio_rx));
+        let audio_rx = Arc::new(parking_lot::Mutex::new(audio_rx));
 
-        let playback_buffer = Arc::new(std::sync::Mutex::new(Vec::<f32>::new()));
+        let playback_buffer = Arc::new(parking_lot::Mutex::new(Vec::<f32>::new()));
         let playback_buf_clone = playback_buffer.clone();
         let running_flag = running.clone();
 
@@ -596,12 +596,12 @@ impl AudioPipeline {
                                 data.fill($zero);
                                 return;
                             }
-                            let mut rx = audio_rx.lock().unwrap();
+                            let mut rx = audio_rx.lock();
                             while let Ok(samples) = rx.try_recv() {
-                                playback_buf.lock().unwrap().extend(samples);
+                                playback_buf.lock().extend(samples);
                             }
                             drop(rx);
-                            let mut buf = playback_buf.lock().unwrap();
+                            let mut buf = playback_buf.lock();
                             let available = buf.len().min(data.len());
                             if available > 0 {
                                 for (i, sample) in buf.drain(..available).enumerate() {

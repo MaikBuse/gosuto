@@ -63,7 +63,7 @@ pub struct CallManager {
     event_tx: EventSender,
     client: Arc<Mutex<Option<Client>>>,
     active_call: Option<ActiveCall>,
-    audio_config: Arc<std::sync::Mutex<AudioConfig>>,
+    audio_config: Arc<parking_lot::RwLock<AudioConfig>>,
     transmitting: Arc<AtomicBool>,
     mic_active: Arc<AtomicBool>,
 }
@@ -73,7 +73,7 @@ impl CallManager {
         cmd_rx: CallCommandReceiver,
         event_tx: EventSender,
         client: Arc<Mutex<Option<Client>>>,
-        audio_config: Arc<std::sync::Mutex<AudioConfig>>,
+        audio_config: Arc<parking_lot::RwLock<AudioConfig>>,
         transmitting: Arc<AtomicBool>,
         mic_active: Arc<AtomicBool>,
     ) -> Self {
@@ -302,7 +302,7 @@ impl CallManager {
         warn!("Connecting to LiveKit server: {}", creds.server_url);
         log_jwt_claims(&creds.token);
         let encryption_key_copy = encryption_key.clone();
-        let use_e2ee = self.audio_config.lock().unwrap().e2ee;
+        let use_e2ee = self.audio_config.read().e2ee;
         let session = match LiveKitSession::connect(
             &creds.server_url,
             &creds.token,
@@ -379,7 +379,7 @@ impl CallManager {
 
         // 6. Start audio capture
         let mut audio = AudioPipeline::new();
-        let audio_cfg = self.audio_config.lock().unwrap().clone();
+        let audio_cfg = self.audio_config.read().clone();
         let source = match audio.start_capture(
             &audio_cfg,
             self.transmitting.clone(),
@@ -596,7 +596,7 @@ impl CallManager {
                             "NOT available"
                         }
                     );
-                    let audio_cfg = self.audio_config.lock().unwrap().clone();
+                    let audio_cfg = self.audio_config.read().clone();
                     if let Err(e) = call.audio.add_playback(track, &audio_cfg) {
                         error!(
                             "Failed to start playback for {}: {:#}",
