@@ -26,13 +26,44 @@ pub async fn start_sync(
 ) -> Result<()> {
     // Register event handler for messages
     let msg_tx = tx.clone();
+    let msg_verify_tx = tx.clone();
+    let msg_incoming_verify = incoming_verification.clone();
     client.add_event_handler(
         move |event: OriginalSyncRoomMessageEvent, room: matrix_sdk::Room| {
             let tx = msg_tx.clone();
+            let verify_tx = msg_verify_tx.clone();
+            let incoming_verify = msg_incoming_verify.clone();
             async move {
                 use crate::matrix::message_parsing::{
                     ParsedMessage, millis_to_local, parse_message_type, spawn_image_fetch,
                 };
+                use matrix_sdk::ruma::events::room::message::MessageType;
+
+                // Intercept in-room verification requests before normal message parsing
+                if let MessageType::VerificationRequest(_) = &event.content.msgtype {
+                    // Skip our own requests
+                    if room.client().user_id() == Some(&event.sender) {
+                        return;
+                    }
+                    let request = room
+                        .client()
+                        .encryption()
+                        .get_verification_request(&event.sender, event.event_id.as_str())
+                        .await;
+                    if let Some(request) = request {
+                        info!(
+                            "Incoming in-room verification request from {}",
+                            event.sender
+                        );
+                        *incoming_verify.lock().await = Some(request);
+                        verify_tx
+                            .send(AppEvent::VerificationRequestReceived {
+                                sender: event.sender.to_string(),
+                            })
+                            .warn_closed("VerificationRequestReceived");
+                    }
+                    return;
+                }
 
                 let room_id = room.room_id().to_string();
                 let sender = event.sender.to_string();
