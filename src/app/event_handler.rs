@@ -223,6 +223,10 @@ impl App {
                 if self.call_info.is_some() {
                     return;
                 }
+                // Ignore call events during initial sync (before first sync token)
+                if self.sync_token.is_none() {
+                    return;
+                }
                 // If it's us, ignore
                 if let AuthState::LoggedIn {
                     user_id: ref our_id,
