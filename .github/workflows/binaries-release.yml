@@ -46,16 +46,10 @@ jobs:
           version: "25.x"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: actions/cache@v4
+      - uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-          key: ${{ runner.os }}-cargo-release-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-release-
+          prefix-key: release
+          key: ${{ matrix.target }}
 
       - name: Build
         run: cargo build --release --target ${{ matrix.target }}
@@ -101,6 +95,10 @@ jobs:
         with:
           version: "25.x"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: publish
 
       - name: Publish to crates.io
         run: cargo publish
