@@ -17,6 +17,80 @@ use crate::config;
 use crate::event::{AppEvent, EventSender, WarnClosed};
 use crate::matrix::session::{self, StoredSession};
 
+async fn build_client_with_fallback(
+    homeserver: &str,
+    store_path: &std::path::Path,
+    accept_invalid_certs: bool,
+) -> Result<Client> {
+    let mut builder = Client::builder()
+        .server_name_or_homeserver_url(homeserver)
+        .sqlite_store(store_path, None)
+        .with_encryption_settings(encryption_settings());
+    if accept_invalid_certs {
+        builder = builder.disable_ssl_verification();
+    }
+    match builder.build().await {
+        Ok(client) => Ok(client),
+        Err(discovery_err) => {
+            info!(
+                "Server discovery failed ({}), trying direct URL",
+                discovery_err
+            );
+            let mut builder = Client::builder()
+                .homeserver_url(homeserver)
+                .sqlite_store(store_path, None)
+                .with_encryption_settings(encryption_settings());
+            if accept_invalid_certs {
+                builder = builder.disable_ssl_verification();
+            }
+            Ok(builder.build().await?)
+        }
+    }
+}
+
+fn save_and_notify(client: &Client, tx: &EventSender) -> Result<()> {
+    let user_id = client
+        .user_id()
+        .ok_or_else(|| anyhow::anyhow!("No user ID after login"))?
+        .to_string();
+    let device_id = client
+        .device_id()
+        .ok_or_else(|| anyhow::anyhow!("No device ID after login"))?
+        .to_string();
+
+    let session_path = config::session_path()?;
+    let stored = StoredSession {
+        homeserver: client.homeserver().to_string(),
+        user_id: user_id.clone(),
+        device_id: device_id.clone(),
+        access_token: client
+            .matrix_auth()
+            .session()
+            .ok_or_else(|| anyhow::anyhow!("No session after login"))?
+            .tokens
+            .access_token,
+    };
+    session::save_session(&session_path, &stored)?;
+
+    tx.send(AppEvent::LoginSuccess {
+        user_id,
+        device_id,
+        homeserver: client.homeserver().to_string(),
+    })
+    .warn_closed("LoginSuccess");
+
+    Ok(())
+}
+
+fn clear_stale_store(store_path: &std::path::Path) -> Result<()> {
+    if store_path.exists() {
+        debug!("Clearing stale store at {}", store_path.display());
+        std::fs::remove_dir_all(store_path)?;
+        std::fs::create_dir_all(store_path)?;
+    }
+    Ok(())
+}
+
 pub async fn try_restore_session(
     tx: &EventSender,
     accept_invalid_certs: bool,
@@ -96,43 +170,11 @@ pub async fn login(
     info!("Login requested for homeserver input: {}", homeserver);
 
     let store_path = config::store_path_for_homeserver(&homeserver)?;
-
-    // Fresh login — clear any stale store data (crypto keys from old devices)
-    if store_path.exists() {
-        debug!("Clearing stale store at {}", store_path.display());
-        std::fs::remove_dir_all(&store_path)?;
-        std::fs::create_dir_all(&store_path)?;
-    }
+    clear_stale_store(&store_path)?;
 
     debug!("Using per-server store at {}", store_path.display());
 
-    let client = {
-        // Try with server discovery first
-        let mut builder = Client::builder()
-            .server_name_or_homeserver_url(&homeserver)
-            .sqlite_store(&store_path, None)
-            .with_encryption_settings(encryption_settings());
-        if accept_invalid_certs {
-            builder = builder.disable_ssl_verification();
-        }
-        match builder.build().await {
-            Ok(client) => client,
-            Err(discovery_err) => {
-                info!(
-                    "Server discovery failed ({}), trying direct URL",
-                    discovery_err
-                );
-                let mut builder = Client::builder()
-                    .homeserver_url(&homeserver)
-                    .sqlite_store(&store_path, None)
-                    .with_encryption_settings(encryption_settings());
-                if accept_invalid_certs {
-                    builder = builder.disable_ssl_verification();
-                }
-                builder.build().await?
-            }
-        }
-    };
+    let client = build_client_with_fallback(&homeserver, &store_path, accept_invalid_certs).await?;
 
     debug!(
         "Resolved homeserver URL: {} (input was: {})",
@@ -161,36 +203,7 @@ pub async fn login(
         )
     })?;
 
-    let user_id = client
-        .user_id()
-        .ok_or_else(|| anyhow::anyhow!("No user ID after login"))?
-        .to_string();
-    let device_id = client
-        .device_id()
-        .ok_or_else(|| anyhow::anyhow!("No device ID after login"))?
-        .to_string();
-
-    // Save session
-    let session_path = config::session_path()?;
-    let stored = StoredSession {
-        homeserver: client.homeserver().to_string(),
-        user_id: user_id.clone(),
-        device_id: device_id.clone(),
-        access_token: client
-            .matrix_auth()
-            .session()
-            .ok_or_else(|| anyhow::anyhow!("No session after login"))?
-            .tokens
-            .access_token,
-    };
-    session::save_session(&session_path, &stored)?;
-
-    tx.send(AppEvent::LoginSuccess {
-        user_id,
-        device_id,
-        homeserver: client.homeserver().to_string(),
-    })
-    .warn_closed("LoginSuccess");
+    save_and_notify(&client, tx)?;
 
     Ok(client)
 }
@@ -210,40 +223,9 @@ pub async fn register(
     );
 
     let store_path = config::store_path_for_homeserver(&homeserver)?;
+    clear_stale_store(&store_path)?;
 
-    // Fresh registration — clear any stale store data
-    if store_path.exists() {
-        debug!("Clearing stale store at {}", store_path.display());
-        std::fs::remove_dir_all(&store_path)?;
-        std::fs::create_dir_all(&store_path)?;
-    }
-
-    let client = {
-        let mut builder = Client::builder()
-            .server_name_or_homeserver_url(&homeserver)
-            .sqlite_store(&store_path, None)
-            .with_encryption_settings(encryption_settings());
-        if accept_invalid_certs {
-            builder = builder.disable_ssl_verification();
-        }
-        match builder.build().await {
-            Ok(client) => client,
-            Err(discovery_err) => {
-                info!(
-                    "Server discovery failed ({}), trying direct URL",
-                    discovery_err
-                );
-                let mut builder = Client::builder()
-                    .homeserver_url(&homeserver)
-                    .sqlite_store(&store_path, None)
-                    .with_encryption_settings(encryption_settings());
-                if accept_invalid_certs {
-                    builder = builder.disable_ssl_verification();
-                }
-                builder.build().await?
-            }
-        }
-    };
+    let client = build_client_with_fallback(&homeserver, &store_path, accept_invalid_certs).await?;
 
     info!(
         "Resolved homeserver URL: {} (input was: {})",
@@ -277,36 +259,7 @@ pub async fn register(
             .context("Login after registration failed")?;
     }
 
-    let user_id = client
-        .user_id()
-        .ok_or_else(|| anyhow::anyhow!("No user ID after login"))?
-        .to_string();
-    let device_id = client
-        .device_id()
-        .ok_or_else(|| anyhow::anyhow!("No device ID after login"))?
-        .to_string();
-
-    // Save session
-    let session_path = config::session_path()?;
-    let stored = StoredSession {
-        homeserver: client.homeserver().to_string(),
-        user_id: user_id.clone(),
-        device_id: device_id.clone(),
-        access_token: client
-            .matrix_auth()
-            .session()
-            .ok_or_else(|| anyhow::anyhow!("No session after login"))?
-            .tokens
-            .access_token,
-    };
-    session::save_session(&session_path, &stored)?;
-
-    tx.send(AppEvent::LoginSuccess {
-        user_id,
-        device_id,
-        homeserver: client.homeserver().to_string(),
-    })
-    .warn_closed("LoginSuccess");
+    save_and_notify(&client, tx)?;
 
     Ok(client)
 }
