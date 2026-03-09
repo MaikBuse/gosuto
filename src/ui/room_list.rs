@@ -3,14 +3,13 @@ use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders},
 };
 
 use crate::app::App;
 use crate::input::FocusPanel;
 use crate::state::{DisplayRow, RoomCategory};
-use crate::ui::theme;
 use crate::ui::tooltip::{self, Direction, set_cell_if, write_str_clipped};
+use crate::ui::{panel, theme};
 
 pub struct RoomListAnimState {
     pub pulse_phase: f32,
@@ -106,37 +105,22 @@ impl RoomListAnimState {
 
 /// Compute the scroll offset for the room list given the current state and area.
 pub fn scroll_offset(app: &App, area: Rect) -> usize {
-    let inner_height = area.height.saturating_sub(2) as usize; // subtract borders
-    let total_rows = app.room_list.display_rows.len();
-    let selected = app.room_list.selected;
-
-    if total_rows <= inner_height || selected < inner_height / 2 {
-        0
-    } else if selected > total_rows - inner_height / 2 {
-        total_rows - inner_height
-    } else {
-        selected - inner_height / 2
-    }
+    let inner_height = area.height.saturating_sub(2) as usize;
+    panel::scroll_offset(
+        app.room_list.display_rows.len(),
+        app.room_list.selected,
+        inner_height,
+    )
 }
 
 pub fn render(app: &App, frame: &mut Frame, area: Rect) {
     let focused = app.vim.focus == FocusPanel::RoomList;
     let icons = app.config.icons();
 
-    let border_style = if focused {
-        theme::border_focused_style()
-    } else {
-        theme::border_style()
-    };
-
-    let block = Block::default()
-        .title(Line::from(vec![Span::styled(
-            " ROOMS ",
-            theme::title_style(),
-        )]))
-        .borders(Borders::ALL)
-        .border_style(border_style)
-        .style(Style::default().bg(theme::BG));
+    let block = panel::block(
+        Line::from(vec![Span::styled(" ROOMS ", theme::title_style())]),
+        focused,
+    );
 
     frame.render_widget(block, area);
 
@@ -175,14 +159,7 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
     let visible_height = inner.height as usize;
     let total_rows = display_rows.len();
 
-    // Scroll offset to keep selected row centered
-    let scroll_offset = if total_rows <= visible_height || selected < visible_height / 2 {
-        0
-    } else if selected > total_rows - visible_height / 2 {
-        total_rows - visible_height
-    } else {
-        selected - visible_height / 2
-    };
+    let scroll_offset = panel::scroll_offset(total_rows, selected, visible_height);
 
     let buf = frame.buffer_mut();
     let bounds = *buf.area();
@@ -390,14 +367,7 @@ pub fn render_tooltip(app: &App, frame: &mut Frame, room_list_area: Rect) {
         return;
     }
 
-    let total_rows = display_rows.len();
-    let scroll_off = if total_rows <= inner_height || selected < inner_height / 2 {
-        0
-    } else if selected > total_rows - inner_height / 2 {
-        total_rows - inner_height
-    } else {
-        selected - inner_height / 2
-    };
+    let scroll_off = panel::scroll_offset(display_rows.len(), selected, inner_height);
 
     // Check if selected row is visible
     if selected < scroll_off || selected >= scroll_off + inner_height {

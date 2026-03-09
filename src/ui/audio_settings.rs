@@ -1,12 +1,11 @@
 use ratatui::Frame;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 
 use crate::state::AudioSettingsState;
 use crate::ui::icons::Icons;
-use crate::ui::popup;
-use crate::ui::theme;
+use crate::ui::{form_field, popup, theme};
 
 const POPUP_WIDTH: u16 = 54;
 const POPUP_HEIGHT: u16 = 20;
@@ -68,36 +67,12 @@ fn render_field(
 ) {
     let (left, right) = cols;
     let bounds = *buf.area();
-    let marker_color = if selected { theme::CYAN } else { theme::DIM };
-    let label_color = if selected { theme::CYAN } else { theme::TEXT };
-    let marker = if selected {
-        icons.selected
-    } else {
-        icons.unselected
-    };
-
-    let marker_s = Style::default().fg(marker_color).bg(theme::BG);
-    let label_s = Style::default()
-        .fg(label_color)
-        .bg(theme::BG)
-        .add_modifier(if selected {
-            Modifier::BOLD
-        } else {
-            Modifier::empty()
-        });
-
-    popup::write_str(buf, &bounds, left, row, marker, marker_s);
-    popup::set_cell(
-        buf,
-        &bounds,
-        left + 1,
-        row,
-        ' ',
-        Style::default().bg(theme::BG),
-    );
-
     let label_x = left + 2;
     let value_x = left + 19;
+
+    form_field::render_label(buf, left, label_x, row, "", selected, icons);
+
+    let label_s = theme::field_label_style(selected);
 
     match field_id {
         0 => {
@@ -157,12 +132,8 @@ fn render_field(
                     .bg(theme::BG)
                     .add_modifier(Modifier::BOLD);
                 let max_w = (right.saturating_sub(value_x)) as usize;
-                let display: &str = if err.len() > max_w {
-                    &err[..max_w]
-                } else {
-                    err
-                };
-                popup::write_str(buf, &bounds, value_x, row, display, s);
+                let display = popup::truncate_str(err, max_w);
+                popup::write_str(buf, &bounds, value_x, row, &display, s);
             } else {
                 let key_name = state.push_to_talk_key.as_deref().unwrap_or("not set");
                 let s = if selected {
@@ -188,11 +159,8 @@ fn render_device_selector(
     icons: &Icons,
 ) {
     let bounds = *buf.area();
-    let arrow_color = if selected { theme::CYAN } else { theme::DIM };
-    let name_color = if selected { theme::TEXT } else { theme::DIM };
-
-    let arrow_s = Style::default().fg(arrow_color).bg(theme::BG);
-    let name_s = Style::default().fg(name_color).bg(theme::BG);
+    let arrow_s = theme::field_arrow_style(selected);
+    let name_s = theme::field_value_style(selected);
 
     popup::write_str(buf, &bounds, x, row, icons.arrow_left, arrow_s);
     popup::set_cell(
@@ -204,13 +172,8 @@ fn render_device_selector(
         Style::default().bg(theme::BG),
     );
 
-    // Truncate name to fit
     let max_name_w = (right.saturating_sub(x + 4)) as usize;
-    let display: String = if name.len() > max_name_w {
-        format!("{}…", &name[..max_name_w.saturating_sub(1)])
-    } else {
-        name.to_string()
-    };
+    let display = popup::truncate_str(name, max_name_w);
     popup::write_str(buf, &bounds, x + 2, row, &display, name_s);
 
     let end_x = x + 2 + display.chars().count() as u16;
@@ -235,7 +198,6 @@ fn render_volume_bar(
 ) {
     let filled = (value * BAR_WIDTH as f32).round() as usize;
     let fill_color = if selected { theme::CYAN } else { theme::DIM };
-    let empty_color = Color::Rgb(40, 40, 50);
     let pct = format!("{:>3}%", (value * 100.0).round() as u32);
 
     popup::set_cell(
@@ -249,7 +211,11 @@ fn render_volume_bar(
 
     for i in 0..BAR_WIDTH {
         let ch = if i < filled { '█' } else { '░' };
-        let color = if i < filled { fill_color } else { empty_color };
+        let color = if i < filled {
+            fill_color
+        } else {
+            theme::BAR_EMPTY
+        };
         popup::set_cell(
             buf,
             bounds,
@@ -310,7 +276,7 @@ fn render_mic_meter(buf: &mut Buffer, bounds: &Rect, left: u16, right: u16, row:
                 theme::GREEN
             }
         } else {
-            Color::Rgb(30, 30, 40)
+            theme::METER_EMPTY
         };
         popup::set_cell(
             buf,

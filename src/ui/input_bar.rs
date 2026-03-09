@@ -1,6 +1,7 @@
 use ratatui::{
     Frame,
     layout::Rect,
+    style::Style,
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
 };
@@ -41,13 +42,13 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
     let text_style = if is_placeholder {
         theme::dim_style()
     } else {
-        ratatui::style::Style::default().fg(style)
+        Style::default().fg(style)
     };
 
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(theme::border_style())
-        .style(ratatui::style::Style::default().bg(theme::BG));
+        .style(Style::default().bg(theme::BG));
 
     let prefix = match app.vim.mode {
         VimMode::Insert => "> ",
@@ -64,14 +65,14 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
                 .map(|(i, line_str)| {
                     let line_prefix = if i == 0 { prefix } else { "  " };
                     Line::from(vec![
-                        Span::styled(line_prefix, ratatui::style::Style::default().fg(style)),
+                        Span::styled(line_prefix, Style::default().fg(style)),
                         Span::styled(line_str.to_string(), text_style),
                     ])
                 })
                 .collect()
         } else {
             vec![Line::from(vec![
-                Span::styled(prefix, ratatui::style::Style::default().fg(style)),
+                Span::styled(prefix, Style::default().fg(style)),
                 Span::styled(content, text_style),
             ])]
         };

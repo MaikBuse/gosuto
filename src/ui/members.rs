@@ -1,15 +1,16 @@
 use ratatui::{
     Frame,
     layout::Rect,
+    style::Style,
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, ListState},
+    widgets::{List, ListItem, ListState},
 };
 
 use crate::app::App;
 use crate::input::FocusPanel;
 use crate::ui::icons::Icons;
-use crate::ui::theme;
 use crate::ui::tooltip::{self, Direction};
+use crate::ui::{panel, theme};
 
 /// IRC-style power level prefix
 fn power_prefix(power_level: i64, icons: &Icons) -> &str {
@@ -23,27 +24,16 @@ fn power_prefix(power_level: i64, icons: &Icons) -> &str {
 }
 
 pub fn scroll_offset(app: &App, area: Rect) -> usize {
-    let inner_height = area.height.saturating_sub(2) as usize; // subtract borders
-    let total_rows = app.members_list.members.len();
-    let selected = app.members_list.selected;
-
-    if total_rows <= inner_height || selected < inner_height / 2 {
-        0
-    } else if selected > total_rows - inner_height / 2 {
-        total_rows - inner_height
-    } else {
-        selected - inner_height / 2
-    }
+    let inner_height = area.height.saturating_sub(2) as usize;
+    panel::scroll_offset(
+        app.members_list.members.len(),
+        app.members_list.selected,
+        inner_height,
+    )
 }
 
 pub fn render(app: &App, frame: &mut Frame, area: Rect) {
     let focused = app.vim.focus == FocusPanel::Members;
-
-    let border_style = if focused {
-        theme::border_focused_style()
-    } else {
-        theme::border_style()
-    };
 
     let member_count = app.members_list.members.len();
     let title = format!(" MEMBERS ({}) ", member_count);
@@ -52,11 +42,7 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
         .members_title_reveal
         .render_line(&title, theme::title_style());
 
-    let block = Block::default()
-        .title(title_line)
-        .borders(Borders::ALL)
-        .border_style(border_style)
-        .style(ratatui::style::Style::default().bg(theme::BG));
+    let block = panel::block(title_line, focused);
 
     let icons = app.config.icons();
 
@@ -67,15 +53,15 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
         .map(|member| {
             let prefix = power_prefix(member.power_level, icons);
             let prefix_style = if member.power_level >= 50 {
-                ratatui::style::Style::default().fg(theme::GREEN)
+                Style::default().fg(theme::GREEN)
             } else if member.power_level > 0 {
-                ratatui::style::Style::default().fg(theme::CYAN)
+                Style::default().fg(theme::CYAN)
             } else {
                 theme::dim_style()
             };
 
             let name_color = theme::sender_color(&member.user_id);
-            let name_style = ratatui::style::Style::default().fg(name_color);
+            let name_style = Style::default().fg(name_color);
 
             let id_label = member.user_id.strip_prefix('@').unwrap_or(&member.user_id);
             let name_with_id = format!("{} ({})", member.display_name, id_label);
@@ -87,7 +73,7 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
             if member.verified == Some(true) {
                 spans.push(Span::styled(
                     format!(" {}", icons.checkmark),
-                    ratatui::style::Style::default().fg(theme::GREEN),
+                    Style::default().fg(theme::GREEN),
                 ));
             }
 
@@ -95,16 +81,18 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
         })
         .collect();
 
-    let highlight_style = ratatui::style::Style::default()
-        .fg(theme::CYAN)
-        .bg(ratatui::style::Color::Rgb(20, 20, 40));
+    let highlight_style = if focused {
+        theme::highlight_focused_style()
+    } else {
+        theme::highlight_unfocused_style()
+    };
 
     let list = List::new(items)
         .block(block)
         .highlight_style(highlight_style);
 
     let mut list_state = ListState::default();
-    if focused && !app.members_list.members.is_empty() {
+    if !app.members_list.members.is_empty() {
         list_state.select(Some(app.members_list.selected));
     }
 

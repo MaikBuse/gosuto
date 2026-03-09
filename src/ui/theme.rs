@@ -29,6 +29,12 @@ pub fn sender_color(sender: &str) -> Color {
     SENDER_COLORS[hash % SENDER_COLORS.len()]
 }
 
+// Semantic colors
+pub const HIGHLIGHT_BG: Color = Color::Rgb(20, 20, 40);
+pub const MUTED: Color = Color::Rgb(60, 60, 80);
+pub const BAR_EMPTY: Color = Color::Rgb(40, 40, 50);
+pub const METER_EMPTY: Color = Color::Rgb(30, 30, 40);
+
 // Composite styles
 pub fn border_style() -> Style {
     Style::default().fg(BORDER)
@@ -72,6 +78,65 @@ pub fn command_mode_style() -> Style {
     Style::default()
         .fg(BLACK)
         .bg(MAGENTA)
+        .add_modifier(Modifier::BOLD)
+}
+
+// Form field styles
+pub fn field_marker_style(selected: bool) -> Style {
+    let color = if selected { CYAN } else { DIM };
+    Style::default().fg(color).bg(BG)
+}
+
+pub fn field_label_style(selected: bool) -> Style {
+    let color = if selected { CYAN } else { TEXT };
+    let modifier = if selected {
+        Modifier::BOLD
+    } else {
+        Modifier::empty()
+    };
+    Style::default().fg(color).bg(BG).add_modifier(modifier)
+}
+
+pub fn field_value_style(selected: bool) -> Style {
+    let color = if selected { TEXT } else { DIM };
+    Style::default().fg(color).bg(BG)
+}
+
+pub fn field_arrow_style(selected: bool) -> Style {
+    let color = if selected { CYAN } else { DIM };
+    Style::default().fg(color).bg(BG)
+}
+
+pub fn edit_text_style() -> Style {
+    Style::default().fg(GREEN).bg(BG)
+}
+
+pub fn edit_cursor_style() -> Style {
+    Style::default()
+        .fg(GREEN)
+        .bg(BG)
+        .add_modifier(Modifier::SLOW_BLINK)
+}
+
+pub fn highlight_focused_style() -> Style {
+    Style::default()
+        .fg(BLACK)
+        .bg(CYAN)
+        .add_modifier(Modifier::BOLD)
+}
+
+pub fn highlight_unfocused_style() -> Style {
+    Style::default().fg(CYAN).bg(HIGHLIGHT_BG)
+}
+
+pub fn loading_style() -> Style {
+    Style::default().fg(CYAN).bg(BG)
+}
+
+pub fn saving_style() -> Style {
+    Style::default()
+        .fg(GREEN)
+        .bg(BG)
         .add_modifier(Modifier::BOLD)
 }
 

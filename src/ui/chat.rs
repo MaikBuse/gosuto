@@ -1,15 +1,16 @@
 use ratatui::{
     Frame,
     layout::Rect,
+    style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph, Wrap},
+    widgets::{Paragraph, Wrap},
 };
 use ratatui_image::ResizeEncodeRender;
 
 use crate::app::App;
 use crate::input::FocusPanel;
 use crate::state::MessageContent;
-use crate::ui::theme;
+use crate::ui::{panel, theme};
 
 enum ChatSegment<'a> {
     DateSeparator(Line<'a>),
@@ -63,12 +64,6 @@ fn compute_image_rows(width: Option<u32>, height: Option<u32>, max_cols: u16) ->
 pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
     let focused = app.vim.focus == FocusPanel::Messages;
 
-    let border_style = if focused {
-        theme::border_focused_style()
-    } else {
-        theme::border_style()
-    };
-
     let room_name = app
         .messages
         .current_room_id
@@ -82,11 +77,7 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
         .chat_title_reveal
         .render_line(&title_text, theme::title_style());
 
-    let block = Block::default()
-        .title(title_line)
-        .borders(Borders::ALL)
-        .border_style(border_style)
-        .style(ratatui::style::Style::default().bg(theme::BG));
+    let block = panel::block(title_line, focused);
 
     let inner_height = area.height.saturating_sub(2) as usize; // borders
     let inner_width = area.width.saturating_sub(2) as usize; // borders
@@ -144,19 +135,16 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
             let icons = app.config.icons();
             spans.push(Span::styled(
                 icons.unverified,
-                ratatui::style::Style::default().fg(theme::RED),
+                Style::default().fg(theme::RED),
             ));
-            spans.push(Span::styled(
-                " ",
-                ratatui::style::Style::default().fg(theme::RED),
-            ));
+            spans.push(Span::styled(" ", Style::default().fg(theme::RED)));
         }
 
         spans.push(Span::styled(
             format!("{} ", msg.sender),
-            ratatui::style::Style::default()
+            Style::default()
                 .fg(sender_color)
-                .add_modifier(ratatui::style::Modifier::BOLD),
+                .add_modifier(Modifier::BOLD),
         ));
 
         match &msg.content {
@@ -164,7 +152,7 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
                 let body_style = if msg.pending {
                     theme::dim_style()
                 } else if msg.is_emote {
-                    ratatui::style::Style::default().fg(sender_color)
+                    Style::default().fg(sender_color)
                 } else if msg.is_notice {
                     theme::dim_style()
                 } else {

@@ -1,10 +1,9 @@
 use ratatui::Frame;
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::Style;
 
 use crate::state::{HISTORY_VISIBILITY_OPTIONS, RoomInfoState};
 use crate::ui::icons::Icons;
-use crate::ui::popup;
-use crate::ui::theme;
+use crate::ui::{form_field, popup, theme};
 
 const POPUP_WIDTH: u16 = 54;
 const POPUP_HEIGHT: u16 = 20;
@@ -31,14 +30,7 @@ pub fn render(state: &RoomInfoState, icons: &Icons, frame: &mut Frame) {
         let msg = "Loading...";
         let mx = left + (inner_w.saturating_sub(msg.len())) as u16 / 2;
         let my = popup_area.y + popup_area.height / 2;
-        popup::write_str(
-            buf,
-            &bounds,
-            mx,
-            my,
-            msg,
-            Style::default().fg(theme::CYAN).bg(theme::BG),
-        );
+        popup::write_str(buf, &bounds, mx, my, msg, theme::loading_style());
         return;
     }
 
@@ -59,208 +51,39 @@ pub fn render(state: &RoomInfoState, icons: &Icons, frame: &mut Frame) {
 
     // ── Field 0: NAME (editable) ──
     let name_selected = state.selected_field == 0;
-    let name_marker_color = if name_selected {
-        theme::CYAN
-    } else {
-        theme::DIM
-    };
-    let name_label_color = if name_selected {
-        theme::CYAN
-    } else {
-        theme::TEXT
-    };
-    let name_marker = if name_selected {
-        icons.selected
-    } else {
-        icons.unselected
-    };
+    form_field::render_label(buf, left, label_x, row, "NAME", name_selected, icons);
 
-    let name_marker_s = Style::default().fg(name_marker_color).bg(theme::BG);
-    let name_label_s = Style::default()
-        .fg(name_label_color)
-        .bg(theme::BG)
-        .add_modifier(if name_selected {
-            Modifier::BOLD
-        } else {
-            Modifier::empty()
-        });
-
-    popup::write_str(buf, &bounds, left, row, name_marker, name_marker_s);
-    popup::set_cell(
-        buf,
-        &bounds,
-        left + 1,
-        row,
-        ' ',
-        Style::default().bg(theme::BG),
-    );
-    popup::write_str(buf, &bounds, label_x, row, "NAME", name_label_s);
-
-    let max_name_w = (right - value_x) as usize;
     if state.editing_name {
-        // Render editable name buffer with cursor
-        let display = popup::truncate_str(&state.name_buffer, max_name_w.saturating_sub(1));
-        let edit_s = Style::default().fg(theme::GREEN).bg(theme::BG);
-        popup::write_str(buf, &bounds, value_x, row, &display, edit_s);
-        // Cursor underscore
-        let cursor_x = value_x + display.chars().count() as u16;
-        let cursor_s = Style::default()
-            .fg(theme::GREEN)
-            .bg(theme::BG)
-            .add_modifier(Modifier::SLOW_BLINK);
-        popup::set_cell(buf, &bounds, cursor_x, row, '_', cursor_s);
+        form_field::render_editing(buf, value_x, right, row, &state.name_buffer);
     } else {
         let name = state.name.as_deref().unwrap_or("\u{2014}");
-        let name_display = popup::truncate_str(name, max_name_w);
-        let name_val_color = if name_selected {
-            theme::TEXT
-        } else {
-            theme::DIM
-        };
-        let name_val_s = Style::default().fg(name_val_color).bg(theme::BG);
-        popup::write_str(buf, &bounds, value_x, row, &name_display, name_val_s);
+        form_field::render_value(buf, value_x, right, row, name, name_selected);
     }
     row += 1;
 
     // ── Field 1: TOPIC (editable) ──
     let topic_selected = state.selected_field == 1;
-    let topic_marker_color = if topic_selected {
-        theme::CYAN
-    } else {
-        theme::DIM
-    };
-    let topic_label_color = if topic_selected {
-        theme::CYAN
-    } else {
-        theme::TEXT
-    };
-    let topic_marker = if topic_selected {
-        icons.selected
-    } else {
-        icons.unselected
-    };
+    form_field::render_label(buf, left, label_x, row, "TOPIC", topic_selected, icons);
 
-    let topic_marker_s = Style::default().fg(topic_marker_color).bg(theme::BG);
-    let topic_label_s = Style::default()
-        .fg(topic_label_color)
-        .bg(theme::BG)
-        .add_modifier(if topic_selected {
-            Modifier::BOLD
-        } else {
-            Modifier::empty()
-        });
-
-    popup::write_str(buf, &bounds, left, row, topic_marker, topic_marker_s);
-    popup::set_cell(
-        buf,
-        &bounds,
-        left + 1,
-        row,
-        ' ',
-        Style::default().bg(theme::BG),
-    );
-    popup::write_str(buf, &bounds, label_x, row, "TOPIC", topic_label_s);
-
-    let max_topic_w = (right - value_x) as usize;
     if state.editing_topic {
-        let display = popup::truncate_str(&state.topic_buffer, max_topic_w.saturating_sub(1));
-        let edit_s = Style::default().fg(theme::GREEN).bg(theme::BG);
-        popup::write_str(buf, &bounds, value_x, row, &display, edit_s);
-        let cursor_x = value_x + display.chars().count() as u16;
-        let cursor_s = Style::default()
-            .fg(theme::GREEN)
-            .bg(theme::BG)
-            .add_modifier(Modifier::SLOW_BLINK);
-        popup::set_cell(buf, &bounds, cursor_x, row, '_', cursor_s);
+        form_field::render_editing(buf, value_x, right, row, &state.topic_buffer);
     } else {
         let topic = state.topic.as_deref().unwrap_or("\u{2014}");
-        let topic_display = popup::truncate_str(topic, max_topic_w);
-        let topic_val_color = if topic_selected {
-            theme::TEXT
-        } else {
-            theme::DIM
-        };
-        let topic_val_s = Style::default().fg(topic_val_color).bg(theme::BG);
-        popup::write_str(buf, &bounds, value_x, row, &topic_display, topic_val_s);
+        form_field::render_value(buf, value_x, right, row, topic, topic_selected);
     }
     row += 1;
 
-    // ── Field 2: HISTORY (editable, cycle selector) ──
+    // ── Field 2: HISTORY (cycle selector) ──
     let hist_selected = state.selected_field == 2;
-    let hist_marker_color = if hist_selected {
-        theme::CYAN
-    } else {
-        theme::DIM
-    };
-    let hist_label_color = if hist_selected {
-        theme::CYAN
-    } else {
-        theme::TEXT
-    };
-    let hist_marker = if hist_selected {
-        icons.selected
-    } else {
-        icons.unselected
-    };
-
-    let hist_marker_s = Style::default().fg(hist_marker_color).bg(theme::BG);
-    let hist_label_s = Style::default()
-        .fg(hist_label_color)
-        .bg(theme::BG)
-        .add_modifier(if hist_selected {
-            Modifier::BOLD
-        } else {
-            Modifier::empty()
-        });
-
-    popup::write_str(buf, &bounds, left, row, hist_marker, hist_marker_s);
-    popup::set_cell(
+    form_field::render_label(buf, left, label_x, row, "HISTORY", hist_selected, icons);
+    form_field::render_cycle_selector(
         buf,
-        &bounds,
-        left + 1,
+        value_x,
         row,
-        ' ',
-        Style::default().bg(theme::BG),
+        &state.history_visibility,
+        hist_selected,
+        icons,
     );
-    popup::write_str(buf, &bounds, label_x, row, "HISTORY", hist_label_s);
-
-    // Render selector with arrows
-    let arrow_color = if hist_selected {
-        theme::CYAN
-    } else {
-        theme::DIM
-    };
-    let vis_val_color = if hist_selected {
-        theme::TEXT
-    } else {
-        theme::DIM
-    };
-    let arrow_s = Style::default().fg(arrow_color).bg(theme::BG);
-    let vis_s = Style::default().fg(vis_val_color).bg(theme::BG);
-
-    popup::write_str(buf, &bounds, value_x, row, icons.arrow_left, arrow_s);
-    popup::set_cell(
-        buf,
-        &bounds,
-        value_x + 1,
-        row,
-        ' ',
-        Style::default().bg(theme::BG),
-    );
-
-    let vis_display = &state.history_visibility;
-    popup::write_str(buf, &bounds, value_x + 2, row, vis_display, vis_s);
-
-    let end_x = value_x + 2 + vis_display.chars().count() as u16;
-    popup::set_cell(
-        buf,
-        &bounds,
-        end_x,
-        row,
-        ' ',
-        Style::default().bg(theme::BG),
-    );
-    popup::write_str(buf, &bounds, end_x + 1, row, icons.arrow_right, arrow_s);
     row += 1;
 
     // History visibility description
@@ -271,7 +94,6 @@ pub fn render(state: &RoomInfoState, icons: &Icons, frame: &mut Frame) {
 
     // ── Field 3: ENCRYPTED (editable when unencrypted, read-only when encrypted) ──
     if state.encrypted {
-        // Read-only: show "yes" in green, no marker, not selectable
         popup::write_str(buf, &bounds, label_x, row, "ENCRYPTED", label_s);
         popup::write_str(
             buf,
@@ -283,85 +105,14 @@ pub fn render(state: &RoomInfoState, icons: &Icons, frame: &mut Frame) {
         );
     } else {
         let enc_selected = state.selected_field == 3;
-        let enc_marker_color = if enc_selected {
-            theme::CYAN
-        } else {
-            theme::DIM
-        };
-        let enc_label_color = if enc_selected {
-            theme::CYAN
-        } else {
-            theme::TEXT
-        };
-        let enc_marker = if enc_selected {
-            icons.selected
-        } else {
-            icons.unselected
-        };
-
-        let enc_marker_s = Style::default().fg(enc_marker_color).bg(theme::BG);
-        let enc_label_s = Style::default()
-            .fg(enc_label_color)
-            .bg(theme::BG)
-            .add_modifier(if enc_selected {
-                Modifier::BOLD
-            } else {
-                Modifier::empty()
-            });
-
-        popup::write_str(buf, &bounds, left, row, enc_marker, enc_marker_s);
-        popup::set_cell(
+        form_field::render_label(buf, left, label_x, row, "ENCRYPTED", enc_selected, icons);
+        form_field::render_cycle_selector(
             buf,
-            &bounds,
-            left + 1,
+            value_x,
             row,
-            ' ',
-            Style::default().bg(theme::BG),
-        );
-        popup::write_str(buf, &bounds, label_x, row, "ENCRYPTED", enc_label_s);
-
-        let enc_arrow_color = if enc_selected {
-            theme::CYAN
-        } else {
-            theme::DIM
-        };
-        let enc_val_color = if enc_selected {
-            theme::TEXT
-        } else {
-            theme::DIM
-        };
-        let enc_arrow_s = Style::default().fg(enc_arrow_color).bg(theme::BG);
-        let enc_val_s = Style::default().fg(enc_val_color).bg(theme::BG);
-
-        popup::write_str(buf, &bounds, value_x, row, icons.arrow_left, enc_arrow_s);
-        popup::set_cell(
-            buf,
-            &bounds,
-            value_x + 1,
-            row,
-            ' ',
-            Style::default().bg(theme::BG),
-        );
-
-        let enc_display = &state.encryption_selection;
-        popup::write_str(buf, &bounds, value_x + 2, row, enc_display, enc_val_s);
-
-        let enc_end_x = value_x + 2 + enc_display.chars().count() as u16;
-        popup::set_cell(
-            buf,
-            &bounds,
-            enc_end_x,
-            row,
-            ' ',
-            Style::default().bg(theme::BG),
-        );
-        popup::write_str(
-            buf,
-            &bounds,
-            enc_end_x + 1,
-            row,
-            icons.arrow_right,
-            enc_arrow_s,
+            &state.encryption_selection,
+            enc_selected,
+            icons,
         );
     }
 
@@ -370,17 +121,7 @@ pub fn render(state: &RoomInfoState, icons: &Icons, frame: &mut Frame) {
         row += 2;
         let msg = "saving...";
         let sx = left + (inner_w.saturating_sub(msg.len())) as u16 / 2;
-        popup::write_str(
-            buf,
-            &bounds,
-            sx,
-            row,
-            msg,
-            Style::default()
-                .fg(theme::GREEN)
-                .bg(theme::BG)
-                .add_modifier(Modifier::BOLD),
-        );
+        popup::write_str(buf, &bounds, sx, row, msg, theme::saving_style());
     }
 
     // Show valid options hint
@@ -397,7 +138,7 @@ pub fn render(state: &RoomInfoState, icons: &Icons, frame: &mut Frame) {
         opts_x,
         row,
         &opts,
-        Style::default().fg(Color::Rgb(60, 60, 80)).bg(theme::BG),
+        Style::default().fg(theme::MUTED).bg(theme::BG),
     );
 
     // Hints
