@@ -7,8 +7,9 @@ Comprehensive audit of the Gosuto codebase conducted 2026-03-09.
 ## 1. ~~God Module: `app.rs` (2,991 lines)~~ — RESOLVED
 
 State structs extracted into `src/state/` modules with `handle_key() -> Action`
-pattern. `app.rs` reduced from 3,089 to ~2,000 lines. Thin dispatcher methods
-remain on `App`.
+pattern. `app.rs` then split into `src/app/` directory module (296-line `mod.rs`
+with 6 submodules: `event_handler`, `input_handler`, `commands`, `modal_keys`,
+`audio`, `tests`).
 
 ### Checklist
 
@@ -19,7 +20,7 @@ remain on `App`.
 - [x] Extract `ChangePasswordState` into `src/state/change_password.rs`
 - [x] Extract `RecoveryModalState` into `src/state/recovery.rs`
 - [x] Move per-modal key handlers into their respective state modules
-- [ ] Verify `app.rs` is under 500 lines after extraction (reached ~2,000 — further splits possible)
+- [x] Split `app.rs` into `src/app/` directory module — `mod.rs` at 296 lines
 
 ---
 
@@ -33,7 +34,7 @@ guard directly without poisoning.
 ### Checklist
 
 - [x] Add `parking_lot` to `Cargo.toml`
-- [x] Replace `std::sync::Mutex` with `parking_lot::Mutex` in `src/app.rs`
+- [x] Replace `std::sync::Mutex` with `parking_lot::Mutex` in `src/app/`
 - [x] Replace `std::sync::Mutex` with `parking_lot::Mutex` in `src/global_ptt.rs`
 - [x] Replace `std::sync::Mutex` with `parking_lot::Mutex` in `src/event.rs`
 - [x] Replace `std::sync::Mutex` with `parking_lot::Mutex` in `src/voip/audio.rs`
@@ -82,7 +83,7 @@ enumeration, Option field defaults).
 
 ## 5. Missing Test Coverage for Critical Modules
 
-277 tests exist but are concentrated in `app.rs` (integration) and
+277 tests exist but are concentrated in `app/tests.rs` (integration) and
 `state/` (recovery state machine, rooms, members, messages). The most complex
 and bug-prone modules have zero tests.
 
