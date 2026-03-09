@@ -3,9 +3,9 @@
 debug level="debug":
     GOSUTO_LOG={{level}} cargo run
 
-# Run in demo mode (no server needed)
-demo:
-    cargo run -- --demo
+# Run with a named profile (separate data instance)
+test profile="test":
+    cargo run -- --profile {{profile}}
 
 # Tail the log file
 logs:
