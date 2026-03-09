@@ -74,6 +74,11 @@ impl App {
         self.config.audio.push_to_talk_key = s.push_to_talk_key.clone();
         self.config.audio.vad_hold_ms = s.vad_hold_ms;
 
+        // Sync to shared config so CallManager sees updates
+        if let Some(ref shared) = self.shared_audio_config {
+            *shared.write() = self.config.audio.clone();
+        }
+
         // Update PTT transmitting default
         if !self.config.audio.push_to_talk {
             self.ptt_transmitting.store(true, Ordering::Relaxed);

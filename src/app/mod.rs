@@ -88,6 +88,7 @@ pub struct App {
     pub pending_change_password: Option<(String, String)>,
     // Audio settings
     pub audio_settings: AudioSettingsState,
+    pub shared_audio_config: Option<Arc<parking_lot::RwLock<crate::config::AudioConfig>>>,
     pub ptt_transmitting: Arc<AtomicBool>,
     pub mic_active: Arc<AtomicBool>,
     pub global_ptt: Option<crate::global_ptt::GlobalPttHandle>,
@@ -176,6 +177,7 @@ impl App {
             change_password: ChangePasswordState::new(),
             pending_change_password: None,
             audio_settings: AudioSettingsState::new(),
+            shared_audio_config: None,
             ptt_transmitting: Arc::new(AtomicBool::new(!ptt_enabled)),
             mic_active: Arc::new(AtomicBool::new(false)),
             global_ptt: None,

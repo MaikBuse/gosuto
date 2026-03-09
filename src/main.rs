@@ -234,6 +234,7 @@ async fn main() -> Result<()> {
 
     // Shared audio config for CallManager
     let shared_audio_config = Arc::new(parking_lot::RwLock::new(app.config.audio.clone()));
+    app.shared_audio_config = Some(shared_audio_config.clone());
     let ptt_transmitting = app.ptt_transmitting.clone();
     let mic_active = app.mic_active.clone();
 
