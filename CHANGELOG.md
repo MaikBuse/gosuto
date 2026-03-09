@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.7.0](https://github.com/MaikBuse/gosuto/compare/v0.6.0...v0.7.0) (2026-03-09)
+
+
+### Features
+
+* add reply to message support ([cbf6bcc](https://github.com/MaikBuse/gosuto/commit/cbf6bcc53dbb9e99fceda88b314bf87b0975e833))
+* load historical reactions and redesign reaction picker ([8f8d274](https://github.com/MaikBuse/gosuto/commit/8f8d274818562b5ba4965999e8c873c001caeda7))
+
+
+### Bug Fixes
+
+* resolve Windows build errors in global_ptt and fs_utils ([21107d4](https://github.com/MaikBuse/gosuto/commit/21107d47b01158e4d778cc9274a9bd494661795e))
+
 ## [0.6.0](https://github.com/MaikBuse/gosuto/compare/v0.5.0...v0.6.0) (2026-03-09)
 
 
