@@ -272,6 +272,104 @@ fn healing_full_path_with_cross_signing() {
 }
 
 #[test]
+fn user_config_error_clears_loading() {
+    let mut app = test_app();
+    app.user_config.open = true;
+    app.user_config.loading = true;
+
+    app.handle_event(AppEvent::UserConfigError(
+        "something went wrong".to_string(),
+    ));
+
+    assert!(!app.user_config.loading);
+    assert_eq!(app.last_error, Some("something went wrong".to_string()));
+}
+
+#[test]
+fn user_config_loaded_clears_loading_when_modal_closed() {
+    let mut app = test_app();
+    assert!(!app.user_config.open);
+    app.user_config.loading = true;
+
+    app.handle_event(AppEvent::UserConfigLoaded {
+        display_name: Some("Test".to_string()),
+        verified: false,
+        recovery_status: crate::event::RecoveryStatus::Disabled,
+    });
+
+    assert!(!app.user_config.loading);
+}
+
+#[test]
+fn verification_request_received_does_not_overwrite_existing_modal() {
+    let mut app = test_app();
+    app.verification_modal = Some(crate::state::VerificationModalState {
+        stage: crate::state::VerificationStage::EmojiConfirmation,
+        sender: "@alice:example.com".to_string(),
+        emojis: vec![],
+    });
+
+    app.handle_event(AppEvent::VerificationRequestReceived {
+        sender: "@bob:example.com".to_string(),
+    });
+
+    // Should not overwrite
+    assert_eq!(
+        app.verification_modal.as_ref().unwrap().sender,
+        "@alice:example.com"
+    );
+    assert_eq!(
+        app.verification_modal.as_ref().unwrap().stage,
+        crate::state::VerificationStage::EmojiConfirmation
+    );
+}
+
+#[test]
+fn concurrent_verify_command_blocked() {
+    let mut app = test_app();
+    app.verification_modal = Some(crate::state::VerificationModalState {
+        stage: crate::state::VerificationStage::WaitingForOtherDevice,
+        sender: "@alice:example.com".to_string(),
+        emojis: vec![],
+    });
+
+    app.handle_command(CommandAction::Verify(None));
+
+    assert_eq!(
+        app.last_error,
+        Some("A verification is already in progress".to_string())
+    );
+}
+
+#[test]
+fn concurrent_verify_member_blocked() {
+    let mut app = test_app();
+    app.verification_modal = Some(crate::state::VerificationModalState {
+        stage: crate::state::VerificationStage::WaitingForOtherDevice,
+        sender: "@alice:example.com".to_string(),
+        emojis: vec![],
+    });
+    app.members_list.members.push(crate::state::RoomMember {
+        user_id: "@bob:example.com".to_string(),
+        display_name: "Bob".to_string(),
+        power_level: 0,
+        verified: None,
+    });
+
+    app.process_input(InputResult::VerifyMember);
+
+    assert_eq!(
+        app.last_error,
+        Some("A verification is already in progress".to_string())
+    );
+    // Modal should not have been overwritten
+    assert_eq!(
+        app.verification_modal.as_ref().unwrap().sender,
+        "@alice:example.com"
+    );
+}
+
+#[test]
 fn healing_from_resetting_stage() {
     let mut app = test_app();
     app.recovery = Some(RecoveryModalState::new());

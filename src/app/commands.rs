@@ -191,7 +191,21 @@ impl App {
                 self.pending_recovery = Some(RecoveryAction::Check);
             }
             CommandAction::Verify(target) => {
-                self.pending_verify = Some(target);
+                if self.verification_modal.is_some() {
+                    self.last_error = Some("A verification is already in progress".to_string());
+                } else if let Some(sender) = target.clone().or_else(|| match &self.auth {
+                    AuthState::LoggedIn { user_id, .. } => Some(user_id.clone()),
+                    _ => None,
+                }) {
+                    self.verification_modal = Some(crate::state::VerificationModalState {
+                        stage: crate::state::VerificationStage::WaitingForOtherDevice,
+                        sender,
+                        emojis: vec![],
+                    });
+                    self.pending_verify = Some(target);
+                } else {
+                    self.last_error = Some("Cannot verify: no target user specified".to_string());
+                }
             }
             CommandAction::AcceptInvite => {
                 if let Some(room) = self.room_list.selected_room() {

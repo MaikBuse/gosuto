@@ -3,7 +3,7 @@ use std::sync::atomic::Ordering;
 use ratatui::{
     Frame,
     layout::Rect,
-    style::Modifier,
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::Paragraph,
 };
@@ -45,13 +45,13 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
         match info.state {
             CallState::Connecting => Span::styled(
                 format!(" CONNECTING: {} ", label),
-                ratatui::style::Style::default()
+                Style::default()
                     .fg(theme::CYAN)
                     .add_modifier(Modifier::BOLD),
             ),
             CallState::Active => Span::styled(
                 format!(" CALL {} {} ", info.elapsed_display(), label),
-                ratatui::style::Style::default()
+                Style::default()
                     .fg(theme::GREEN)
                     .add_modifier(Modifier::BOLD),
             ),
@@ -59,7 +59,7 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
     } else if let Some(ref caller) = app.incoming_call_user {
         Span::styled(
             format!(" INCOMING: {} ", caller),
-            ratatui::style::Style::default()
+            Style::default()
                 .fg(theme::GREEN)
                 .add_modifier(Modifier::BOLD | Modifier::SLOW_BLINK),
         )
@@ -72,7 +72,7 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
             if app.mic_active.load(Ordering::Relaxed) {
                 Span::styled(
                     " \u{25cf} MIC",
-                    ratatui::style::Style::default()
+                    Style::default()
                         .fg(theme::GREEN)
                         .add_modifier(Modifier::BOLD),
                 )
@@ -82,6 +82,17 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
         } else {
             Span::raw("")
         }
+    } else {
+        Span::raw("")
+    };
+
+    let verify_span = if let Some(ref modal) = app.verification_modal {
+        Span::styled(
+            format!(" VERIFYING: {} ", modal.sender),
+            Style::default()
+                .fg(theme::CYAN)
+                .add_modifier(Modifier::BOLD),
+        )
     } else {
         Span::raw("")
     };
@@ -100,10 +111,11 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
         Span::styled(sync_status, theme::dim_style()),
         call_span,
         mic_span,
+        verify_span,
         error_span,
     ]);
 
-    let bar = Paragraph::new(line).style(ratatui::style::Style::default().bg(theme::BG));
+    let bar = Paragraph::new(line).style(Style::default().bg(theme::BG));
 
     frame.render_widget(bar, area);
 }

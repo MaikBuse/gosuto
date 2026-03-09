@@ -29,7 +29,7 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
                 let search = format!("/{}", app.vim.search_query);
                 (search, theme::CYAN)
             } else if app.vim.focus == FocusPanel::Members {
-                ("Enter: dm, c: call".to_string(), theme::DIM)
+                ("Enter: dm, c: call, v: verify".to_string(), theme::DIM)
             } else {
                 ("press i to type, : for commands".to_string(), theme::DIM)
             }

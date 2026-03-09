@@ -1,5 +1,7 @@
+use std::time::Duration;
+
 use matrix_sdk::Client;
-use tracing::error;
+use tracing::{error, warn};
 
 use crate::event::{AppEvent, EventSender, RecoveryStatus, WarnClosed};
 
@@ -17,10 +19,15 @@ pub async fn fetch_user_config(client: &Client, tx: &EventSender) {
         }
     };
 
-    client
-        .encryption()
-        .wait_for_e2ee_initialization_tasks()
-        .await;
+    if tokio::time::timeout(
+        Duration::from_secs(5),
+        client.encryption().wait_for_e2ee_initialization_tasks(),
+    )
+    .await
+    .is_err()
+    {
+        warn!("Timed out waiting for e2ee initialization tasks, continuing anyway");
+    }
 
     let cross_signing = client.encryption().cross_signing_status().await;
 

@@ -744,6 +744,44 @@ pub async fn remove_encryption_keys(
     Ok(())
 }
 
+/// Remove the m.call.member state event (leave the call).
+pub async fn remove_call_member(
+    client: &Client,
+    room_id: &OwnedRoomId,
+    device_id: &OwnedDeviceId,
+) -> Result<()> {
+    let user_id = client.user_id().context("Not logged in")?;
+    let room = client.get_room(room_id).context("Room not found")?;
+
+    let state_key = format!("_{}_{}_{}", user_id, device_id, "m.call");
+
+    let content = serde_json::json!({});
+
+    // Try unstable event type first (Element X watches for this), fall back to stable
+    let result = room
+        .send_state_event_raw(
+            "org.matrix.msc3401.call.member",
+            &state_key,
+            content.clone(),
+        )
+        .await;
+
+    if let Err(unstable_err) = result {
+        debug!(
+            "Unstable org.matrix.msc3401.call.member failed ({unstable_err:#}), trying stable type"
+        );
+        room.send_state_event_raw("m.call.member", &state_key, content)
+            .await
+            .context("Failed to remove m.call.member state event")?;
+    }
+
+    info!(
+        "Removed m.call.member for room {} (state_key: {})",
+        room_id, state_key
+    );
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -830,42 +868,4 @@ mod tests {
         let encoded = base64::engine::general_purpose::STANDARD.encode(original);
         assert_eq!(lenient_base64_decode(&encoded).unwrap(), original);
     }
-}
-
-/// Remove the m.call.member state event (leave the call).
-pub async fn remove_call_member(
-    client: &Client,
-    room_id: &OwnedRoomId,
-    device_id: &OwnedDeviceId,
-) -> Result<()> {
-    let user_id = client.user_id().context("Not logged in")?;
-    let room = client.get_room(room_id).context("Room not found")?;
-
-    let state_key = format!("_{}_{}_{}", user_id, device_id, "m.call");
-
-    let content = serde_json::json!({});
-
-    // Try unstable event type first (Element X watches for this), fall back to stable
-    let result = room
-        .send_state_event_raw(
-            "org.matrix.msc3401.call.member",
-            &state_key,
-            content.clone(),
-        )
-        .await;
-
-    if let Err(unstable_err) = result {
-        debug!(
-            "Unstable org.matrix.msc3401.call.member failed ({unstable_err:#}), trying stable type"
-        );
-        room.send_state_event_raw("m.call.member", &state_key, content)
-            .await
-            .context("Failed to remove m.call.member state event")?;
-    }
-
-    info!(
-        "Removed m.call.member for room {} (state_key: {})",
-        room_id, state_key
-    );
-    Ok(())
 }

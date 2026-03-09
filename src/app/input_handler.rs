@@ -134,8 +134,15 @@ impl App {
                 self.which_key = Some(None);
             }
             InputResult::VerifyMember => {
-                if let Some(member) = self.members_list.selected_member() {
+                if self.verification_modal.is_some() {
+                    self.last_error = Some("A verification is already in progress".to_string());
+                } else if let Some(member) = self.members_list.selected_member() {
                     let uid = member.user_id.clone();
+                    self.verification_modal = Some(crate::state::VerificationModalState {
+                        stage: crate::state::VerificationStage::WaitingForOtherDevice,
+                        sender: uid.clone(),
+                        emojis: vec![],
+                    });
                     self.pending_verify = Some(Some(uid));
                 }
             }

@@ -338,11 +338,11 @@ impl App {
                     self.self_verified = true;
                 }
                 self.recovery_status = recovery_status;
+                self.user_config.loading = false;
                 if self.user_config.open {
                     self.user_config.display_name = display_name;
                     self.user_config.verified = verified || self.self_verified;
                     self.user_config.recovery_status = recovery_status;
-                    self.user_config.loading = false;
                 }
             }
             AppEvent::UserConfigUpdated => {
@@ -362,6 +362,7 @@ impl App {
             AppEvent::UserConfigError(error) => {
                 self.change_password.saving = false;
                 self.user_config.saving = false;
+                self.user_config.loading = false;
                 self.last_error = Some(error);
             }
             AppEvent::CallError(err) => {
@@ -411,11 +412,13 @@ impl App {
             }
             // Verification events
             AppEvent::VerificationRequestReceived { sender } => {
-                self.verification_modal = Some(crate::state::VerificationModalState {
-                    stage: crate::state::VerificationStage::WaitingForOtherDevice,
-                    sender,
-                    emojis: vec![],
-                });
+                if self.verification_modal.is_none() {
+                    self.verification_modal = Some(crate::state::VerificationModalState {
+                        stage: crate::state::VerificationStage::WaitingForOtherDevice,
+                        sender,
+                        emojis: vec![],
+                    });
+                }
             }
             AppEvent::VerificationSasEmoji { emojis, sender } => {
                 self.verification_modal = Some(crate::state::VerificationModalState {
