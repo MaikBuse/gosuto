@@ -5,7 +5,7 @@ use std::time::Duration;
 use anyhow::Result;
 use matrix_sdk::Client;
 use matrix_sdk::encryption::verification::VerificationRequest;
-use matrix_sdk::ruma::events::room::message::{MessageType, OriginalSyncRoomMessageEvent};
+use matrix_sdk::ruma::events::room::message::OriginalSyncRoomMessageEvent;
 use matrix_sdk::ruma::events::typing::SyncTypingEvent;
 use tokio::sync::Mutex;
 use tokio::time::sleep;
@@ -30,73 +30,29 @@ pub async fn start_sync(
         move |event: OriginalSyncRoomMessageEvent, room: matrix_sdk::Room| {
             let tx = msg_tx.clone();
             async move {
+                use crate::matrix::message_parsing::{
+                    ParsedMessage, millis_to_local, parse_message_type, spawn_image_fetch,
+                };
+
                 let room_id = room.room_id().to_string();
                 let sender = event.sender.to_string();
                 let millis: i64 = event.origin_server_ts.0.into();
-                let timestamp = chrono::DateTime::from_timestamp(
-                    millis / 1000,
-                    ((millis % 1000) * 1_000_000) as u32,
-                )
-                .unwrap_or_default()
-                .with_timezone(&chrono::Local);
+                let timestamp = millis_to_local(millis);
 
-                let (msg_content, is_emote, is_notice) = match &event.content.msgtype {
-                    MessageType::Text(text) => (
-                        crate::state::MessageContent::Text(text.body.clone()),
-                        false,
-                        false,
-                    ),
-                    MessageType::Emote(emote) => (
-                        crate::state::MessageContent::Text(emote.body.clone()),
-                        true,
-                        false,
-                    ),
-                    MessageType::Notice(notice) => (
-                        crate::state::MessageContent::Text(notice.body.clone()),
-                        false,
-                        true,
-                    ),
-                    MessageType::Image(img) => {
-                        let (w, h) = img
-                            .info
-                            .as_ref()
-                            .map(|i| {
-                                (
-                                    i.width.map(|v| u32::try_from(v).unwrap_or(0)),
-                                    i.height.map(|v| u32::try_from(v).unwrap_or(0)),
-                                )
-                            })
-                            .unwrap_or((None, None));
-
-                        // Spawn image download
-                        let img_content = img.clone();
-                        let eid = event.event_id.to_string();
-                        let client = room.client();
-                        let img_tx = tx.clone();
-                        tokio::spawn(async move {
-                            crate::matrix::media::fetch_image(&client, eid, &img_content, &img_tx)
-                                .await;
-                        });
-
-                        (
-                            crate::state::MessageContent::Image {
-                                body: img.body.clone(),
-                                width: w,
-                                height: h,
-                            },
-                            false,
-                            false,
-                        )
-                    }
-                    MessageType::VerificationRequest(_) => return,
-                    _ => (
-                        crate::state::MessageContent::Text(
-                            "[unsupported message type]".to_string(),
-                        ),
-                        false,
-                        false,
-                    ),
+                let parsed = parse_message_type(&event.content.msgtype);
+                let ParsedMessage::Message {
+                    content: msg_content,
+                    is_emote,
+                    is_notice,
+                    image_to_fetch,
+                } = parsed
+                else {
+                    return;
                 };
+
+                if let Some(ref img) = image_to_fetch {
+                    spawn_image_fetch(&room.client(), event.event_id.to_string(), img, &tx);
+                }
 
                 let msg = crate::state::DisplayMessage {
                     event_id: event.event_id.to_string(),

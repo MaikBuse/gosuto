@@ -1,11 +1,14 @@
 use anyhow::Result;
 use matrix_sdk::Client;
 use matrix_sdk::room::MessagesOptions;
-use matrix_sdk::ruma::events::room::message::{MessageType, RoomMessageEventContent};
+use matrix_sdk::ruma::events::room::message::RoomMessageEventContent;
 use matrix_sdk::ruma::uint;
 use tracing::{debug, error};
 
 use crate::event::{AppEvent, EventSender, WarnClosed};
+use crate::matrix::message_parsing::{
+    ParsedMessage, millis_to_local, parse_message_type, spawn_image_fetch,
+};
 use crate::state::{DisplayMessage, MessageContent};
 
 pub async fn fetch_messages(
@@ -41,70 +44,29 @@ pub async fn fetch_messages(
                         orig,
                     ) => {
                         let millis: i64 = orig.origin_server_ts.0.into();
-                        let ts = chrono::DateTime::from_timestamp(
-                            millis / 1000,
-                            ((millis % 1000) * 1_000_000) as u32,
-                        )
-                        .unwrap_or_default()
-                        .with_timezone(&chrono::Local);
                         (
                             orig.sender.to_string(),
                             orig.event_id.to_string(),
-                            ts,
+                            millis_to_local(millis),
                             orig.content,
                         )
                     }
                     _ => continue,
                 };
 
-                let (msg_content, is_emote, is_notice) = match &content.msgtype {
-                    MessageType::Text(text) => {
-                        (MessageContent::Text(text.body.clone()), false, false)
-                    }
-                    MessageType::Emote(emote) => {
-                        (MessageContent::Text(emote.body.clone()), true, false)
-                    }
-                    MessageType::Notice(notice) => {
-                        (MessageContent::Text(notice.body.clone()), false, true)
-                    }
-                    MessageType::Image(img) => {
-                        let (w, h) = img
-                            .info
-                            .as_ref()
-                            .map(|i| {
-                                (
-                                    i.width.map(|v| u32::try_from(v).unwrap_or(0)),
-                                    i.height.map(|v| u32::try_from(v).unwrap_or(0)),
-                                )
-                            })
-                            .unwrap_or((None, None));
-                        (
-                            MessageContent::Image {
-                                body: img.body.clone(),
-                                width: w,
-                                height: h,
-                            },
-                            false,
-                            false,
-                        )
-                    }
-                    MessageType::VerificationRequest(_) => continue,
-                    _ => (
-                        MessageContent::Text("[unsupported message type]".to_string()),
-                        false,
-                        false,
-                    ),
+                let parsed = parse_message_type(&content.msgtype);
+                let ParsedMessage::Message {
+                    content: msg_content,
+                    is_emote,
+                    is_notice,
+                    image_to_fetch,
+                } = parsed
+                else {
+                    continue;
                 };
 
-                // Spawn image download for image messages
-                if let MessageType::Image(img) = &content.msgtype {
-                    let img_content = img.clone();
-                    let eid = event_id.clone();
-                    let client = client.clone();
-                    let tx = tx.clone();
-                    tokio::spawn(async move {
-                        crate::matrix::media::fetch_image(&client, eid, &img_content, &tx).await;
-                    });
+                if let Some(ref img) = image_to_fetch {
+                    spawn_image_fetch(client, event_id.clone(), img, tx);
                 }
 
                 messages.push(DisplayMessage {
@@ -126,13 +88,11 @@ pub async fn fetch_messages(
                         orig,
                     ) => {
                         let millis: i64 = orig.origin_server_ts.0.into();
-                        let ts = chrono::DateTime::from_timestamp(
-                            millis / 1000,
-                            ((millis % 1000) * 1_000_000) as u32,
+                        (
+                            orig.sender.to_string(),
+                            orig.event_id.to_string(),
+                            millis_to_local(millis),
                         )
-                        .unwrap_or_default()
-                        .with_timezone(&chrono::Local);
-                        (orig.sender.to_string(), orig.event_id.to_string(), ts)
                     }
                     _ => continue,
                 };

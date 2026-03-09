@@ -1,6 +1,7 @@
 pub mod client;
 pub mod credentials;
 pub mod media;
+pub mod message_parsing;
 pub mod messages;
 pub mod profile;
 pub mod rooms;
