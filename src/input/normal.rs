@@ -53,6 +53,7 @@ pub fn handle_normal(key: KeyEvent, vim: &mut VimState) -> InputResult {
             vim.search_query.clear();
             InputResult::None
         }
+        KeyCode::Esc => InputResult::Escape,
         _ => InputResult::None,
     }
 }
@@ -242,6 +243,13 @@ mod tests {
         let mut vim = VimState::new();
         let result = handle_normal(key(KeyCode::Char('r')), &mut vim);
         assert!(matches!(result, InputResult::RejectCall));
+    }
+
+    #[test]
+    fn esc_returns_escape() {
+        let mut vim = VimState::new();
+        let result = handle_normal(key(KeyCode::Esc), &mut vim);
+        assert!(matches!(result, InputResult::Escape));
     }
 
     // --- Search mode ---

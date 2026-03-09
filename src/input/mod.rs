@@ -29,6 +29,7 @@ pub enum InputResult {
     ShowWhichKey,
     TypingActivity,
     VerifyMember,
+    Escape,
 }
 
 #[derive(Debug, Clone)]

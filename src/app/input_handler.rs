@@ -1,33 +1,43 @@
 use super::*;
 
 impl App {
+    /// Ensure selection state is consistent with the current focus panel.
+    /// Call after any focus change.
+    fn sync_message_selection(&mut self) {
+        if self.vim.focus == FocusPanel::Messages {
+            if !self.messages.is_selecting() {
+                self.messages.select_newest();
+            }
+        } else {
+            self.messages.deselect();
+        }
+    }
+
     pub(crate) fn process_input(&mut self, result: InputResult) {
         match result {
             InputResult::None => {}
             InputResult::Quit | InputResult::Command(CommandAction::Quit) => {
                 self.running = false;
             }
+            InputResult::Escape => {}
             InputResult::MoveUp => match self.vim.focus {
                 FocusPanel::RoomList => self.room_list.move_up(),
-                FocusPanel::Messages => self.messages.scroll_up(),
+                FocusPanel::Messages => self.messages.select_up(),
                 FocusPanel::Members => self.members_list.move_up(),
             },
             InputResult::MoveDown => match self.vim.focus {
                 FocusPanel::RoomList => self.room_list.move_down(),
-                FocusPanel::Messages => self.messages.scroll_down(),
+                FocusPanel::Messages => self.messages.select_down(),
                 FocusPanel::Members => self.members_list.move_down(),
             },
             InputResult::MoveTop => match self.vim.focus {
                 FocusPanel::RoomList => self.room_list.move_top(),
-                FocusPanel::Messages => {
-                    // Scroll to top - rendering will clamp to actual max
-                    self.messages.scroll_offset = usize::MAX;
-                }
+                FocusPanel::Messages => self.messages.select_top(),
                 FocusPanel::Members => self.members_list.move_top(),
             },
             InputResult::MoveBottom => match self.vim.focus {
                 FocusPanel::RoomList => self.room_list.move_bottom(),
-                FocusPanel::Messages => self.messages.scroll_to_bottom(),
+                FocusPanel::Messages => self.messages.select_bottom(),
                 FocusPanel::Members => self.members_list.move_bottom(),
             },
             InputResult::Select => {
@@ -90,6 +100,7 @@ impl App {
                     FocusPanel::Messages => FocusPanel::Members,
                     FocusPanel::Members => FocusPanel::RoomList,
                 };
+                self.sync_message_selection();
             }
             InputResult::FocusRight => {
                 self.vim.focus = match self.vim.focus {
@@ -97,6 +108,7 @@ impl App {
                     FocusPanel::Messages => FocusPanel::Members,
                     FocusPanel::Members => FocusPanel::Members,
                 };
+                self.sync_message_selection();
             }
             InputResult::FocusLeft => {
                 self.vim.focus = match self.vim.focus {
@@ -104,6 +116,7 @@ impl App {
                     FocusPanel::Messages => FocusPanel::RoomList,
                     FocusPanel::Members => FocusPanel::Messages,
                 };
+                self.sync_message_selection();
             }
             InputResult::TypingActivity => {
                 let should_send = self

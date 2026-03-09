@@ -16,6 +16,7 @@ enum ChatSegment<'a> {
     DateSeparator(Line<'a>),
     TextMessage {
         lines: Vec<Line<'a>>,
+        msg_index: usize,
     },
     ImageMessage {
         header: Line<'a>,
@@ -23,14 +24,23 @@ enum ChatSegment<'a> {
         image_rows: u16,
         loaded: bool,
         failed: bool,
+        msg_index: usize,
     },
 }
 
 impl ChatSegment<'_> {
+    fn msg_index(&self) -> Option<usize> {
+        match self {
+            ChatSegment::DateSeparator(_) => None,
+            ChatSegment::TextMessage { msg_index, .. }
+            | ChatSegment::ImageMessage { msg_index, .. } => Some(*msg_index),
+        }
+    }
+
     fn height(&self, inner_width: usize) -> usize {
         match self {
             ChatSegment::DateSeparator(_) => 1,
-            ChatSegment::TextMessage { lines } => {
+            ChatSegment::TextMessage { lines, .. } => {
                 if inner_width > 0 {
                     lines
                         .iter()
@@ -114,7 +124,7 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
     let mut segments: Vec<ChatSegment> = Vec::new();
     let mut last_date: Option<chrono::NaiveDate> = None;
 
-    for msg in messages {
+    for (idx, msg) in messages.iter().enumerate() {
         let msg_date = msg.timestamp.date_naive();
         if last_date != Some(msg_date) {
             let date_str = msg.timestamp.format("%B %-d, %Y").to_string();
@@ -179,7 +189,10 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
                     ]));
                 }
 
-                segments.push(ChatSegment::TextMessage { lines });
+                segments.push(ChatSegment::TextMessage {
+                    lines,
+                    msg_index: idx,
+                });
             }
             MessageContent::Image {
                 body,
@@ -200,6 +213,7 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
                     image_rows,
                     loaded,
                     failed,
+                    msg_index: idx,
                 });
             }
         }
@@ -207,6 +221,40 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
 
     // Compute total visual height
     let total_visual_lines: usize = segments.iter().map(|s| s.height(inner_width)).sum();
+
+    // Auto-scroll to keep selected message visible
+    let selected_idx = app.messages.selected_index;
+    if let Some(sel) = selected_idx {
+        let mut cumulative = 0usize;
+        let mut sel_start = 0usize;
+        let mut sel_end = 0usize;
+        for segment in &segments {
+            let h = segment.height(inner_width);
+            if segment.msg_index() == Some(sel) {
+                sel_start = cumulative;
+                sel_end = cumulative + h;
+                break;
+            }
+            cumulative += h;
+        }
+        let max_scroll = total_visual_lines.saturating_sub(inner_height);
+        // Convert selection line range to scroll_offset space
+        // scroll_y = max_scroll - clamped_offset, so clamped_offset = max_scroll - scroll_y
+        // We want sel_start >= scroll_y and sel_end <= scroll_y + inner_height
+        let current_offset = app.messages.scroll_offset.min(max_scroll);
+        let current_scroll_y = max_scroll.saturating_sub(current_offset);
+        let viewport_end = current_scroll_y + inner_height;
+
+        if sel_start < current_scroll_y {
+            // Selected is above viewport — scroll up to show it
+            let new_scroll_y = sel_start;
+            app.messages.scroll_offset = max_scroll.saturating_sub(new_scroll_y);
+        } else if sel_end > viewport_end {
+            // Selected is below viewport — scroll down to show it
+            let new_scroll_y = sel_end.saturating_sub(inner_height);
+            app.messages.scroll_offset = max_scroll.saturating_sub(new_scroll_y);
+        }
+    }
 
     let max_scroll = total_visual_lines.saturating_sub(inner_height);
     let clamped_offset = app.messages.scroll_offset.min(max_scroll);
@@ -268,15 +316,20 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
             height: available_height,
         };
 
+        let is_selected = selected_idx.is_some() && segment.msg_index() == selected_idx;
+
         match segment {
             ChatSegment::DateSeparator(line) => {
                 let p = Paragraph::new(line.clone());
                 frame.render_widget(p, sub_rect);
             }
-            ChatSegment::TextMessage { lines } => {
-                let p = Paragraph::new(lines.clone())
+            ChatSegment::TextMessage { lines, .. } => {
+                let mut p = Paragraph::new(lines.clone())
                     .wrap(Wrap { trim: false })
                     .scroll((clip_top, 0));
+                if is_selected {
+                    p = p.style(theme::message_selected_style());
+                }
                 frame.render_widget(p, sub_rect);
             }
             ChatSegment::ImageMessage {
@@ -285,6 +338,7 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
                 image_rows,
                 loaded,
                 failed,
+                ..
             } => {
                 // Render header line
                 if clip_top == 0 {
@@ -292,7 +346,10 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
                         height: 1,
                         ..sub_rect
                     };
-                    let p = Paragraph::new(header.clone());
+                    let mut p = Paragraph::new(header.clone());
+                    if is_selected {
+                        p = p.style(theme::message_selected_style());
+                    }
                     frame.render_widget(p, header_rect);
                 }
 

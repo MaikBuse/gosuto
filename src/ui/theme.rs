@@ -34,6 +34,7 @@ pub const HIGHLIGHT_BG: Color = Color::Rgb(20, 20, 40);
 pub const MUTED: Color = Color::Rgb(60, 60, 80);
 pub const BAR_EMPTY: Color = Color::Rgb(40, 40, 50);
 pub const METER_EMPTY: Color = Color::Rgb(30, 30, 40);
+pub const MESSAGE_SELECT_BG: Color = Color::Rgb(25, 30, 50);
 
 // Composite styles
 pub fn border_style() -> Style {
@@ -127,6 +128,10 @@ pub fn highlight_focused_style() -> Style {
 
 pub fn highlight_unfocused_style() -> Style {
     Style::default().fg(CYAN).bg(HIGHLIGHT_BG)
+}
+
+pub fn message_selected_style() -> Style {
+    Style::default().bg(MESSAGE_SELECT_BG)
 }
 
 pub fn loading_style() -> Style {

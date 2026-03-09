@@ -39,6 +39,7 @@ pub struct MessageState {
     pub loading: bool,
     pub fetch_error: Option<String>,
     pub current_room_id: Option<String>,
+    pub selected_index: Option<usize>,
 }
 
 impl MessageState {
@@ -50,6 +51,7 @@ impl MessageState {
             loading: false,
             fetch_error: None,
             current_room_id: None,
+            selected_index: None,
         }
     }
 
@@ -61,6 +63,7 @@ impl MessageState {
             self.has_more = true;
             self.loading = true;
             self.fetch_error = None;
+            self.selected_index = None;
         }
     }
 
@@ -85,8 +88,12 @@ impl MessageState {
                         .any(|existing| existing.event_id == m.event_id)
             })
             .collect();
+        let prepended_count = new_msgs.len();
         new_msgs.append(&mut self.messages);
         self.messages = new_msgs;
+        if let Some(idx) = self.selected_index {
+            self.selected_index = Some(idx + prepended_count);
+        }
         self.has_more = has_more;
         self.loading = false;
         self.fetch_error = None;
@@ -97,16 +104,47 @@ impl MessageState {
         self.loading = false;
     }
 
-    pub fn scroll_up(&mut self) {
-        self.scroll_offset = self.scroll_offset.saturating_add(1);
-    }
-
-    pub fn scroll_down(&mut self) {
-        self.scroll_offset = self.scroll_offset.saturating_sub(1);
-    }
-
     pub fn scroll_to_bottom(&mut self) {
         self.scroll_offset = 0;
+    }
+
+    pub fn is_selecting(&self) -> bool {
+        self.selected_index.is_some()
+    }
+
+    pub fn select_newest(&mut self) {
+        if !self.messages.is_empty() {
+            self.selected_index = Some(self.messages.len() - 1);
+        }
+    }
+
+    pub fn deselect(&mut self) {
+        self.selected_index = None;
+    }
+
+    pub fn select_up(&mut self) {
+        if let Some(idx) = self.selected_index {
+            self.selected_index = Some(idx.saturating_sub(1));
+        }
+    }
+
+    pub fn select_down(&mut self) {
+        if let Some(idx) = self.selected_index {
+            let max = self.messages.len().saturating_sub(1);
+            self.selected_index = Some((idx + 1).min(max));
+        }
+    }
+
+    pub fn select_top(&mut self) {
+        if self.selected_index.is_some() {
+            self.selected_index = Some(0);
+        }
+    }
+
+    pub fn select_bottom(&mut self) {
+        if self.selected_index.is_some() && !self.messages.is_empty() {
+            self.selected_index = Some(self.messages.len() - 1);
+        }
     }
 
     pub fn confirm_sent(&mut self, pending_body: &str, event_id: &str) {
@@ -249,31 +287,6 @@ mod tests {
     }
 
     #[test]
-    fn scroll_up_increments() {
-        let mut state = MessageState::new();
-        assert_eq!(state.scroll_offset, 0);
-        state.scroll_up();
-        assert_eq!(state.scroll_offset, 1);
-        state.scroll_up();
-        assert_eq!(state.scroll_offset, 2);
-    }
-
-    #[test]
-    fn scroll_down_decrements() {
-        let mut state = MessageState::new();
-        state.scroll_offset = 3;
-        state.scroll_down();
-        assert_eq!(state.scroll_offset, 2);
-    }
-
-    #[test]
-    fn scroll_down_saturates_at_zero() {
-        let mut state = MessageState::new();
-        state.scroll_down();
-        assert_eq!(state.scroll_offset, 0);
-    }
-
-    #[test]
     fn scroll_to_bottom_resets() {
         let mut state = MessageState::new();
         state.scroll_offset = 10;
@@ -288,5 +301,139 @@ mod tests {
         state.set_fetch_error("network error".to_string());
         assert_eq!(state.fetch_error.as_deref(), Some("network error"));
         assert!(!state.loading);
+    }
+
+    // --- Selection mode ---
+
+    #[test]
+    fn select_newest_selects_last_message() {
+        let mut state = MessageState::new();
+        state.add_message(make_msg("$1", "A", false));
+        state.add_message(make_msg("$2", "B", false));
+        state.select_newest();
+        assert_eq!(state.selected_index, Some(1));
+    }
+
+    #[test]
+    fn select_newest_noop_when_empty() {
+        let mut state = MessageState::new();
+        state.select_newest();
+        assert_eq!(state.selected_index, None);
+    }
+
+    #[test]
+    fn deselect_clears_selection() {
+        let mut state = MessageState::new();
+        state.add_message(make_msg("$1", "A", false));
+        state.select_newest();
+        assert!(state.is_selecting());
+        state.deselect();
+        assert!(!state.is_selecting());
+        assert_eq!(state.selected_index, None);
+    }
+
+    #[test]
+    fn select_up_decrements() {
+        let mut state = MessageState::new();
+        state.add_message(make_msg("$1", "A", false));
+        state.add_message(make_msg("$2", "B", false));
+        state.selected_index = Some(1);
+        state.select_up();
+        assert_eq!(state.selected_index, Some(0));
+    }
+
+    #[test]
+    fn select_up_saturates_at_zero() {
+        let mut state = MessageState::new();
+        state.add_message(make_msg("$1", "A", false));
+        state.selected_index = Some(0);
+        state.select_up();
+        assert_eq!(state.selected_index, Some(0));
+    }
+
+    #[test]
+    fn select_down_increments() {
+        let mut state = MessageState::new();
+        state.add_message(make_msg("$1", "A", false));
+        state.add_message(make_msg("$2", "B", false));
+        state.selected_index = Some(0);
+        state.select_down();
+        assert_eq!(state.selected_index, Some(1));
+    }
+
+    #[test]
+    fn select_down_clamps_at_last() {
+        let mut state = MessageState::new();
+        state.add_message(make_msg("$1", "A", false));
+        state.selected_index = Some(0);
+        state.select_down();
+        assert_eq!(state.selected_index, Some(0));
+    }
+
+    #[test]
+    fn select_top_jumps_to_first() {
+        let mut state = MessageState::new();
+        state.add_message(make_msg("$1", "A", false));
+        state.add_message(make_msg("$2", "B", false));
+        state.selected_index = Some(1);
+        state.select_top();
+        assert_eq!(state.selected_index, Some(0));
+    }
+
+    #[test]
+    fn select_top_noop_when_not_selecting() {
+        let mut state = MessageState::new();
+        state.add_message(make_msg("$1", "A", false));
+        state.select_top();
+        assert_eq!(state.selected_index, None);
+    }
+
+    #[test]
+    fn select_bottom_jumps_to_last() {
+        let mut state = MessageState::new();
+        state.add_message(make_msg("$1", "A", false));
+        state.add_message(make_msg("$2", "B", false));
+        state.selected_index = Some(0);
+        state.select_bottom();
+        assert_eq!(state.selected_index, Some(1));
+    }
+
+    #[test]
+    fn select_bottom_noop_when_not_selecting() {
+        let mut state = MessageState::new();
+        state.add_message(make_msg("$1", "A", false));
+        state.select_bottom();
+        assert_eq!(state.selected_index, None);
+    }
+
+    #[test]
+    fn prepend_messages_adjusts_selected_index() {
+        let mut state = MessageState::new();
+        state.add_message(make_msg("$3", "C", false));
+        state.selected_index = Some(0);
+        state.prepend_messages(
+            vec![make_msg("$1", "A", false), make_msg("$2", "B", false)],
+            true,
+        );
+        // Original index 0 should shift by 2
+        assert_eq!(state.selected_index, Some(2));
+    }
+
+    #[test]
+    fn prepend_messages_preserves_none_selection() {
+        let mut state = MessageState::new();
+        state.add_message(make_msg("$2", "B", false));
+        state.prepend_messages(vec![make_msg("$1", "A", false)], true);
+        assert_eq!(state.selected_index, None);
+    }
+
+    #[test]
+    fn set_room_clears_selection() {
+        let mut state = MessageState::new();
+        state.add_message(make_msg("$1", "msg", false));
+        state.select_newest();
+        assert!(state.is_selecting());
+        state.set_room(Some("!room2:example.com".to_string()));
+        assert_eq!(state.selected_index, None);
     }
 }
