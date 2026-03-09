@@ -745,6 +745,94 @@ pub async fn remove_encryption_keys(
     Ok(())
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- parse_livekit_identity ---
+
+    #[test]
+    fn parse_standard_identity() {
+        assert_eq!(
+            parse_livekit_identity("@marie:buse.io:7L3ctM9tHg"),
+            Some(("@marie:buse.io", "7L3ctM9tHg"))
+        );
+    }
+
+    #[test]
+    fn parse_multiple_colons_in_server() {
+        assert_eq!(
+            parse_livekit_identity("@user:sub.domain.com:DEV"),
+            Some(("@user:sub.domain.com", "DEV"))
+        );
+    }
+
+    #[test]
+    fn parse_no_colon() {
+        assert_eq!(parse_livekit_identity("nocolon"), None);
+    }
+
+    #[test]
+    fn parse_empty_string() {
+        assert_eq!(parse_livekit_identity(""), None);
+    }
+
+    #[test]
+    fn parse_single_colon() {
+        assert_eq!(
+            parse_livekit_identity("@user:device"),
+            Some(("@user", "device"))
+        );
+    }
+
+    #[test]
+    fn parse_trailing_colon() {
+        assert_eq!(
+            parse_livekit_identity("@user:server:"),
+            Some(("@user:server", ""))
+        );
+    }
+
+    // --- lenient_base64_decode ---
+
+    #[test]
+    fn decode_padded_base64() {
+        assert_eq!(
+            lenient_base64_decode("aGVsbG8=").unwrap(),
+            b"hello".to_vec()
+        );
+    }
+
+    #[test]
+    fn decode_unpadded_base64() {
+        assert_eq!(lenient_base64_decode("aGVsbG8").unwrap(), b"hello".to_vec());
+    }
+
+    #[test]
+    fn decode_empty() {
+        assert_eq!(lenient_base64_decode("").unwrap(), Vec::<u8>::new());
+    }
+
+    #[test]
+    fn decode_invalid_chars() {
+        assert!(lenient_base64_decode("!!!invalid!!!").is_err());
+    }
+
+    #[test]
+    fn decode_roundtrip_standard_no_pad() {
+        let original = b"MatrixRTC E2EE key material";
+        let encoded = base64::engine::general_purpose::STANDARD_NO_PAD.encode(original);
+        assert_eq!(lenient_base64_decode(&encoded).unwrap(), original);
+    }
+
+    #[test]
+    fn decode_roundtrip_standard_padded() {
+        let original = b"test";
+        let encoded = base64::engine::general_purpose::STANDARD.encode(original);
+        assert_eq!(lenient_base64_decode(&encoded).unwrap(), original);
+    }
+}
+
 /// Remove the m.call.member state event (leave the call).
 pub async fn remove_call_member(
     client: &Client,

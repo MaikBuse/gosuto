@@ -94,12 +94,12 @@ and bug-prone modules have zero tests.
 
 ### Checklist
 
-- [ ] Add unit tests for `src/input/command.rs` — command parsing, completion, edge cases
-- [ ] Add unit tests for `src/input/vim.rs` — mode transitions
-- [ ] Add state machine tests for `src/voip/manager.rs` — call lifecycle
-- [ ] Add tests for `src/voip/matrixrtc.rs` — protocol message construction/parsing
-- [ ] Add tests for `src/matrix/sync.rs` — event handler behavior with mocks
-- [ ] Add tests for `src/matrix/client.rs` — session restore edge cases
+- [x] Add unit tests for `src/input/command.rs` — already has 50+ tests
+- [x] Add unit tests for `src/input/vim.rs` — already has 50+ tests
+- [ ] Add state machine tests for `src/voip/manager.rs` — async methods need trait-based DI (separate PR)
+- [x] Add tests for `src/voip/matrixrtc.rs` — pure function tests (parse_livekit_identity, lenient_base64_decode)
+- [x] Add tests for `src/matrix/sync.rs` — pure function + dispatch_encryption_keys tests
+- [ ] Add tests for `src/matrix/client.rs` — only `normalize_homeserver_url` testable (already has 8 tests)
 
 ---
 

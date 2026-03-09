@@ -829,3 +829,34 @@ fn log_jwt_claims(token: &str) {
         debug!("JWT full video grant: {}", v);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- log_jwt_claims smoke tests (no panics) ---
+
+    #[test]
+    fn log_jwt_valid_three_parts() {
+        // header.payload.signature — payload = {"sub":"test","iss":"lk","video":{"room":"r"}}
+        let payload =
+            base64::engine::general_purpose::STANDARD_NO_PAD.encode(br#"{"sub":"test","iss":"lk","video":{"room":"r","roomJoin":true,"canPublish":true,"canSubscribe":true},"exp":9999999999}"#);
+        let token = format!("eyJhbGciOiJIUzI1NiJ9.{}.signature", payload);
+        log_jwt_claims(&token); // should not panic
+    }
+
+    #[test]
+    fn log_jwt_malformed_two_parts() {
+        log_jwt_claims("only.two"); // should not panic
+    }
+
+    #[test]
+    fn log_jwt_empty() {
+        log_jwt_claims(""); // should not panic
+    }
+
+    #[test]
+    fn log_jwt_invalid_base64_payload() {
+        log_jwt_claims("header.!!!invalid!!!.sig"); // should not panic
+    }
+}

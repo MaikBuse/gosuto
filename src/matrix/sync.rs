@@ -516,3 +516,215 @@ fn dispatch_encryption_keys(
             .warn_closed("EncryptionKeyReceived");
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- is_auth_error ---
+
+    #[test]
+    fn auth_error_403() {
+        assert!(is_auth_error("something [403] forbidden"));
+    }
+
+    #[test]
+    fn auth_error_401() {
+        assert!(is_auth_error("error [401] unauthorized"));
+    }
+
+    #[test]
+    fn auth_error_unknown_token() {
+        assert!(is_auth_error("M_UNKNOWN_TOKEN: token expired"));
+    }
+
+    #[test]
+    fn auth_error_missing_token() {
+        assert!(is_auth_error("M_MISSING_TOKEN"));
+    }
+
+    #[test]
+    fn auth_error_embedded_in_message() {
+        assert!(is_auth_error("Sync failed: HTTP error [403] at homeserver"));
+    }
+
+    #[test]
+    fn not_auth_error_500() {
+        assert!(!is_auth_error("[500] internal server error"));
+    }
+
+    #[test]
+    fn not_auth_error_timeout() {
+        assert!(!is_auth_error("connection timeout"));
+    }
+
+    #[test]
+    fn not_auth_error_empty() {
+        assert!(!is_auth_error(""));
+    }
+
+    // --- sanitize_error ---
+
+    #[test]
+    fn sanitize_replaces_non_json_bytes() {
+        assert_eq!(
+            sanitize_error("got <non-json bytes> from server"),
+            "got (non-JSON response) from server"
+        );
+    }
+
+    #[test]
+    fn sanitize_truncates_long_message() {
+        let long_msg = "x".repeat(200);
+        let result = sanitize_error(&long_msg);
+        assert_eq!(result.len(), 120);
+    }
+
+    #[test]
+    fn sanitize_short_message_unchanged() {
+        assert_eq!(sanitize_error("short error"), "short error");
+    }
+
+    #[test]
+    fn sanitize_empty_unchanged() {
+        assert_eq!(sanitize_error(""), "");
+    }
+
+    #[test]
+    fn sanitize_exactly_120_chars() {
+        let msg = "a".repeat(120);
+        assert_eq!(sanitize_error(&msg), msg);
+    }
+
+    // --- dispatch_encryption_keys ---
+
+    fn recv_all_commands(
+        rx: &mut tokio::sync::mpsc::UnboundedReceiver<crate::voip::CallCommand>,
+    ) -> Vec<crate::voip::CallCommand> {
+        let mut cmds = Vec::new();
+        while let Ok(cmd) = rx.try_recv() {
+            cmds.push(cmd);
+        }
+        cmds
+    }
+
+    #[test]
+    fn dispatch_array_format_single_key() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let content = serde_json::json!({
+            "keys": [{"index": 0, "key": "aGVsbG8"}]
+        });
+        dispatch_encryption_keys(&tx, &content, "!room:x", "@alice:x", "DEV1", "test");
+        let cmds = recv_all_commands(&mut rx);
+        assert_eq!(cmds.len(), 1);
+        match &cmds[0] {
+            crate::voip::CallCommand::EncryptionKeyReceived {
+                room_id,
+                user_id,
+                device_id,
+                key_index,
+                key_bytes,
+            } => {
+                assert_eq!(room_id, "!room:x");
+                assert_eq!(user_id, "@alice:x");
+                assert_eq!(device_id, "DEV1");
+                assert_eq!(*key_index, 0);
+                assert_eq!(key_bytes, b"hello");
+            }
+            other => panic!("unexpected command: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn dispatch_object_format_element_x() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let content = serde_json::json!({
+            "keys": {"index": 1, "key": "dGVzdA"}
+        });
+        dispatch_encryption_keys(&tx, &content, "!r:x", "@bob:x", "D2", "test");
+        let cmds = recv_all_commands(&mut rx);
+        assert_eq!(cmds.len(), 1);
+        match &cmds[0] {
+            crate::voip::CallCommand::EncryptionKeyReceived {
+                key_index,
+                key_bytes,
+                ..
+            } => {
+                assert_eq!(*key_index, 1);
+                assert_eq!(key_bytes, b"test");
+            }
+            other => panic!("unexpected command: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn dispatch_multiple_entries() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let content = serde_json::json!({
+            "keys": [
+                {"index": 0, "key": "YQ"},
+                {"index": 1, "key": "Yg"},
+            ]
+        });
+        dispatch_encryption_keys(&tx, &content, "!r:x", "@u:x", "D", "test");
+        let cmds = recv_all_commands(&mut rx);
+        assert_eq!(cmds.len(), 2);
+    }
+
+    #[test]
+    fn dispatch_missing_keys_field() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let content = serde_json::json!({"other": "data"});
+        dispatch_encryption_keys(&tx, &content, "!r:x", "@u:x", "D", "test");
+        let cmds = recv_all_commands(&mut rx);
+        assert!(cmds.is_empty());
+    }
+
+    #[test]
+    fn dispatch_empty_array() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let content = serde_json::json!({"keys": []});
+        dispatch_encryption_keys(&tx, &content, "!r:x", "@u:x", "D", "test");
+        let cmds = recv_all_commands(&mut rx);
+        assert!(cmds.is_empty());
+    }
+
+    #[test]
+    fn dispatch_invalid_base64_skipped() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let content = serde_json::json!({
+            "keys": [
+                {"index": 0, "key": "!!!invalid!!!"},
+                {"index": 1, "key": "YQ"},
+            ]
+        });
+        dispatch_encryption_keys(&tx, &content, "!r:x", "@u:x", "D", "test");
+        let cmds = recv_all_commands(&mut rx);
+        assert_eq!(cmds.len(), 1);
+        match &cmds[0] {
+            crate::voip::CallCommand::EncryptionKeyReceived {
+                key_index,
+                key_bytes,
+                ..
+            } => {
+                assert_eq!(*key_index, 1);
+                assert_eq!(key_bytes, b"a");
+            }
+            other => panic!("unexpected command: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn dispatch_missing_key_string_skipped() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let content = serde_json::json!({
+            "keys": [
+                {"index": 0},
+                {"index": 1, "key": "YQ"},
+            ]
+        });
+        dispatch_encryption_keys(&tx, &content, "!r:x", "@u:x", "D", "test");
+        let cmds = recv_all_commands(&mut rx);
+        assert_eq!(cmds.len(), 1);
+    }
+}
