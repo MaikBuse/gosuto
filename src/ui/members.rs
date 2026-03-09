@@ -9,6 +9,7 @@ use crate::app::App;
 use crate::input::FocusPanel;
 use crate::ui::icons::Icons;
 use crate::ui::theme;
+use crate::ui::tooltip::{self, Direction};
 
 /// IRC-style power level prefix
 fn power_prefix(power_level: i64, icons: &Icons) -> &str {
@@ -108,4 +109,62 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
     }
 
     frame.render_stateful_widget(list, area, &mut list_state);
+}
+
+/// Render a floating tooltip showing the full member label when it overflows the pane.
+pub fn render_tooltip(app: &App, frame: &mut Frame, members_area: Rect) {
+    if app.vim.focus != FocusPanel::Members {
+        return;
+    }
+
+    let members = &app.members_list.members;
+    let selected = app.members_list.selected;
+
+    let member = match members.get(selected) {
+        Some(m) => m,
+        None => return,
+    };
+
+    let icons = app.config.icons();
+
+    // Reconstruct the full label (same format as render())
+    let prefix = power_prefix(member.power_level, icons);
+    let id_label = member.user_id.strip_prefix('@').unwrap_or(&member.user_id);
+    let mut label = format!("{}{} ({})", prefix, member.display_name, id_label);
+    if member.verified == Some(true) {
+        label.push(' ');
+        label.push_str(icons.checkmark);
+    }
+
+    // Inner width of the members pane (inside borders)
+    let inner_width = members_area.width.saturating_sub(2) as usize;
+    if inner_width == 0 {
+        return;
+    }
+
+    // Check if label overflows (List widget adds 0 padding by default)
+    if label.chars().count() <= inner_width {
+        return;
+    }
+
+    // Compute selected row's screen y-position
+    let inner_height = members_area.height.saturating_sub(2) as usize;
+    if inner_height == 0 {
+        return;
+    }
+
+    let scroll_off = scroll_offset(app, members_area);
+
+    if selected < scroll_off || selected >= scroll_off + inner_height {
+        return;
+    }
+
+    let row_y = members_area.y + 1 + (selected - scroll_off) as u16;
+
+    // Position tooltip to the left of the members pane
+    let anchor_x = members_area.x;
+    let term = frame.area();
+    let buf = frame.buffer_mut();
+
+    tooltip::render_tooltip_box(buf, term, &label, anchor_x, row_y, Direction::Left);
 }

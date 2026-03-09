@@ -1,6 +1,5 @@
 use ratatui::{
     Frame,
-    buffer::Buffer,
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
@@ -11,6 +10,7 @@ use crate::app::App;
 use crate::input::FocusPanel;
 use crate::state::{DisplayRow, RoomCategory};
 use crate::ui::theme;
+use crate::ui::tooltip::{self, Direction, set_cell_if, write_str_clipped};
 
 pub struct RoomListAnimState {
     pub pulse_phase: f32,
@@ -390,161 +390,9 @@ pub fn render_tooltip(app: &App, frame: &mut Frame, room_list_area: Rect) {
     let row_y = room_list_area.y + 1 + (selected - scroll_off) as u16;
 
     // Position tooltip to the right of the room list panel
-    let tooltip_x = room_list_area.x + room_list_area.width;
+    let anchor_x = room_list_area.x + room_list_area.width;
     let term = frame.area();
-
-    // Need at least 5 columns for a useful tooltip
-    let max_tooltip_width = term.width.saturating_sub(tooltip_x);
-    if max_tooltip_width < 5 {
-        return;
-    }
-
-    // Tooltip content: " full_name " with 1-char padding + 2-char border
-    let content_width = label.chars().count() as u16 + 2; // 1-char padding each side
-    let box_width = (content_width + 2).min(max_tooltip_width); // +2 for left/right border
-    let box_height: u16 = 3; // top border + content + bottom border
-
-    // Clamp to terminal bounds vertically
-    let tooltip_y = if row_y + box_height > term.y + term.height {
-        (term.y + term.height).saturating_sub(box_height)
-    } else {
-        row_y
-    };
-
-    if tooltip_y + box_height > term.y + term.height {
-        return;
-    }
-
     let buf = frame.buffer_mut();
-    let bounds = *buf.area();
 
-    let border_style = Style::default().fg(theme::CYAN).bg(theme::BG);
-    let text_style = Style::default().fg(theme::TEXT).bg(theme::BG);
-
-    // Clear background
-    for dy in 0..box_height {
-        for dx in 0..box_width {
-            set_cell_if(
-                buf,
-                &bounds,
-                tooltip_x + dx,
-                tooltip_y + dy,
-                ' ',
-                Style::default().bg(theme::BG),
-            );
-        }
-    }
-
-    // Draw border
-    // Top: ╭─...─╮
-    set_cell_if(buf, &bounds, tooltip_x, tooltip_y, '╭', border_style);
-    for dx in 1..box_width - 1 {
-        set_cell_if(buf, &bounds, tooltip_x + dx, tooltip_y, '─', border_style);
-    }
-    set_cell_if(
-        buf,
-        &bounds,
-        tooltip_x + box_width - 1,
-        tooltip_y,
-        '╮',
-        border_style,
-    );
-
-    // Middle: │ text │
-    let mid_y = tooltip_y + 1;
-    set_cell_if(buf, &bounds, tooltip_x, mid_y, '│', border_style);
-    set_cell_if(
-        buf,
-        &bounds,
-        tooltip_x + box_width - 1,
-        mid_y,
-        '│',
-        border_style,
-    );
-
-    // Fill middle row background
-    for dx in 1..box_width - 1 {
-        set_cell_if(buf, &bounds, tooltip_x + dx, mid_y, ' ', text_style);
-    }
-
-    // Write the label text (clipped to box interior)
-    let text_clip = Rect::new(tooltip_x + 1, mid_y, box_width.saturating_sub(2), 1);
-    write_str_clipped(
-        buf,
-        tooltip_x + 2,
-        mid_y,
-        &label,
-        text_style,
-        &text_clip,
-        false,
-    );
-
-    // Bottom: ╰─...─╯
-    let bot_y = tooltip_y + 2;
-    set_cell_if(buf, &bounds, tooltip_x, bot_y, '╰', border_style);
-    for dx in 1..box_width - 1 {
-        set_cell_if(buf, &bounds, tooltip_x + dx, bot_y, '─', border_style);
-    }
-    set_cell_if(
-        buf,
-        &bounds,
-        tooltip_x + box_width - 1,
-        bot_y,
-        '╯',
-        border_style,
-    );
-}
-
-#[inline]
-fn set_cell_if(buf: &mut Buffer, bounds: &Rect, x: u16, y: u16, ch: char, style: Style) {
-    if x >= bounds.x && x < bounds.x + bounds.width && y >= bounds.y && y < bounds.y + bounds.height
-    {
-        buf[(x, y)].set_char(ch);
-        buf[(x, y)].set_style(style);
-    }
-}
-
-fn write_str_clipped(
-    buf: &mut Buffer,
-    x: u16,
-    y: u16,
-    text: &str,
-    style: Style,
-    clip: &Rect,
-    ellipsis: bool,
-) -> bool {
-    let bounds = *buf.area();
-    let clip_end = clip.x + clip.width;
-    let char_count = text.chars().count() as u16;
-    let truncated = x + char_count > clip_end;
-
-    for (i, ch) in text.chars().enumerate() {
-        let cx = x + i as u16;
-        if cx >= clip_end {
-            break;
-        }
-        if cx >= bounds.x
-            && cx < bounds.x + bounds.width
-            && y >= bounds.y
-            && y < bounds.y + bounds.height
-        {
-            buf[(cx, y)].set_char(ch);
-            buf[(cx, y)].set_style(style);
-        }
-    }
-
-    // Overwrite last visible character with ellipsis when truncated
-    if truncated && ellipsis && clip_end > clip.x {
-        let last = clip_end - 1;
-        if last >= bounds.x
-            && last < bounds.x + bounds.width
-            && y >= bounds.y
-            && y < bounds.y + bounds.height
-        {
-            buf[(last, y)].set_char('\u{2026}');
-            buf[(last, y)].set_style(style);
-        }
-    }
-
-    truncated
+    tooltip::render_tooltip_box(buf, term, &label, anchor_x, row_y, Direction::Right);
 }

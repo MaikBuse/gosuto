@@ -18,6 +18,7 @@ pub mod room_info;
 pub mod room_list;
 pub mod status_bar;
 pub mod theme;
+pub mod tooltip;
 pub mod typing_indicator;
 pub mod verify_modal;
 pub mod which_key;
@@ -86,8 +87,9 @@ pub fn render(app: &mut App, frame: &mut Frame) {
     // Command auto-completion popup (rendered after effects so it isn't overwritten)
     completion_popup::render(app, frame, layout.input_bar);
 
-    // Room name tooltip for truncated names
+    // Tooltips for truncated names
     room_list::render_tooltip(app, frame, layout.room_list);
+    members::render_tooltip(app, frame, layout.members_list);
 
     let icons = app.config.icons();
 

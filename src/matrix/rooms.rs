@@ -49,23 +49,37 @@ pub async fn get_room_list(client: &Client) -> Vec<RoomSummary> {
         let is_dm = room.is_direct().await.unwrap_or(false);
 
         let name = if is_dm {
-            let target_name = room
+            let target_uid = room
                 .direct_targets()
                 .iter()
                 .next()
-                .and_then(|uid| uid.as_user_id().map(|u| u.to_owned()))
-                .map(|uid| {
-                    uid.as_str()
-                        .strip_prefix('@')
-                        .unwrap_or(uid.as_str())
-                        .to_string()
-                });
-            match target_name {
-                Some(n) => n,
-                None => match room.display_name().await {
+                .and_then(|uid| uid.as_user_id().map(|u| u.to_owned()));
+
+            if let Some(uid) = target_uid {
+                let id_without_at = uid
+                    .as_str()
+                    .strip_prefix('@')
+                    .unwrap_or(uid.as_str())
+                    .to_string();
+                let local_part = uid.localpart();
+
+                // Try to fetch the member's display name
+                let display = room
+                    .get_member(&uid)
+                    .await
+                    .ok()
+                    .flatten()
+                    .and_then(|m| m.display_name().map(|n| n.to_string()));
+
+                match display {
+                    Some(dn) if dn != local_part => format!("{} ({})", dn, id_without_at),
+                    _ => id_without_at,
+                }
+            } else {
+                match room.display_name().await {
                     Ok(dn) => dn.to_string(),
                     Err(_) => id.clone(),
-                },
+                }
             }
         } else {
             match room.display_name().await {
