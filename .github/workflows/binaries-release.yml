@@ -80,3 +80,29 @@ jobs:
           asset_path: gosuto-${{ github.event.release.tag_name }}-${{ matrix.target }}.${{ matrix.archive_ext }}
           asset_name: gosuto-${{ github.event.release.tag_name }}-${{ matrix.target }}.${{ matrix.archive_ext }}
           asset_content_type: application/octet-stream
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.93.1"
+
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libdbus-1-dev pkg-config libglib2.0-dev libva-dev libx11-dev libxi-dev libxtst-dev
+
+      - uses: arduino/setup-protoc@v3
+        with:
+          version: "25.x"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish to crates.io
+        run: cargo publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
