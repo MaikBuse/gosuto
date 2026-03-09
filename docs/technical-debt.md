@@ -63,32 +63,20 @@ cleanup, terminal degradation, test helper).
 
 ---
 
-## 4. Silent Data Loss in VoIP via `unwrap_or_default()`
+## 4. ~~Silent Data Loss in VoIP via `unwrap_or_default()`~~ — RESOLVED
 
-Critical protocol responses are parsed with `unwrap_or_default()`. When the SFU
-returns unexpected data or the network glitches, the code silently proceeds with
-empty values — making VoIP failures extremely hard to diagnose. Audio resampling
-failures silently produce silence.
-
-**Locations in `src/voip/matrixrtc.rs`:**
-- Line 45: `resp.json().await.unwrap_or_default()` — SFU well-known response
-- Line 52: `wk.rtc_foci.unwrap_or_default()` — RTC foci list
-- Line 195: `resp.text().await.unwrap_or_default()` — SFU response body
-- Line 209: `serde_json::from_str(&raw_body).unwrap_or_default()` — SFU preview parse
-- Line 361, 379, 432, 640: various protocol/debug serializations
-
-**Locations in `src/voip/audio.rs`:**
-- Line 250, 261: resampler creation defaults
-- Line 500: `result.pop().unwrap_or_default()` — capture resampling
-- Line 693: `result.pop().unwrap_or_default()` — playback resampling
+Replaced silent `unwrap_or_default()` calls with logged warnings/errors in VoIP
+protocol parsing and audio resampling. Remaining `unwrap_or_default()` calls
+reviewed and confirmed acceptable (system clock, debug serialization, device
+enumeration, Option field defaults).
 
 ### Checklist
 
-- [ ] Replace `resp.json().await.unwrap_or_default()` with proper error propagation (matrixrtc.rs:45)
-- [ ] Replace `resp.text().await.unwrap_or_default()` with proper error propagation (matrixrtc.rs:195)
-- [ ] Replace `serde_json::from_str().unwrap_or_default()` with logged error (matrixrtc.rs:209)
-- [ ] Add `warn!` logging for resampler pop defaults (audio.rs:500, 693)
-- [ ] Review remaining `unwrap_or_default()` calls for appropriateness
+- [x] Replace `resp.json().await.unwrap_or_default()` with proper error propagation (matrixrtc.rs:45)
+- [x] Replace `resp.text().await.unwrap_or_default()` with proper error propagation (matrixrtc.rs:195)
+- [x] Replace `serde_json::from_str().unwrap_or_default()` with logged error (matrixrtc.rs:209)
+- [x] Add `warn!` logging for resampler pop defaults (audio.rs:500, 693)
+- [x] Review remaining `unwrap_or_default()` calls for appropriateness
 
 ---
 
@@ -131,7 +119,7 @@ and bug-prone modules have zero tests.
 ## Recommended Priority Order
 
 1. ~~**Mutex panic risk** — smallest change, highest reliability impact~~ DONE
-2. **VoIP `unwrap_or_default()`** — prevents silent call failures
+2. ~~**VoIP `unwrap_or_default()`** — prevents silent call failures~~ DONE
 3. ~~**Audit `let _ =` patterns** — systematic pass, log or propagate~~ DONE
 4. **Add tests for `input/command.rs`** — pure logic, highest ROI
 5. ~~**Split `app.rs`** — largest structural improvement~~ DONE

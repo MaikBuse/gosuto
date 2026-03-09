@@ -499,7 +499,10 @@ impl AudioPipeline {
                     while mono_buffer.len() >= FRAME_SIZE {
                         let chunk: Vec<f32> = mono_buffer.drain(..FRAME_SIZE).collect();
                         match resampler.process(&[chunk], None) {
-                            Ok(mut result) => output.extend(result.pop().unwrap_or_default()),
+                            Ok(mut result) => output.extend(result.pop().unwrap_or_else(|| {
+                                warn!("Capture resampler returned no channels");
+                                Vec::new()
+                            })),
                             Err(e) => error!("Capture resampler error: {}", e),
                         }
                     }
@@ -694,7 +697,10 @@ impl AudioPipeline {
                                 let chunk: Vec<f32> = mono_buffer.drain(..FRAME_SIZE).collect();
                                 match resampler.process(&[chunk], None) {
                                     Ok(mut result) => {
-                                        let mut resampled = result.pop().unwrap_or_default();
+                                        let mut resampled = result.pop().unwrap_or_else(|| {
+                                            warn!("Playback resampler returned no channels");
+                                            Vec::new()
+                                        });
                                         if device_channels > 1 {
                                             resampled =
                                                 expand_channels(&resampled, device_channels);

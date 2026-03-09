@@ -42,7 +42,13 @@ pub async fn discover_livekit_focus(client: &Client) -> Result<LivekitFocus> {
     let response = http_client.get(&well_known_url).send().await;
 
     let foci: Vec<RtcFocus> = match response {
-        Ok(resp) if resp.status().is_success() => resp.json().await.unwrap_or_default(),
+        Ok(resp) if resp.status().is_success() => match resp.json().await {
+            Ok(foci) => foci,
+            Err(e) => {
+                warn!("Failed to parse MSC4143 RTC foci response: {e}");
+                vec![]
+            }
+        },
         _ => {
             // Fallback: try .well-known/matrix/client
             let base = homeserver.trim_end_matches('/');
@@ -192,7 +198,10 @@ pub async fn get_livekit_credentials(
             .context("Failed to contact LiveKit JWT service (/get_token)")?;
         if !resp.status().is_success() {
             let status = resp.status();
-            let body = resp.text().await.unwrap_or_default();
+            let body = resp
+                .text()
+                .await
+                .unwrap_or_else(|_| "<unreadable>".to_string());
             anyhow::bail!(
                 "LiveKit JWT service (/get_token) returned {}: {}",
                 status,
@@ -206,7 +215,13 @@ pub async fn get_livekit_credentials(
         .text()
         .await
         .context("Failed to read JWT service response body")?;
-    let sfu_preview: serde_json::Value = serde_json::from_str(&raw_body).unwrap_or_default();
+    let sfu_preview: serde_json::Value = match serde_json::from_str(&raw_body) {
+        Ok(v) => v,
+        Err(e) => {
+            debug!("Failed to parse SFU response for debug preview: {e}");
+            serde_json::Value::Null
+        }
+    };
     debug!(
         "SFU response (via {}): url present={}, jwt length={}",
         endpoint_used,
