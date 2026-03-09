@@ -23,33 +23,22 @@ remain on `App`.
 
 ---
 
-## 2. Mutex Panic Risk: 10 `lock().unwrap()` calls
+## 2. ~~Mutex Panic Risk: 10 `lock().unwrap()` calls~~ — RESOLVED
 
-All use `std::sync::Mutex::lock().unwrap()`. If any thread panics while holding a
-lock, the mutex is poisoned and every subsequent `.unwrap()` panics too — cascading
-crash. The audio callback locks are highest risk since they run in a tight loop.
-
-**Locations:**
-- `src/app.rs:613` — `*handle.ptt_key.lock().unwrap()`
-- `src/app.rs:2232` — `*handle.ptt_key.lock().unwrap()`
-- `src/global_ptt.rs:97` — `ptt_key_shared.lock().unwrap().clone()`
-- `src/global_ptt.rs:107` — `ptt_key_shared.lock().unwrap().clone()`
-- `src/voip/manager.rs:305` — `self.audio_config.lock().unwrap().e2ee`
-- `src/voip/manager.rs:382` — `self.audio_config.lock().unwrap().clone()`
-- `src/voip/manager.rs:599` — `self.audio_config.lock().unwrap().clone()`
-- `src/voip/audio.rs:599` — `audio_rx.lock().unwrap()`
-- `src/voip/audio.rs:601` — `playback_buf.lock().unwrap().extend()`
-- `src/voip/audio.rs:604` — `playback_buf.lock().unwrap()`
+Replaced all `std::sync::Mutex` with `parking_lot::Mutex` (and
+`parking_lot::RwLock` for the read-only `audio_config`). All `.unwrap()`
+calls on mutex locks removed — `parking_lot::Mutex::lock()` returns the
+guard directly without poisoning.
 
 ### Checklist
 
-- [ ] Add `parking_lot` to `Cargo.toml`
-- [ ] Replace `std::sync::Mutex` with `parking_lot::Mutex` in `src/app.rs`
-- [ ] Replace `std::sync::Mutex` with `parking_lot::Mutex` in `src/global_ptt.rs`
-- [ ] Replace `std::sync::Mutex` with `parking_lot::Mutex` in `src/voip/manager.rs`
-- [ ] Replace `std::sync::Mutex` with `parking_lot::Mutex` in `src/voip/audio.rs`
-- [ ] Remove all `.unwrap()` calls on mutex locks (parking_lot returns value directly)
-- [ ] Consider `parking_lot::RwLock` for read-heavy `audio_config`
+- [x] Add `parking_lot` to `Cargo.toml`
+- [x] Replace `std::sync::Mutex` with `parking_lot::Mutex` in `src/app.rs`
+- [x] Replace `std::sync::Mutex` with `parking_lot::Mutex` in `src/global_ptt.rs`
+- [x] Replace `std::sync::Mutex` with `parking_lot::Mutex` in `src/event.rs`
+- [x] Replace `std::sync::Mutex` with `parking_lot::Mutex` in `src/voip/audio.rs`
+- [x] Replace `std::sync::Mutex` with `parking_lot::RwLock` in `src/voip/manager.rs`
+- [x] Remove all `.unwrap()` calls on mutex locks (parking_lot returns value directly)
 
 ---
 
@@ -140,13 +129,13 @@ and bug-prone modules have zero tests.
 | `unreachable!()` in recovery action match | `src/main.rs:811` | Low |
 | Fire-and-forget `tokio::spawn` without tracking JoinHandles | `src/main.rs`, `src/matrix/` | Medium |
 | Audio tasks killed via `.abort()` without graceful shutdown | `src/voip/audio.rs` | Medium |
-| `Mutex` used where `RwLock` fits better (read-heavy `audio_config`) | `src/voip/manager.rs` | Low |
+| ~~`Mutex` used where `RwLock` fits better (read-heavy `audio_config`)~~ | ~~`src/voip/manager.rs`~~ | ~~DONE~~ |
 
 ---
 
 ## Recommended Priority Order
 
-1. **Mutex panic risk** — smallest change, highest reliability impact
+1. ~~**Mutex panic risk** — smallest change, highest reliability impact~~ DONE
 2. **VoIP `unwrap_or_default()`** — prevents silent call failures
 3. **Audit `let _ =` patterns** — systematic pass, log or propagate
 4. **Add tests for `input/command.rs`** — pure logic, highest ROI
