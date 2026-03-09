@@ -1,6 +1,11 @@
 use tracing::warn;
 
-const SERVICE: &str = "gosuto";
+fn service_name() -> String {
+    match crate::config::active_profile() {
+        Some(name) => format!("gosuto-{name}"),
+        None => "gosuto".to_owned(),
+    }
+}
 
 pub struct SavedCredentials {
     pub homeserver: String,
@@ -15,7 +20,7 @@ pub fn save_credentials(homeserver: &str, username: &str, password: &str) {
         ("password", password),
     ] {
         if let Err(e) =
-            keyring::Entry::new(SERVICE, key).and_then(|entry| entry.set_password(value))
+            keyring::Entry::new(&service_name(), key).and_then(|entry| entry.set_password(value))
         {
             warn!("Failed to save {key} to keyring: {e}");
             return;
@@ -25,7 +30,7 @@ pub fn save_credentials(homeserver: &str, username: &str, password: &str) {
 
 pub fn load_credentials() -> Option<SavedCredentials> {
     let get = |key: &str| -> Option<String> {
-        keyring::Entry::new(SERVICE, key)
+        keyring::Entry::new(&service_name(), key)
             .and_then(|entry| entry.get_password())
             .ok()
     };
@@ -39,7 +44,7 @@ pub fn load_credentials() -> Option<SavedCredentials> {
 
 pub fn delete_credentials() {
     for key in ["homeserver", "username", "password"] {
-        if let Ok(entry) = keyring::Entry::new(SERVICE, key)
+        if let Ok(entry) = keyring::Entry::new(&service_name(), key)
             && let Err(e) = entry.delete_credential()
         {
             tracing::warn!("Failed to delete keyring credential '{key}': {e}");

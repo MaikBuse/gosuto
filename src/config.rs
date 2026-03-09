@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::sync::OnceLock;
 
 use anyhow::Result;
 use tracing::{info, warn};
@@ -7,6 +8,28 @@ use crate::fs_utils::write_private_file;
 use crate::ui::icons::{self, Icons};
 
 pub const APP_NAME: &str = "gosuto";
+
+static PROFILE: OnceLock<Option<String>> = OnceLock::new();
+
+/// Initialize the active profile. Must be called once before any path functions.
+pub fn init_profile(profile: Option<String>) {
+    PROFILE
+        .set(profile)
+        .expect("init_profile must only be called once");
+}
+
+/// Returns the active profile name, if any.
+pub fn active_profile() -> Option<&'static str> {
+    PROFILE.get_or_init(|| None).as_deref()
+}
+
+/// Returns `"gosuto"` or `"gosuto-{name}"` depending on the active profile.
+fn app_dir_name() -> String {
+    match active_profile() {
+        Some(name) => format!("{APP_NAME}-{name}"),
+        None => APP_NAME.to_owned(),
+    }
+}
 pub const TICK_RATE_MS: u64 = 250;
 pub const RENDER_RATE_MS: u64 = 50;
 
@@ -115,7 +138,7 @@ pub struct NetworkConfig {
 pub fn config_dir() -> Result<PathBuf> {
     let dir = dirs::config_dir()
         .ok_or_else(|| anyhow::anyhow!("Could not determine config directory"))?
-        .join(APP_NAME);
+        .join(app_dir_name());
     Ok(dir)
 }
 
@@ -189,7 +212,7 @@ pub fn save_config(config: &GosutoConfig) {
 pub fn data_dir() -> Result<PathBuf> {
     let dir = dirs::data_local_dir()
         .ok_or_else(|| anyhow::anyhow!("Could not determine local data directory"))?
-        .join(APP_NAME);
+        .join(app_dir_name());
     std::fs::create_dir_all(&dir)?;
     Ok(dir)
 }

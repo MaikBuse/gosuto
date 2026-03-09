@@ -1,6 +1,7 @@
 #![recursion_limit = "256"]
 
 mod app;
+mod cli;
 mod config;
 mod event;
 mod fs_utils;
@@ -80,6 +81,9 @@ fn build_env_filter() -> EnvFilter {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    let cli_args = cli::parse_args();
+    config::init_profile(cli_args.profile);
+
     // Set up file-based logging (controlled by GOSUTO_LOG env var)
     let log_path = config::log_path()?;
     let file_appender = tracing_appender::rolling::daily(&log_path, "gosuto.log");
