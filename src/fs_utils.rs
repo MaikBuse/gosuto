@@ -1,4 +1,3 @@
-use std::io::Write;
 use std::path::Path;
 
 use anyhow::Result;
@@ -8,6 +7,7 @@ use anyhow::Result;
 pub fn write_private_file(path: &Path, contents: &str) -> Result<()> {
     #[cfg(unix)]
     {
+        use std::io::Write;
         use std::os::unix::fs::OpenOptionsExt;
         let mut file = std::fs::OpenOptions::new()
             .write(true)

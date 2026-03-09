@@ -63,12 +63,21 @@ pub fn spawn_listener(
             info!("PTT listener thread started");
             let error_tx = event_tx.clone();
 
+            #[cfg(target_os = "linux")]
             let failed = spawn_listener_inner(
                 &active,
                 &capturing,
                 &ptt_key_shared,
                 &ptt_transmitting,
                 &event_tx,
+            );
+            #[cfg(not(target_os = "linux"))]
+            let failed = spawn_listener_inner(
+                active,
+                capturing,
+                ptt_key_shared,
+                ptt_transmitting,
+                event_tx,
             );
 
             info!("PTT listener loop exited");
@@ -325,11 +334,11 @@ fn evdev_key_to_name(key: evdev::KeyCode) -> Option<&'static str> {
 
 #[cfg(not(target_os = "linux"))]
 fn spawn_listener_inner(
-    active: &AtomicBool,
-    capturing: &AtomicBool,
-    ptt_key_shared: &Mutex<String>,
-    ptt_transmitting: &AtomicBool,
-    event_tx: &EventSender,
+    active: Arc<AtomicBool>,
+    capturing: Arc<AtomicBool>,
+    ptt_key_shared: Arc<Mutex<String>>,
+    ptt_transmitting: Arc<AtomicBool>,
+    event_tx: EventSender,
 ) -> Option<String> {
     use rdev::EventType;
 
@@ -340,11 +349,11 @@ fn spawn_listener_inner(
                 handle_ptt_event(
                     &name,
                     true,
-                    active,
-                    capturing,
-                    ptt_key_shared,
-                    ptt_transmitting,
-                    event_tx,
+                    &active,
+                    &capturing,
+                    &ptt_key_shared,
+                    &ptt_transmitting,
+                    &event_tx,
                 );
             }
         }
@@ -353,11 +362,11 @@ fn spawn_listener_inner(
                 handle_ptt_event(
                     &name,
                     false,
-                    active,
-                    capturing,
-                    ptt_key_shared,
-                    ptt_transmitting,
-                    event_tx,
+                    &active,
+                    &capturing,
+                    &ptt_key_shared,
+                    &ptt_transmitting,
+                    &event_tx,
                 );
             }
         }
