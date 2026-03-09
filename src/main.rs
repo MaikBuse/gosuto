@@ -39,6 +39,47 @@ macro_rules! spawn_with_client {
     }};
 }
 
+const NOISY_DEPS: &[&str] = &[
+    "matrix_sdk",
+    "hyper",
+    "livekit",
+    "tokio",
+    "rustls",
+    "reqwest",
+    "cpal",
+];
+
+/// Build the tracing `EnvFilter` from the `GOSUTO_LOG` environment variable.
+///
+/// - **Unset**: `warn,gosuto=info,<noisy deps>=warn`
+/// - **Simple level** (e.g. `debug`): `warn,gosuto=debug,<noisy deps>=warn`
+/// - **Full filter** (contains `,` or `=`): used as-is
+fn build_env_filter() -> EnvFilter {
+    let filter = match std::env::var("GOSUTO_LOG") {
+        Ok(val) if !val.is_empty() => {
+            if val.contains(',') || val.contains('=') {
+                // Advanced filter string — use as-is
+                return EnvFilter::new(val);
+            }
+            // Simple level — scope to gosuto only
+            let mut parts = vec![format!("warn,gosuto={val}")];
+            for dep in NOISY_DEPS {
+                parts.push(format!("{dep}=warn"));
+            }
+            parts.join(",")
+        }
+        _ => {
+            // Default filter
+            let mut parts = vec!["warn,gosuto=info".to_owned()];
+            for dep in NOISY_DEPS {
+                parts.push(format!("{dep}=warn"));
+            }
+            parts.join(",")
+        }
+    };
+    EnvFilter::new(filter)
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     // Set up file-based logging (controlled by GOSUTO_LOG env var)
@@ -48,10 +89,7 @@ async fn main() -> Result<()> {
 
     tracing_subscriber::registry()
         .with(fmt::layer().with_writer(non_blocking).with_ansi(false))
-        .with(
-            EnvFilter::try_from_env("GOSUTO_LOG")
-                .unwrap_or_else(|_| EnvFilter::new("info,matrix_sdk=warn,hyper=warn")),
-        )
+        .with(build_env_filter())
         .init();
 
     config::cleanup_old_logs(&log_path, 7);

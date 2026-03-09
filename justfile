@@ -1,4 +1,5 @@
-# Run with debug logging
+# Run with debug logging (scoped to gosuto by default)
+# For advanced control: just debug "debug,matrix_sdk=trace"
 debug level="debug":
     GOSUTO_LOG={{level}} cargo run
 
