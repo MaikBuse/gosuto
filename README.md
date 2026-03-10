@@ -1,43 +1,110 @@
-```
- ██████╗  ██████╗ ███████╗██╗   ██╗████████╗ ██████╗
-██╔════╝ ██╔═══██╗██╔════╝██║   ██║╚══██╔══╝██╔═══██╗
-██║  ███╗██║   ██║███████╗██║   ██║   ██║   ██║   ██║
-██║   ██║██║   ██║╚════██║██║   ██║   ██║   ██║   ██║
-╚██████╔╝╚██████╔╝███████║╚██████╔╝   ██║   ╚██████╔╝
- ╚═════╝  ╚═════╝ ╚══════╝ ╚═════╝    ╚═╝    ╚═════╝
-```
+<a id="readme-top"></a>
 
-**Gōsuto** (ゴースト) — _ghost_ — a cyberpunk terminal Matrix client.
+<!-- PROJECT SHIELDS -->
+[![License][license-shield]][license-url]
+[![Crates.io][crates-shield]][crates-url]
+[![Stars][stars-shield]][stars-url]
+
+<!-- PROJECT LOGO -->
+<br />
+<div align="center">
+  <a href="https://github.com/MaikBuse/gosuto">
+    <img src="assets/logo.svg" alt="Logo" width="240">
+  </a>
+
+  <h3 align="center">Gosuto</h3>
+
+  <p align="center">
+    ゴースト — <em>ghost</em> — a cyberpunk terminal Matrix client
+    <br />
+    <a href="https://github.com/MaikBuse/gosuto/releases">Releases</a>
+    &middot;
+    <a href="https://github.com/MaikBuse/gosuto/issues">Report Bug</a>
+    &middot;
+    <a href="https://github.com/MaikBuse/gosuto/issues">Request Feature</a>
+  </p>
+</div>
+
+<!-- TABLE OF CONTENTS -->
+<details>
+  <summary>Table of Contents</summary>
+  <ol>
+    <li>
+      <a href="#about-the-project">About The Project</a>
+      <ul>
+        <li><a href="#built-with">Built With</a></li>
+      </ul>
+    </li>
+    <li><a href="#features">Features</a></li>
+    <li>
+      <a href="#getting-started">Getting Started</a>
+      <ul>
+        <li><a href="#prerequisites">Prerequisites</a></li>
+        <li><a href="#installation">Installation</a></li>
+        <li><a href="#supported-terminals">Supported Terminals</a></li>
+      </ul>
+    </li>
+    <li><a href="#usage">Usage</a></li>
+    <li><a href="#voip--prebuilt-libwebrtc">VoIP & Prebuilt libwebrtc</a></li>
+    <li><a href="#license">License</a></li>
+    <li><a href="#contact">Contact</a></li>
+  </ol>
+</details>
+
+<!-- ABOUT THE PROJECT -->
+## About The Project
 
 <https://github.com/user-attachments/assets/c58be922-67d6-400c-aebc-69db3c62a24f>
 
-## ═══ why
+Gosuto is a native terminal client for the [Matrix](https://matrix.org/) protocol, built for people who live in the terminal. It ships as a single Rust binary that handles chat, end-to-end encryption, and voice calls — no browser engine, no heavy runtime, just a lightweight TUI that stays out of your way.
 
-I switched from Discord to Matrix and couldn't find a native terminal client that did voice calls with push-to-talk. Element is Electron — 800MB of RAM to sit idle. I spend most of my day in a terminal anyway. So I built what I actually wanted: a single Rust binary that handles chat, E2EE, and voice without a browser engine underneath.
+The goal is simple: a fast, keyboard-driven Matrix experience with full voice support and under 60 MB of RAM.
 
-## ═══ what it does
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-- Efficient by design — vim motions for navigation, <60MB of RAM for everything.
-- Vim-first navigation — Normal, Insert, Command modes
-- Encrypted chat — rooms, spaces, DMs, full E2EE with automatic key forwarding
-- VoIP calls — LiveKit-based voice with push-to-talk support
-- Room management — create, join, leave, view member lists and power levels
-- Visual effects — matrix rain, glitch, text reveal animations (all togglable)
+### Built With
 
-## ═══ install
+* [Rust](https://www.rust-lang.org/)
+* [Ratatui](https://ratatui.rs/)
+* [matrix-sdk](https://github.com/matrix-org/matrix-rust-sdk)
+* [LiveKit Rust SDK](https://github.com/livekit/rust-sdks)
 
-Pre-built binaries for **Linux** and **Windows** are available on the [releases page](https://github.com/maikbuse/gosuto/releases).
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-### Linux
+<!-- FEATURES -->
+## Features
 
-Download the binary, make it executable, and move it somewhere on your `PATH`:
+- **Vim-first navigation** — Normal, Insert, and Command modes
+- **Encrypted chat** — rooms, spaces, DMs, full E2EE with automatic key forwarding
+- **VoIP calls** — LiveKit-based voice with push-to-talk support
+- **Room management** — create, join, leave, view member lists and power levels
+- **Visual effects** — matrix rain, glitch, text reveal animations (all togglable)
+- **Lightweight** — under 60 MB of RAM for everything
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+<!-- GETTING STARTED -->
+## Getting Started
+
+### Prerequisites
+
+- **Rust toolchain** (only if building from source) — install via [rustup](https://rustup.rs/)
+- **Nerd Font** (optional) — enables icon glyphs throughout the UI; toggleable in config, falls back to plain Unicode when disabled
+
+### Installation
+
+#### Pre-built binaries
+
+Pre-built binaries for **Linux** and **Windows** are available on the [releases page](https://github.com/MaikBuse/gosuto/releases).
+
+**Linux:**
 
 ```bash
 chmod +x gosuto
 sudo mv gosuto /usr/local/bin/
 ```
 
-### Windows
+**Windows:**
 
 Download `gosuto.exe` and place it in a directory on your `PATH`, or run it directly:
 
@@ -45,17 +112,16 @@ Download `gosuto.exe` and place it in a directory on your `PATH`, or run it dire
 .\gosuto.exe
 ```
 
-### Install from crates.io
+#### Install from crates.io
 
 ```bash
 cargo install gosuto
 ```
 
-### Build from source
+#### Build from source
 
 ```bash
-# clone and build
-git clone https://github.com/maikbuse/gosuto.git
+git clone https://github.com/MaikBuse/gosuto.git
 cd gosuto
 cargo build --release
 ./target/release/gosuto        # Linux
@@ -64,19 +130,18 @@ cargo build --release
 
 Run `gosuto` and log in with your Matrix homeserver, username, and password.
 
-## ═══ supported terminals
+### Supported Terminals
 
 Gosuto works on any modern terminal emulator — Kitty, WezTerm, Ghostty, Foot, Alacritty, GNOME Terminal, Windows Terminal, and others. Terminal multiplexers (tmux, screen) are also supported.
 
-## ═══ optional enhancements
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-- **Nerd Font** — enables icon glyphs throughout the UI. Toggleable in config; falls back to plain Unicode when disabled.
+<!-- USAGE -->
+## Usage
 
-## ═══ finding your way around
+Gosuto has a **which-key popup** — press a key (e.g. the spacebar) in normal mode and it shows you what's available. Command mode (`:`) has tab completion and suggestions. Between those two, you shouldn't need to memorize anything.
 
-Gosuto has a which-key popup — press a key (e.g. the spacebar) in normal mode and it shows you what's available. Command mode (`:`) has tab completion and suggestions. Between those two, you shouldn't need to memorize anything from the docs.
-
-## ═══ config
+### Config
 
 Configuration is stored in `config.toml` inside the platform config directory:
 
@@ -87,7 +152,7 @@ Configuration is stored in `config.toml` inside the platform config directory:
 
 A default config file is created on first launch. Edit it to change network, audio, UI, and visual effect settings.
 
-## ═══ data
+### Data & Logging
 
 Session and runtime data live in the platform data directory:
 
@@ -112,7 +177,10 @@ GOSUTO_LOG=debug gosuto                        # Linux
 $env:GOSUTO_LOG="debug"; .\gosuto.exe          # Windows (PowerShell)
 ```
 
-## ═══ voip & prebuilt libwebrtc
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+<!-- VOIP -->
+## VoIP & Prebuilt libwebrtc
 
 Gosuto uses a [fork](https://github.com/MaikBuse/gosuto-livekit-sdks) of the [LiveKit Rust SDK](https://github.com/livekit/rust-sdks) for voice calls. The fork adds configurable key derivation (HKDF) so E2EE calls interoperate with Element X, and points the build script at prebuilt libwebrtc m137 binaries hosted as GitHub release assets on the fork repo.
 
@@ -126,7 +194,10 @@ cargo build --release
 
 See the [build scripts](https://github.com/MaikBuse/gosuto-livekit-sdks/tree/main/webrtc-sys/libwebrtc) in the fork repo for full instructions.
 
-## ═══ license
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+<!-- LICENSE -->
+## License
 
 Licensed under either of
 
@@ -134,3 +205,22 @@ Licensed under either of
 - [MIT License](LICENSE.md#mit-license)
 
 at your option.
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+<!-- CONTACT -->
+## Contact
+
+Maik Buse — [GitHub](https://github.com/MaikBuse)
+
+Project Link: [https://github.com/MaikBuse/gosuto](https://github.com/MaikBuse/gosuto)
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+<!-- MARKDOWN LINKS & IMAGES -->
+[license-shield]: https://img.shields.io/badge/license-Apache--2.0%20OR%20MIT-blue.svg?style=for-the-badge
+[license-url]: https://github.com/MaikBuse/gosuto/blob/main/LICENSE.md
+[crates-shield]: https://img.shields.io/crates/v/gosuto.svg?style=for-the-badge
+[crates-url]: https://crates.io/crates/gosuto
+[stars-shield]: https://img.shields.io/github/stars/MaikBuse/gosuto.svg?style=for-the-badge
+[stars-url]: https://github.com/MaikBuse/gosuto/stargazers

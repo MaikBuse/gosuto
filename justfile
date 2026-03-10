@@ -7,6 +7,10 @@ debug level="debug":
 test profile="test":
     cargo run -- --profile {{profile}}
 
+# Run with a named profile and debug logging
+test-debug profile="test" level="debug":
+    GOSUTO_LOG={{level}} cargo run -- --profile {{profile}}
+
 # Tail the log file
 logs:
     tail -f ~/.local/share/gosuto/logs/gosuto.log*

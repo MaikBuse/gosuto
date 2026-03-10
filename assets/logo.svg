@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="96 68 320 310" width="512" height="512">
+  <defs>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="b1"/>
+      <feGaussianBlur in="SourceGraphic" stdDeviation="8" result="b2"/>
+      <feMerge>
+        <feMergeNode in="b2"/>
+        <feMergeNode in="b1"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <filter id="softGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="4" result="b"/>
+      <feMerge>
+        <feMergeNode in="b"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <linearGradient id="ghostFade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#00ffff"/>
+      <stop offset="40%" stop-color="#00ccff"/>
+      <stop offset="75%" stop-color="#0088ff"/>
+      <stop offset="100%" stop-color="#00ccff" stop-opacity="0.15"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Ghost body -->
+  <g filter="url(#softGlow)">
+    <path d="
+      M256 88
+      C178 88 116 150 116 232
+      L116 340
+      C116 355 135 370 155 350
+      Q175 330 195 350
+      Q215 370 236 350
+      Q256 330 276 350
+      Q296 370 317 350
+      Q337 330 357 350
+      C377 370 396 355 396 340
+      L396 232
+      C396 150 334 88 256 88
+      Z"
+      fill="#0a0a0a"
+      stroke="url(#ghostFade)"
+      stroke-width="6"
+      stroke-linejoin="round"
+    />
+  </g>
+
+  <!-- Eyes -->
+  <g filter="url(#glow)">
+    <rect x="194" y="200" width="30" height="38" rx="3" fill="#00ddff" opacity="0.85"/>
+    <rect x="288" y="200" width="30" height="38" rx="3" fill="#00ddff" opacity="0.85"/>
+  </g>
+
+  <!-- Mouth -->
+  <rect x="232" y="274" width="48" height="2.5" rx="1" fill="#00ddff" opacity="0.45" filter="url(#glow)"/>
+
+</svg>
