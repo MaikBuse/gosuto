@@ -63,39 +63,22 @@ pub fn render_gradient_border(buf: &mut Buffer, bounds: &Rect, area: Rect, phase
     let y1 = area.y;
     let y2 = area.y + area.height - 1;
 
-    // Collect perimeter positions clockwise with their characters
-    let mut perimeter: Vec<(u16, u16, char)> = Vec::new();
-
-    // Top edge
-    perimeter.push((x1, y1, '╔'));
-    for x in (x1 + 1)..x2 {
-        perimeter.push((x, y1, '═'));
-    }
-    perimeter.push((x2, y1, '╗'));
-
-    // Right edge (skip corner)
-    for y in (y1 + 1)..y2 {
-        perimeter.push((x2, y, '║'));
-    }
-
-    // Bottom edge (reversed)
-    perimeter.push((x2, y2, '╝'));
-    for x in ((x1 + 1)..x2).rev() {
-        perimeter.push((x, y2, '═'));
-    }
-    perimeter.push((x1, y2, '╚'));
-
-    // Left edge (reversed, skip corners)
-    for y in ((y1 + 1)..y2).rev() {
-        perimeter.push((x1, y, '║'));
-    }
-
-    let total = perimeter.len();
-    for (i, &(x, y, ch)) in perimeter.iter().enumerate() {
-        let angle = (i as f32 / total as f32) * std::f32::consts::TAU + phase;
-        let t = (1.0 - angle.cos()) / 2.0;
-        let color =
-            gradient::lerp_color(theme::GRADIENT_BORDER_START, theme::GRADIENT_BORDER_END, t);
+    gradient::walk_perimeter(area, |x, y, i, total| {
+        let ch = match (x == x1, x == x2, y == y1, y == y2) {
+            (true, _, true, _) => '╔',
+            (_, true, true, _) => '╗',
+            (true, _, _, true) => '╚',
+            (_, true, _, true) => '╝',
+            (_, _, true, _) | (_, _, _, true) => '═',
+            _ => '║',
+        };
+        let color = gradient::perimeter_color(
+            i,
+            total,
+            theme::GRADIENT_BORDER_START,
+            theme::GRADIENT_BORDER_END,
+            phase,
+        );
         set_cell(
             buf,
             bounds,
@@ -104,20 +87,7 @@ pub fn render_gradient_border(buf: &mut Buffer, bounds: &Rect, area: Rect, phase
             ch,
             Style::default().fg(color).bg(theme::BG),
         );
-    }
-
-    // ◈ accent in MAGENTA
-    let gx = x2.saturating_sub(5);
-    if gx > x1 {
-        set_cell(
-            buf,
-            bounds,
-            gx,
-            y2,
-            '◈',
-            Style::default().fg(theme::MAGENTA).bg(theme::BG),
-        );
-    }
+    });
 }
 
 pub fn render_title(buf: &mut Buffer, bounds: &Rect, area: Rect, color: Color, title: &str) {

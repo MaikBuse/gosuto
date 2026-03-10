@@ -24,9 +24,9 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
     let powerline = icons.powerline_right;
 
     let (mode_fg, mode_bg) = match app.vim.mode {
-        VimMode::Normal => (theme::BLACK, theme::CYAN),
-        VimMode::Insert => (theme::BLACK, theme::GREEN),
-        VimMode::Command => (theme::BLACK, theme::MAGENTA),
+        VimMode::Normal => (theme::BLACK, theme::NORMAL_MODE_BG),
+        VimMode::Insert => (theme::BLACK, theme::INSERT_MODE_BG),
+        VimMode::Command => (theme::BLACK, theme::COMMAND_MODE_BG),
     };
 
     let mode_bg_dim = gradient::scale_color(mode_bg, 0.4);
@@ -175,25 +175,25 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
         // Write gradient mode indicator for first section
         let section_bg = if i == 0 {
             // Gradient bg across mode label width
-            let chars: Vec<char> = section.text.chars().collect();
-            for (ci, ch) in chars.iter().enumerate() {
+            let char_count = section.text.chars().count();
+            for (ci, ch) in section.text.chars().enumerate() {
                 if cursor_x + ci as u16 >= area.x + area.width {
                     break;
                 }
                 let x = cursor_x + ci as u16;
                 if x < bounds.x + bounds.width && area.y < bounds.y + bounds.height {
-                    let t = ci as f32 / chars.len().max(1) as f32;
+                    let t = ci as f32 / char_count.max(1) as f32;
                     let bg = gradient::lerp_color(section.bg, mode_bg_dim, t);
                     let mut style = Style::default().fg(section.fg).bg(bg);
                     if section.bold {
                         style = style.add_modifier(Modifier::BOLD);
                     }
                     let cell = &mut buf[(x, area.y)];
-                    cell.set_char(*ch);
+                    cell.set_char(ch);
                     cell.set_style(style);
                 }
             }
-            cursor_x += chars.len() as u16;
+            cursor_x += char_count as u16;
             mode_bg_dim
         } else {
             // Regular section text

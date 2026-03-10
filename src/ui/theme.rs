@@ -11,6 +11,12 @@ pub const TEXT: Color = Color::Rgb(220, 220, 230);
 pub const DIM: Color = Color::Rgb(120, 120, 140);
 pub const BORDER: Color = Color::Rgb(40, 50, 60);
 pub const BLACK: Color = Color::Rgb(0, 0, 0);
+pub const WHITE: Color = Color::Rgb(255, 255, 255);
+
+// Mode indicator colors
+pub const NORMAL_MODE_BG: Color = CYAN;
+pub const INSERT_MODE_BG: Color = GREEN;
+pub const COMMAND_MODE_BG: Color = MAGENTA;
 
 // Sender name palette (rotating)
 pub const SENDER_COLORS: &[Color] = &[

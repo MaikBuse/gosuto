@@ -1,7 +1,7 @@
 use ratatui::{
     Frame,
     layout::Rect,
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
 };
 
@@ -67,16 +67,8 @@ impl RoomListAnimState {
 
         Some(
             Style::default()
-                .fg(Color::Rgb(
-                    (255.0 * inv) as u8,
-                    (255.0 * inv) as u8,
-                    (255.0 * inv) as u8,
-                ))
-                .bg(gradient::lerp_color(
-                    theme::CYAN,
-                    Color::Rgb(255, 255, 255),
-                    intensity,
-                ))
+                .fg(gradient::lerp_color(theme::BLACK, theme::WHITE, inv))
+                .bg(gradient::lerp_color(theme::CYAN, theme::WHITE, intensity))
                 .add_modifier(Modifier::BOLD),
         )
     }
@@ -119,12 +111,7 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
     let icons = app.config.icons();
 
     let title_line = if focused {
-        Line::from(gradient::gradient_spans(
-            " ROOMS ",
-            theme::CYAN,
-            theme::GRADIENT_TITLE_END,
-            true,
-        ))
+        gradient::gradient_title_line(" ROOMS ")
     } else {
         Line::from(vec![Span::styled(" ROOMS ", theme::title_style())])
     };
@@ -230,24 +217,7 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
 
                 // Fill background for selected row
                 if is_selected && focused {
-                    let w = inner.width as f32;
-                    for x in inner.x..inner.x + inner.width {
-                        let t = (x - inner.x) as f32 / w.max(1.0);
-                        let bg = gradient::lerp_color(
-                            theme::GRADIENT_HIGHLIGHT_START,
-                            theme::GRADIENT_HIGHLIGHT_END,
-                            t,
-                        );
-                        let fg = gradient::lerp_color(theme::BLACK, theme::CYAN, t);
-                        set_cell_if(
-                            buf,
-                            &bounds,
-                            x,
-                            y,
-                            ' ',
-                            Style::default().fg(fg).bg(bg).add_modifier(Modifier::BOLD),
-                        );
-                    }
+                    gradient::fill_row_highlight(buf, bounds, y, inner.x, inner.width, true);
                 } else if is_selected {
                     for x in inner.x..inner.x + inner.width {
                         set_cell_if(buf, &bounds, x, y, ' ', style);
@@ -293,24 +263,7 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
 
                     // Fill background for selected row
                     if is_selected && focused {
-                        let w = inner.width as f32;
-                        for x in inner.x..inner.x + inner.width {
-                            let t = (x - inner.x) as f32 / w.max(1.0);
-                            let bg = gradient::lerp_color(
-                                theme::GRADIENT_HIGHLIGHT_START,
-                                theme::GRADIENT_HIGHLIGHT_END,
-                                t,
-                            );
-                            let fg = gradient::lerp_color(theme::BLACK, theme::CYAN, t);
-                            set_cell_if(
-                                buf,
-                                &bounds,
-                                x,
-                                y,
-                                ' ',
-                                Style::default().fg(fg).bg(bg).add_modifier(Modifier::BOLD),
-                            );
-                        }
+                        gradient::fill_row_highlight(buf, bounds, y, inner.x, inner.width, true);
                     } else if is_selected {
                         for x in inner.x..inner.x + inner.width {
                             set_cell_if(buf, &bounds, x, y, ' ', style);

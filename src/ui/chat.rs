@@ -85,12 +85,7 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
     let title_text = format!(" > {} ", room_name);
     let title_line = if focused {
         let revealed = app.chat_title_reveal.revealed_text(&title_text);
-        Line::from(gradient::gradient_spans(
-            &revealed,
-            theme::CYAN,
-            theme::GRADIENT_TITLE_END,
-            true,
-        ))
+        gradient::gradient_title_line(&revealed)
     } else {
         app.chat_title_reveal
             .render_line(&title_text, theme::title_style())

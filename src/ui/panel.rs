@@ -33,57 +33,22 @@ fn is_box_char(ch: char) -> bool {
 /// box-drawing characters (i.e., title text).
 pub fn apply_gradient_border(buf: &mut Buffer, area: Rect, start: Color, end: Color, phase: f32) {
     let bounds = *buf.area();
-    if area.width < 2 || area.height < 2 {
-        return;
-    }
-
-    let x1 = area.x;
-    let x2 = area.x + area.width - 1;
-    let y1 = area.y;
-    let y2 = area.y + area.height - 1;
-
-    // Collect perimeter positions clockwise: top → right → bottom(rev) → left(rev)
-    let mut perimeter: Vec<(u16, u16)> = Vec::new();
-    // Top edge
-    for x in x1..=x2 {
-        perimeter.push((x, y1));
-    }
-    // Right edge (skip corner)
-    for y in (y1 + 1)..y2 {
-        perimeter.push((x2, y));
-    }
-    // Bottom edge (reversed)
-    for x in (x1..=x2).rev() {
-        perimeter.push((x, y2));
-    }
-    // Left edge (reversed, skip corners)
-    for y in ((y1 + 1)..y2).rev() {
-        perimeter.push((x1, y));
-    }
-
-    let total = perimeter.len();
-    if total == 0 {
-        return;
-    }
-
-    for (i, &(x, y)) in perimeter.iter().enumerate() {
+    gradient::walk_perimeter(area, |x, y, i, total| {
         if x < bounds.x
             || x >= bounds.x + bounds.width
             || y < bounds.y
             || y >= bounds.y + bounds.height
         {
-            continue;
+            return;
         }
         let cell = &mut buf[(x, y)];
         let ch = cell.symbol().chars().next().unwrap_or(' ');
         if !is_box_char(ch) {
-            continue;
+            return;
         }
-        let angle = (i as f32 / total as f32) * std::f32::consts::TAU + phase;
-        let t = (1.0 - angle.cos()) / 2.0;
-        let color = gradient::lerp_color(start, end, t);
+        let color = gradient::perimeter_color(i, total, start, end, phase);
         cell.set_style(Style::default().fg(color).bg(theme::BG));
-    }
+    });
 }
 
 /// Compute scroll offset to keep a selected item centered in visible area.
