@@ -1590,7 +1590,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1721,7 +1721,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2188,7 +2188,7 @@ dependencies = [
  "gobject-sys",
  "libc",
  "system-deps",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2320,9 +2320,9 @@ dependencies = [
 
 [[package]]
 name = "gosuto-libwebrtc"
-version = "0.3.27"
+version = "0.3.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "387f779aa08234c4b3771183bcfcb40445ed92863f9bfdb1d14a7f8072ef2adf"
+checksum = "b2a9290d7689faca1e4393da4e3f1b8bac6ad38dae5c6fdf3ba1d04921640425"
 dependencies = [
  "cxx",
  "glib",
@@ -2345,9 +2345,9 @@ dependencies = [
 
 [[package]]
 name = "gosuto-livekit"
-version = "0.7.33"
+version = "0.7.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "652bf9673b72a5a2bf49fa4950cb7b6f0c74ac35b58a55d18911ca635eb8e91f"
+checksum = "4317f56547befd8b6d14407c0da2cdd067f49007187bb4b3270c010c6b4f7976"
 dependencies = [
  "base64 0.22.1",
  "bmrng",
@@ -2372,9 +2372,9 @@ dependencies = [
 
 [[package]]
 name = "gosuto-webrtc-sys"
-version = "0.3.24"
+version = "0.3.25"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6cbccf089a3ca40ad4568c7966677e033712d6c24f76850d5975c8d21968007f"
+checksum = "f3c937196d7ff8d2ea70bac53dbd5322952288814d6be8516d0898202c203470"
 dependencies = [
  "cc",
  "cxx",
@@ -2387,9 +2387,9 @@ dependencies = [
 
 [[package]]
 name = "gosuto-webrtc-sys-build"
-version = "0.3.14"
+version = "0.3.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "71e13612509dc232a0758f06d851e821fe159156fc3fe409c2015ede069bdf13"
+checksum = "e863fb2946bd104430446b3d11aab551a4a822a6b3f9b4c4b3c449ca647fa76c"
 dependencies = [
  "anyhow",
  "fs2",
@@ -2688,7 +2688,7 @@ dependencies = [
  "js-sys",
  "log",
  "wasm-bindgen",
- "windows-core 0.58.0",
+ "windows-core 0.62.2",
 ]
 
 [[package]]
@@ -3956,7 +3956,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4773,7 +4773,7 @@ checksum = "22505a5c94da8e3b7c2996394d1c933236c4d743e81a410bcca4e6989fc066a4"
 dependencies = [
  "bytes",
  "heck 0.5.0",
- "itertools 0.10.5",
+ "itertools 0.11.0",
  "log",
  "multimap",
  "once_cell",
@@ -4793,7 +4793,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "81bddcdb20abf9501610992b6759a4c888aef7d1a7247ef75e2404275ac24af1"
 dependencies = [
  "anyhow",
- "itertools 0.10.5",
+ "itertools 0.11.0",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
@@ -5670,7 +5670,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5761,7 +5761,7 @@ dependencies = [
  "security-framework 3.7.0",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -6331,7 +6331,7 @@ dependencies = [
  "getrandom 0.4.2",
  "once_cell",
  "rustix 1.1.4",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -6895,7 +6895,7 @@ checksum = "51b70b87d15e91f553711b40df3048faf27a7a04e01e0ddc0cf9309f0af7c2ca"
 dependencies = [
  "memoffset",
  "tempfile",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -7443,7 +7443,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
