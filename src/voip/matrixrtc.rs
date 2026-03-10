@@ -633,7 +633,9 @@ pub async fn send_encryption_keys_to_device(
     key: &[u8],
     participants: &[(String, String)],
 ) -> Result<()> {
-    use std::collections::BTreeMap;
+    use matrix_sdk::encryption::identities::Device;
+    use matrix_sdk::ruma::OwnedUserId;
+    use matrix_sdk_base::crypto::CollectStrategy;
 
     let our_user_id = client.user_id().context("Not logged in")?;
     let our_device_id = device_id.to_string();
@@ -665,58 +667,61 @@ pub async fn send_encryption_keys_to_device(
             .context("Failed to serialize encryption key content")?,
     );
 
-    let mut messages: BTreeMap<
-        matrix_sdk::ruma::OwnedUserId,
-        BTreeMap<
-            matrix_sdk::ruma::to_device::DeviceIdOrAllDevices,
-            matrix_sdk::ruma::serde::Raw<matrix_sdk::ruma::events::AnyToDeviceEventContent>,
-        >,
-    > = BTreeMap::new();
+    let encryption = client.encryption();
+    let mut devices: Vec<Device> = Vec::new();
 
     for (user_id, participant_device_id) in participants {
         if user_id.as_str() == our_user_id.as_str() && participant_device_id == &our_device_id {
             continue;
         }
 
-        let user_id: matrix_sdk::ruma::OwnedUserId = match user_id.as_str().try_into() {
+        let uid: OwnedUserId = match user_id.as_str().try_into() {
             Ok(id) => id,
             Err(_) => continue,
         };
-        let device_key: matrix_sdk::ruma::to_device::DeviceIdOrAllDevices =
-            match participant_device_id.as_str().try_into() {
-                Ok(id) => id,
-                Err(_) => continue,
-            };
+        let did: OwnedDeviceId = participant_device_id.as_str().into();
 
-        messages
-            .entry(user_id)
-            .or_default()
-            .insert(device_key, raw_content.clone());
+        match encryption.get_device(&uid, &did).await {
+            Ok(Some(device)) => devices.push(device),
+            Ok(None) => {
+                warn!(
+                    "Device not found for {}:{}, cannot send encryption key",
+                    user_id, participant_device_id
+                );
+            }
+            Err(e) => {
+                warn!(
+                    "Failed to get device {}:{}: {}",
+                    user_id, participant_device_id, e
+                );
+            }
+        }
     }
 
-    if messages.is_empty() {
-        debug!("No other participants to send encryption keys to via to-device");
+    if devices.is_empty() {
+        debug!("No devices to send encryption keys to via to-device");
         return Ok(());
     }
 
-    let recipient_count = messages.values().map(|m| m.len()).sum::<usize>();
-    let event_type: matrix_sdk::ruma::events::ToDeviceEventType =
-        "io.element.call.encryption_keys".into();
-    let txn_id = matrix_sdk::ruma::TransactionId::new();
-
-    let request =
-        matrix_sdk::ruma::api::client::to_device::send_event_to_device::v3::Request::new_raw(
-            event_type, txn_id, messages,
-        );
-
-    client
-        .send(request)
+    let device_count = devices.len();
+    let failures = encryption
+        .encrypt_and_send_raw_to_device(
+            devices.iter().collect(),
+            "io.element.call.encryption_keys",
+            raw_content,
+            CollectStrategy::AllDevices,
+        )
         .await
-        .context("Failed to send encryption keys via to-device")?;
+        .context("Failed to send encrypted to-device encryption keys")?;
+
+    for (uid, did) in &failures {
+        warn!("Failed to encrypt encryption key for {}:{}", uid, did);
+    }
 
     info!(
         "Sent encryption keys via to-device to {} recipient(s) for room {}",
-        recipient_count, room_id
+        device_count - failures.len(),
+        room_id
     );
     Ok(())
 }

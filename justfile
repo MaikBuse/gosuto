@@ -18,3 +18,4 @@ logs:
 # Remove all log files
 clean-logs:
     rm -f ~/.local/share/gosuto/logs/gosuto.log*
+    rm -f ~/.local/share/gosuto-test/logs/gosuto.log*

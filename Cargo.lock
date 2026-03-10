@@ -2297,6 +2297,7 @@ dependencies = [
  "keyring",
  "libc",
  "matrix-sdk",
+ "matrix-sdk-base",
  "nix 0.31.2",
  "parking_lot",
  "ratatui",

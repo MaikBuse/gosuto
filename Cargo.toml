@@ -26,9 +26,11 @@ futures = "0.3"
 matrix-sdk = { version = "0.16", default-features = false, features = [
   "e2e-encryption",
   "automatic-room-key-forwarding",
+  "experimental-send-custom-to-device",
   "bundled-sqlite",
   "rustls-tls",
 ] }
+matrix-sdk-base = { version = "0.16", default-features = false, features = ["e2e-encryption"] }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
