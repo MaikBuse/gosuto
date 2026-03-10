@@ -1,10 +1,10 @@
 use anyhow::{Context as _, Result};
-use livekit::e2ee::key_provider::{KeyProvider, KeyProviderOptions};
-use livekit::e2ee::{E2eeOptions, EncryptionType};
-use livekit::options::TrackPublishOptions;
-use livekit::prelude::*;
-use livekit::webrtc::audio_source::RtcAudioSource;
-use livekit::webrtc::audio_source::native::NativeAudioSource;
+use gosuto_livekit::e2ee::key_provider::{KeyProvider, KeyProviderOptions};
+use gosuto_livekit::e2ee::{E2eeOptions, EncryptionType};
+use gosuto_livekit::options::TrackPublishOptions;
+use gosuto_livekit::prelude::*;
+use gosuto_livekit::webrtc::audio_source::RtcAudioSource;
+use gosuto_livekit::webrtc::audio_source::native::NativeAudioSource;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use tracing::{debug, info};

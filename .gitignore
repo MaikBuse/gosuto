@@ -1,5 +1,6 @@
 /target
 /docs
+.cargo/
 
 # Markdown files (except key docs)
 *.md

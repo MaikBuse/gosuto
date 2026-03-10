@@ -5,11 +5,11 @@ use std::time::Duration;
 use anyhow::Result;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use futures::StreamExt;
-use livekit::track::RemoteAudioTrack;
-use livekit::webrtc::audio_source::AudioSourceOptions;
-use livekit::webrtc::audio_source::native::NativeAudioSource;
-use livekit::webrtc::audio_stream::native::NativeAudioStream;
-use livekit::webrtc::prelude::AudioFrame;
+use gosuto_livekit::track::RemoteAudioTrack;
+use gosuto_livekit::webrtc::audio_source::AudioSourceOptions;
+use gosuto_livekit::webrtc::audio_source::native::NativeAudioSource;
+use gosuto_livekit::webrtc::audio_stream::native::NativeAudioStream;
+use gosuto_livekit::webrtc::prelude::AudioFrame;
 use rubato::{
     Async, FixedAsync, Resampler, SincInterpolationParameters, SincInterpolationType,
     WindowFunction,

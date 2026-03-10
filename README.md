@@ -7,9 +7,9 @@
  ╚═════╝  ╚═════╝ ╚══════╝ ╚═════╝    ╚═╝    ╚═════╝
 ```
 
-**Gōsuto** (ゴースト) — _ghost_ — a cyberpunk terminal Matrix client. Efficient by design: vim motions for navigation, <60MB of RAM for everything.
+**Gōsuto** (ゴースト) — _ghost_ — a cyberpunk terminal Matrix client.
 
-https://github.com/user-attachments/assets/c58be922-67d6-400c-aebc-69db3c62a24f
+<https://github.com/user-attachments/assets/c58be922-67d6-400c-aebc-69db3c62a24f>
 
 ## ═══ why
 
@@ -17,6 +17,7 @@ I switched from Discord to Matrix and couldn't find a native terminal client tha
 
 ## ═══ what it does
 
+- Efficient by design — vim motions for navigation, <60MB of RAM for everything.
 - Vim-first navigation — Normal, Insert, Command modes
 - Encrypted chat — rooms, spaces, DMs, full E2EE with automatic key forwarding
 - VoIP calls — LiveKit-based voice with push-to-talk support
@@ -111,9 +112,19 @@ GOSUTO_LOG=debug gosuto                        # Linux
 $env:GOSUTO_LOG="debug"; .\gosuto.exe          # Windows (PowerShell)
 ```
 
-## ═══ limitations
+## ═══ voip & prebuilt libwebrtc
 
-- **E2EE calls with Element X** — Voice calls between Gosuto and Element X are not end-to-end encrypted. Element X uses a JavaScript-based encryption implementation (HKDF key derivation) that differs from the native C++ implementation (PBKDF2) used by Gosuto. Calls between Gosuto users work with full E2EE.
+Gosuto uses a [fork](https://github.com/MaikBuse/gosuto-livekit-sdks) of the [LiveKit Rust SDK](https://github.com/livekit/rust-sdks) for voice calls. The fork adds configurable key derivation (HKDF) so E2EE calls interoperate with Element X, and points the build script at prebuilt libwebrtc m137 binaries hosted as GitHub release assets on the fork repo.
+
+The prebuilt `libwebrtc.a` (Linux) and `webrtc.lib` (Windows) are compiled from the [webrtc-sdk/webrtc m137_release branch](https://github.com/webrtc-sdk/webrtc/tree/m137_release) using the build scripts and patches checked into the fork. If you prefer to verify the native code yourself, you can build libwebrtc from source and point your build at it:
+
+```bash
+# Set LK_CUSTOM_WEBRTC to skip the prebuilt download
+export LK_CUSTOM_WEBRTC=/path/to/your/libwebrtc/build
+cargo build --release
+```
+
+See the [build scripts](https://github.com/MaikBuse/gosuto-livekit-sdks/tree/main/webrtc-sys/libwebrtc) in the fork repo for full instructions.
 
 ## ═══ license
 

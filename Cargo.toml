@@ -36,7 +36,7 @@ serde_json = "1"
 toml = "1.0"
 
 # VoIP
-livekit = { version = "0.7", features = ["rustls-tls-native-roots"] }
+gosuto-livekit = { version = "0.7", features = ["rustls-tls-native-roots"] }
 cpal = "0.17"
 rubato = "1"
 audioadapter-buffers = "2"
