@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.8.0](https://github.com/MaikBuse/gosuto/compare/v0.7.0...v0.8.0) (2026-03-10)
+
+
+### Features
+
+* add gradient color system and animated UI effects ([b38594a](https://github.com/MaikBuse/gosuto/commit/b38594a7eed95b9154b1426d6817ea82b1b5a3e9))
+* add release build checks for Linux and Windows to CI ([6af0967](https://github.com/MaikBuse/gosuto/commit/6af09677b09002b6c45b79e02b5aeabf0993b8e6))
+* switch to gosuto-livekit fork with configurable HKDF key derivation ([77c2798](https://github.com/MaikBuse/gosuto/commit/77c2798f21fe24766ed2f7afee751e62b2b709a4))
+* xy ([e9e2abb](https://github.com/MaikBuse/gosuto/commit/e9e2abb33235bfb321b61e6b86a55d565b461f44))
+* xy ([157af6f](https://github.com/MaikBuse/gosuto/commit/157af6f1d763577dab73274b711b945bfc7dc393))
+* xy ([157af6f](https://github.com/MaikBuse/gosuto/commit/157af6f1d763577dab73274b711b945bfc7dc393))
+* xy ([157af6f](https://github.com/MaikBuse/gosuto/commit/157af6f1d763577dab73274b711b945bfc7dc393))
+
+
+### Bug Fixes
+
+* Olm-encrypt to-device key exchange and fix keys format for Element X ([b5ba59f](https://github.com/MaikBuse/gosuto/commit/b5ba59f05802f2ee4431fd16a21cd71b2c4415f1))
+* show DM room display name consistently even when it matches localpart ([91c41ea](https://github.com/MaikBuse/gosuto/commit/91c41ea4cc62c6a4c9c2d5a8202fcfd8af616042))
+* update gosuto-livekit to 0.7.33 for Windows MAX_PATH fix ([878e7c7](https://github.com/MaikBuse/gosuto/commit/878e7c76bbe955561fcfb7962ae0d242e3856318))
+* update gosuto-livekit to 0.7.34 for Windows MAX_PATH fix ([afa2fea](https://github.com/MaikBuse/gosuto/commit/afa2feab287f591ddd293ce59a524dd546355793))
+* update gosuto-livekit to 0.7.35 for Windows MAX_PATH fix ([3994577](https://github.com/MaikBuse/gosuto/commit/39945779b6c45754804b842ea3248bffa8a78d20))
+* use Swatinem/rust-cache in release workflow to cache compiled artifacts ([9c7a3da](https://github.com/MaikBuse/gosuto/commit/9c7a3da6b085ec8bb8ee8e6605e4cc6d2cd44286))
+
 ## [0.7.0](https://github.com/MaikBuse/gosuto/compare/v0.6.0...v0.7.0) (2026-03-09)
 
 
