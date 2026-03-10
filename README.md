@@ -12,7 +12,7 @@
     <img src="assets/logo.svg" alt="Logo" width="240">
   </a>
 
-  <h3 align="center">Gosuto</h3>
+  <h3 align="center">Gōsuto</h3>
 
   <p align="center">
     ゴースト — <em>ghost</em> — a cyberpunk terminal Matrix client
@@ -56,7 +56,7 @@
 
 <https://github.com/user-attachments/assets/c58be922-67d6-400c-aebc-69db3c62a24f>
 
-Gosuto is a native terminal client for the [Matrix](https://matrix.org/) protocol, built for people who live in the terminal. It ships as a single Rust binary that handles chat, end-to-end encryption, and voice calls — no browser engine, no heavy runtime, just a lightweight TUI that stays out of your way.
+Gōsuto is a native terminal client for the [Matrix](https://matrix.org/) protocol, built for people who live in the terminal. It ships as a single Rust binary that handles chat, end-to-end encryption, and voice calls — no browser engine, no heavy runtime, just a lightweight TUI that stays out of your way.
 
 The goal is simple: a fast, keyboard-driven Matrix experience with full voice support and under 60 MB of RAM.
 
@@ -79,6 +79,7 @@ The goal is simple: a fast, keyboard-driven Matrix experience with full voice su
 - **VoIP calls** — LiveKit-based voice with push-to-talk support
 - **Room management** — create, join, leave, view member lists and power levels
 - **Visual effects** — matrix rain, glitch, text reveal animations (all togglable)
+- **Element compatible** — tested against Element Web and Element X
 - **Lightweight** — under 60 MB of RAM for everything
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
@@ -128,18 +129,18 @@ cargo build --release
 .\target\release\gosuto.exe    # Windows
 ```
 
-Run `gosuto` and log in with your Matrix homeserver, username, and password.
+Run `gōsuto` and log in with your Matrix homeserver, username, and password.
 
 ### Supported Terminals
 
-Gosuto works on any modern terminal emulator — Kitty, WezTerm, Ghostty, Foot, Alacritty, GNOME Terminal, Windows Terminal, and others. Terminal multiplexers (tmux, screen) are also supported.
+Gōsuto works on any modern terminal emulator — Kitty, WezTerm, Ghostty, Foot, Alacritty, GNOME Terminal, Windows Terminal, and others. Terminal multiplexers (tmux, screen) are also supported.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 <!-- USAGE -->
 ## Usage
 
-Gosuto has a **which-key popup** — press a key (e.g. the spacebar) in normal mode and it shows you what's available. Command mode (`:`) has tab completion and suggestions. Between those two, you shouldn't need to memorize anything.
+Gōsuto has a **which-key popup** — press a key (e.g. the spacebar) in normal mode and it shows you what's available. Command mode (`:`) has tab completion and suggestions. Between those two, you shouldn't need to memorize anything.
 
 ### Config
 
@@ -182,7 +183,7 @@ $env:GOSUTO_LOG="debug"; .\gosuto.exe          # Windows (PowerShell)
 <!-- VOIP -->
 ## VoIP & Prebuilt libwebrtc
 
-Gosuto uses a [fork](https://github.com/MaikBuse/gosuto-livekit-sdks) of the [LiveKit Rust SDK](https://github.com/livekit/rust-sdks) for voice calls. The fork adds configurable key derivation (HKDF) so E2EE calls interoperate with Element X, and points the build script at prebuilt libwebrtc m137 binaries hosted as GitHub release assets on the fork repo.
+Gōsuto uses a [fork](https://github.com/MaikBuse/gosuto-livekit-sdks) of the [LiveKit Rust SDK](https://github.com/livekit/rust-sdks) for voice calls. The fork adds configurable key derivation (HKDF) so E2EE calls interoperate with Element X, and points the build script at prebuilt libwebrtc m137 binaries hosted as GitHub release assets on the fork repo.
 
 The prebuilt `libwebrtc.a` (Linux) and `webrtc.lib` (Windows) are compiled from the [webrtc-sdk/webrtc m137_release branch](https://github.com/webrtc-sdk/webrtc/tree/m137_release) using the build scripts and patches checked into the fork. If you prefer to verify the native code yourself, you can build libwebrtc from source and point your build at it:
 
