@@ -11,7 +11,7 @@ const POPUP_WIDTH: u16 = 48;
 const POPUP_HEIGHT: u16 = 14;
 const MENU_HEIGHT: u16 = 12;
 
-pub fn render(state: &VerificationModalState, frame: &mut Frame) {
+pub fn render(state: &VerificationModalState, frame: &mut Frame, phase: f32) {
     let area = frame.area();
     if area.width < 30 || area.height < 10 {
         return;
@@ -28,7 +28,7 @@ pub fn render(state: &VerificationModalState, frame: &mut Frame) {
     let buf = frame.buffer_mut();
     let bounds = *buf.area();
 
-    popup::render_popup_chrome(buf, &bounds, popup_area, "VERIFICATION");
+    popup::render_popup_chrome(buf, &bounds, popup_area, "VERIFICATION", phase);
 
     let left = popup_area.x + 3;
     let right = popup_area.x + popup_area.width.saturating_sub(3);

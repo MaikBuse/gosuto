@@ -10,7 +10,7 @@ use crate::app::App;
 use crate::input::FocusPanel;
 use crate::ui::icons::Icons;
 use crate::ui::tooltip::{self, Direction};
-use crate::ui::{panel, theme};
+use crate::ui::{gradient, panel, theme};
 
 /// IRC-style power level prefix
 fn power_prefix(power_level: i64, icons: &Icons) -> &str {
@@ -38,9 +38,18 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
     let member_count = app.members_list.members.len();
     let title = format!(" MEMBERS ({}) ", member_count);
 
-    let title_line = app
-        .members_title_reveal
-        .render_line(&title, theme::title_style());
+    let title_line = if focused {
+        let revealed = app.members_title_reveal.revealed_text(&title);
+        Line::from(gradient::gradient_spans(
+            &revealed,
+            theme::CYAN,
+            theme::GRADIENT_TITLE_END,
+            true,
+        ))
+    } else {
+        app.members_title_reveal
+            .render_line(&title, theme::title_style())
+    };
 
     let block = panel::block(title_line, focused);
 
@@ -97,6 +106,54 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
     }
 
     frame.render_stateful_widget(list, area, &mut list_state);
+
+    if focused {
+        panel::apply_gradient_border(
+            frame.buffer_mut(),
+            area,
+            theme::GRADIENT_BORDER_START,
+            theme::GRADIENT_BORDER_END,
+            app.room_list_anim.pulse_phase,
+        );
+
+        // Post-pass: gradient highlight on selected row
+        if !app.members_list.members.is_empty() {
+            let inner = ratatui::layout::Rect::new(
+                area.x + 1,
+                area.y + 1,
+                area.width.saturating_sub(2),
+                area.height.saturating_sub(2),
+            );
+            let inner_height = inner.height as usize;
+            let scroll_off = scroll_offset(app, area);
+            let sel = app.members_list.selected;
+            if sel >= scroll_off && sel < scroll_off + inner_height {
+                let row_y = inner.y + (sel - scroll_off) as u16;
+                let buf = frame.buffer_mut();
+                let bounds = *buf.area();
+                let w = inner.width as f32;
+                for x in inner.x..inner.x + inner.width {
+                    if x >= bounds.x + bounds.width || row_y >= bounds.y + bounds.height {
+                        continue;
+                    }
+                    let t = (x - inner.x) as f32 / w.max(1.0);
+                    let bg = gradient::lerp_color(
+                        theme::GRADIENT_HIGHLIGHT_START,
+                        theme::GRADIENT_HIGHLIGHT_END,
+                        t,
+                    );
+                    let fg = gradient::lerp_color(theme::BLACK, theme::CYAN, t);
+                    let cell = &mut buf[(x, row_y)];
+                    cell.set_style(
+                        Style::default()
+                            .fg(fg)
+                            .bg(bg)
+                            .add_modifier(ratatui::style::Modifier::BOLD),
+                    );
+                }
+            }
+        }
+    }
 }
 
 /// Render a floating tooltip showing the full member label when it overflows the pane.

@@ -5,14 +5,14 @@ use ratatui::style::{Modifier, Style};
 
 use crate::state::AudioSettingsState;
 use crate::ui::icons::Icons;
-use crate::ui::{form_field, popup, theme};
+use crate::ui::{form_field, gradient, popup, theme};
 
 const POPUP_WIDTH: u16 = 54;
 const POPUP_HEIGHT: u16 = 20;
 
 const BAR_WIDTH: usize = 20;
 
-pub fn render(state: &AudioSettingsState, icons: &Icons, frame: &mut Frame) {
+pub fn render(state: &AudioSettingsState, icons: &Icons, frame: &mut Frame, phase: f32) {
     let area = frame.area();
     if area.width < 30 || area.height < 14 {
         return;
@@ -24,7 +24,7 @@ pub fn render(state: &AudioSettingsState, icons: &Icons, frame: &mut Frame) {
     let buf = frame.buffer_mut();
     let bounds = *buf.area();
 
-    popup::render_popup_chrome(buf, &bounds, popup_area, "AUDIO CONFIGURATION");
+    popup::render_popup_chrome(buf, &bounds, popup_area, "AUDIO CONFIGURATION", phase);
 
     let visible = state.visible_fields();
     let left = popup_area.x + 3;
@@ -197,7 +197,6 @@ fn render_volume_bar(
     selected: bool,
 ) {
     let filled = (value * BAR_WIDTH as f32).round() as usize;
-    let fill_color = if selected { theme::CYAN } else { theme::DIM };
     let pct = format!("{:>3}%", (value * 100.0).round() as u32);
 
     popup::set_cell(
@@ -212,7 +211,11 @@ fn render_volume_bar(
     for i in 0..BAR_WIDTH {
         let ch = if i < filled { '█' } else { '░' };
         let color = if i < filled {
-            fill_color
+            if selected {
+                gradient::lerp_color(theme::CYAN, theme::MAGENTA, i as f32 / BAR_WIDTH as f32)
+            } else {
+                theme::DIM
+            }
         } else {
             theme::BAR_EMPTY
         };
@@ -235,13 +238,14 @@ fn render_volume_bar(
         Style::default().fg(theme::DIM).bg(theme::BG),
     );
 
+    let pct_color = if selected { theme::CYAN } else { theme::DIM };
     popup::write_str(
         buf,
         bounds,
         x + 2 + BAR_WIDTH as u16,
         row,
         &pct,
-        Style::default().fg(fill_color).bg(theme::BG),
+        Style::default().fg(pct_color).bg(theme::BG),
     );
 }
 
@@ -270,10 +274,11 @@ fn render_mic_meter(buf: &mut Buffer, bounds: &Rect, left: u16, right: u16, row:
     for i in 0..bar_width {
         let ch = if i < filled { '▓' } else { '░' };
         let color = if i < filled {
-            if (i as f32 / bar_width as f32) > 0.8 {
-                theme::RED
+            let t = i as f32 / bar_width as f32;
+            if t < 0.5 {
+                gradient::lerp_color(theme::GREEN, theme::YELLOW, t * 2.0)
             } else {
-                theme::GREEN
+                gradient::lerp_color(theme::YELLOW, theme::RED, (t - 0.5) * 2.0)
             }
         } else {
             theme::METER_EMPTY

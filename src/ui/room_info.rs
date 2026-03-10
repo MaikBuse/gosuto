@@ -8,7 +8,7 @@ use crate::ui::{form_field, popup, theme};
 const POPUP_WIDTH: u16 = 54;
 const POPUP_HEIGHT: u16 = 20;
 
-pub fn render(state: &RoomInfoState, icons: &Icons, frame: &mut Frame) {
+pub fn render(state: &RoomInfoState, icons: &Icons, frame: &mut Frame, phase: f32) {
     let area = frame.area();
     if area.width < 30 || area.height < 12 {
         return;
@@ -20,7 +20,7 @@ pub fn render(state: &RoomInfoState, icons: &Icons, frame: &mut Frame) {
     let buf = frame.buffer_mut();
     let bounds = *buf.area();
 
-    popup::render_popup_chrome(buf, &bounds, popup_area, "ROOM EDIT");
+    popup::render_popup_chrome(buf, &bounds, popup_area, "ROOM EDIT", phase);
 
     let left = popup_area.x + 3;
     let right = popup_area.x + popup_area.width.saturating_sub(3);

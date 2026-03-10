@@ -8,6 +8,7 @@ pub mod create_room;
 pub mod effects;
 pub mod emoji_data;
 pub mod form_field;
+pub mod gradient;
 pub mod icons;
 pub mod input_bar;
 pub mod invite_prompt;
@@ -98,6 +99,7 @@ pub fn render(app: &mut App, frame: &mut Frame) {
     members::render_tooltip(app, frame, layout.members_list);
 
     let icons = app.config.icons();
+    let border_phase = app.room_list_anim.pulse_phase;
 
     // Render call overlay on top for any active call state or incoming ringing
     if let Some(ref info) = app.call_info {
@@ -127,37 +129,37 @@ pub fn render(app: &mut App, frame: &mut Frame) {
 
     // Audio settings modal overlay
     if app.audio_settings.open {
-        audio_settings::render(&app.audio_settings, icons, frame);
+        audio_settings::render(&app.audio_settings, icons, frame, border_phase);
     }
 
     // Room info modal overlay
     if app.room_info.open {
-        room_info::render(&app.room_info, icons, frame);
+        room_info::render(&app.room_info, icons, frame, border_phase);
     }
 
     // Create room modal overlay
     if app.create_room.open {
-        create_room::render(&app.create_room, icons, frame);
+        create_room::render(&app.create_room, icons, frame, border_phase);
     }
 
     // User config modal overlay
     if app.user_config.open {
-        configure::render(&app.user_config, icons, frame);
+        configure::render(&app.user_config, icons, frame, border_phase);
     }
 
     // Change password modal overlay
     if app.change_password.open {
-        change_password::render(&app.change_password, icons, frame);
+        change_password::render(&app.change_password, icons, frame, border_phase);
     }
 
     // Recovery modal
     if let Some(ref state) = app.recovery {
-        recovery_modal::render(state, frame);
+        recovery_modal::render(state, frame, border_phase);
     }
 
     // Verification modal
     if let Some(ref verify_state) = app.verification_modal {
-        verify_modal::render(verify_state, frame);
+        verify_modal::render(verify_state, frame, border_phase);
     }
 
     // Invite prompt

@@ -149,13 +149,14 @@ fn category_title(cat: WhichKeyCategory) -> &'static str {
 // ── Rendering ──────────────────────────────────────────
 
 pub fn render(which_key: Option<WhichKeyCategory>, app: &App, frame: &mut Frame) {
+    let phase = app.room_list_anim.pulse_phase;
     match which_key {
-        None => render_root(frame),
-        Some(cat) => render_category(cat, app, frame),
+        None => render_root(frame, phase),
+        Some(cat) => render_category(cat, app, frame, phase),
     }
 }
 
-fn render_root(frame: &mut Frame) {
+fn render_root(frame: &mut Frame, phase: f32) {
     let area = frame.area();
     if area.width < 30 || area.height < 10 {
         return;
@@ -167,7 +168,7 @@ fn render_root(frame: &mut Frame) {
     let buf = frame.buffer_mut();
     let bounds = *buf.area();
 
-    popup::render_popup_chrome(buf, &bounds, popup_area, "LEADER");
+    popup::render_popup_chrome(buf, &bounds, popup_area, "LEADER", phase);
 
     let left = popup_area.x + 3;
     let col2 = popup_area.x + popup_w / 2 + 1;
@@ -210,7 +211,7 @@ fn render_root(frame: &mut Frame) {
     popup::render_hint(buf, &bounds, popup_area, "Esc close");
 }
 
-fn render_category(cat: WhichKeyCategory, app: &App, frame: &mut Frame) {
+fn render_category(cat: WhichKeyCategory, app: &App, frame: &mut Frame, phase: f32) {
     let area = frame.area();
     if area.width < 30 || area.height < 10 {
         return;
@@ -224,7 +225,7 @@ fn render_category(cat: WhichKeyCategory, app: &App, frame: &mut Frame) {
     let buf = frame.buffer_mut();
     let bounds = *buf.area();
 
-    popup::render_popup_chrome(buf, &bounds, popup_area, "");
+    popup::render_popup_chrome(buf, &bounds, popup_area, "", phase);
 
     let title = format!("LEADER › {}", category_title(cat));
     popup::render_title(buf, &bounds, popup_area, theme::CYAN, &title);

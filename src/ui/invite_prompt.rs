@@ -32,7 +32,13 @@ pub fn render(app: &App, frame: &mut Frame) {
     let buf = frame.buffer_mut();
     let bounds = *buf.area();
 
-    popup::render_popup_chrome(buf, &bounds, popup_area, "INVITATION");
+    popup::render_popup_chrome(
+        buf,
+        &bounds,
+        popup_area,
+        "INVITATION",
+        app.room_list_anim.pulse_phase,
+    );
 
     let left = popup_area.x + 3;
     let inner_w = popup_area.width.saturating_sub(6) as usize;

@@ -78,6 +78,11 @@ impl TextReveal {
         Line::from(spans)
     }
 
+    /// Returns the text after scramble/reveal as a `String` (for gradient title use).
+    pub fn revealed_text(&self, text: &str) -> String {
+        self.render_chars(text).into_iter().collect()
+    }
+
     /// Returns scrambled/revealed chars for direct buffer writes (used by TransmissionPopup).
     pub fn render_chars(&self, text: &str) -> Vec<char> {
         if !self.active {

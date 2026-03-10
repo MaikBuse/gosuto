@@ -9,7 +9,7 @@ use crate::app::App;
 use crate::input::FocusPanel;
 use crate::state::{DisplayRow, RoomCategory};
 use crate::ui::tooltip::{self, Direction, set_cell_if, write_str_clipped};
-use crate::ui::{panel, theme};
+use crate::ui::{gradient, panel, theme};
 
 pub struct RoomListAnimState {
     pub pulse_phase: f32,
@@ -55,27 +55,28 @@ impl RoomListAnimState {
         let factor = 0.45 + (t + shimmer * 0.08) * 0.55;
 
         Style::default()
-            .fg(Color::Rgb(0, 0, 0))
-            .bg(Color::Rgb(
-                (20.0 * factor) as u8,
-                (255.0 * factor) as u8,
-                (255.0 * factor) as u8,
-            ))
+            .fg(theme::BLACK)
+            .bg(gradient::scale_color(theme::PULSE_BASE, factor))
             .add_modifier(Modifier::BOLD)
     }
 
     fn flash_style(&self) -> Option<Style> {
         let remaining = self.flash_timer?;
         let intensity = (remaining as f32 / 250.0).powi(2);
+        let inv = 1.0 - intensity;
 
         Some(
             Style::default()
                 .fg(Color::Rgb(
-                    (255.0 * (1.0 - intensity)) as u8,
-                    (255.0 * (1.0 - intensity)) as u8,
-                    (255.0 * (1.0 - intensity)) as u8,
+                    (255.0 * inv) as u8,
+                    (255.0 * inv) as u8,
+                    (255.0 * inv) as u8,
                 ))
-                .bg(Color::Rgb((255.0 * intensity) as u8, 255, 255))
+                .bg(gradient::lerp_color(
+                    theme::CYAN,
+                    Color::Rgb(255, 255, 255),
+                    intensity,
+                ))
                 .add_modifier(Modifier::BOLD),
         )
     }
@@ -95,7 +96,7 @@ impl RoomListAnimState {
             // Static cyan highlight when panel is not focused
             Some(
                 Style::default()
-                    .fg(Color::Rgb(0, 0, 0))
+                    .fg(theme::BLACK)
                     .bg(theme::CYAN)
                     .add_modifier(Modifier::BOLD),
             )
@@ -117,12 +118,29 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
     let focused = app.vim.focus == FocusPanel::RoomList;
     let icons = app.config.icons();
 
-    let block = panel::block(
-        Line::from(vec![Span::styled(" ROOMS ", theme::title_style())]),
-        focused,
-    );
+    let title_line = if focused {
+        Line::from(gradient::gradient_spans(
+            " ROOMS ",
+            theme::CYAN,
+            theme::GRADIENT_TITLE_END,
+            true,
+        ))
+    } else {
+        Line::from(vec![Span::styled(" ROOMS ", theme::title_style())])
+    };
+    let block = panel::block(title_line, focused);
 
     frame.render_widget(block, area);
+
+    if focused {
+        panel::apply_gradient_border(
+            frame.buffer_mut(),
+            area,
+            theme::GRADIENT_BORDER_START,
+            theme::GRADIENT_BORDER_END,
+            app.room_list_anim.pulse_phase,
+        );
+    }
 
     // Inner area (inside borders)
     let inner = Rect::new(
@@ -211,7 +229,26 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
                     });
 
                 // Fill background for selected row
-                if is_selected {
+                if is_selected && focused {
+                    let w = inner.width as f32;
+                    for x in inner.x..inner.x + inner.width {
+                        let t = (x - inner.x) as f32 / w.max(1.0);
+                        let bg = gradient::lerp_color(
+                            theme::GRADIENT_HIGHLIGHT_START,
+                            theme::GRADIENT_HIGHLIGHT_END,
+                            t,
+                        );
+                        let fg = gradient::lerp_color(theme::BLACK, theme::CYAN, t);
+                        set_cell_if(
+                            buf,
+                            &bounds,
+                            x,
+                            y,
+                            ' ',
+                            Style::default().fg(fg).bg(bg).add_modifier(Modifier::BOLD),
+                        );
+                    }
+                } else if is_selected {
                     for x in inner.x..inner.x + inner.width {
                         set_cell_if(buf, &bounds, x, y, ' ', style);
                     }
@@ -235,7 +272,7 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
                 if *collapsed && *unread_count > 0 && !is_selected {
                     let badge = format!("({})", unread_count);
                     let badge_x = inner.x + inner.width - badge.len() as u16 - 1;
-                    let badge_style = Style::default().fg(theme::CYAN).bg(theme::BG);
+                    let badge_style = Style::default().fg(theme::CYAN).bg(theme::UNREAD_BADGE_BG);
                     write_str_clipped(buf, badge_x, y, &badge, badge_style, &inner, false);
                 }
             }
@@ -255,7 +292,26 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
                         .unwrap_or_else(theme::text_style);
 
                     // Fill background for selected row
-                    if is_selected {
+                    if is_selected && focused {
+                        let w = inner.width as f32;
+                        for x in inner.x..inner.x + inner.width {
+                            let t = (x - inner.x) as f32 / w.max(1.0);
+                            let bg = gradient::lerp_color(
+                                theme::GRADIENT_HIGHLIGHT_START,
+                                theme::GRADIENT_HIGHLIGHT_END,
+                                t,
+                            );
+                            let fg = gradient::lerp_color(theme::BLACK, theme::CYAN, t);
+                            set_cell_if(
+                                buf,
+                                &bounds,
+                                x,
+                                y,
+                                ' ',
+                                Style::default().fg(fg).bg(bg).add_modifier(Modifier::BOLD),
+                            );
+                        }
+                    } else if is_selected {
                         for x in inner.x..inner.x + inner.width {
                             set_cell_if(buf, &bounds, x, y, ' ', style);
                         }
@@ -287,7 +343,8 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
                     if room.unread_count > 0 && !is_selected {
                         let badge = format!("({})", room.unread_count);
                         let badge_x = inner.x + inner.width - badge.len() as u16 - 1;
-                        let badge_style = Style::default().fg(theme::CYAN).bg(theme::BG);
+                        let badge_style =
+                            Style::default().fg(theme::CYAN).bg(theme::UNREAD_BADGE_BG);
                         write_str_clipped(buf, badge_x, y, &badge, badge_style, &inner, false);
                     }
                 }

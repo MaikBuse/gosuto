@@ -8,7 +8,7 @@ use ratatui::{
 
 use crate::app::App;
 use crate::input::{FocusPanel, VimMode};
-use crate::ui::theme;
+use crate::ui::{panel, theme};
 
 pub fn render(app: &App, frame: &mut Frame, area: Rect) {
     let (content, style) = match app.vim.mode {
@@ -97,6 +97,39 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
     let paragraph = Paragraph::new(all_lines).block(block);
 
     frame.render_widget(paragraph, area);
+
+    // Gradient border in Insert/Command mode
+    let phase = app.room_list_anim.pulse_phase;
+    match app.vim.mode {
+        VimMode::Insert => {
+            panel::apply_gradient_border(
+                frame.buffer_mut(),
+                area,
+                theme::GREEN,
+                theme::INPUT_BORDER_GREEN_DIM,
+                phase,
+            );
+        }
+        VimMode::Command => {
+            panel::apply_gradient_border(
+                frame.buffer_mut(),
+                area,
+                theme::MAGENTA,
+                theme::INPUT_BORDER_MAGENTA_DIM,
+                phase,
+            );
+        }
+        VimMode::Normal if app.vim.searching => {
+            panel::apply_gradient_border(
+                frame.buffer_mut(),
+                area,
+                theme::CYAN,
+                theme::GRADIENT_BORDER_END,
+                phase,
+            );
+        }
+        VimMode::Normal => {}
+    }
 
     // Show cursor in insert/command mode
     if app.vim.mode == VimMode::Insert || app.vim.mode == VimMode::Command || app.vim.searching {

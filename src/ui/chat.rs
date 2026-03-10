@@ -10,7 +10,7 @@ use ratatui_image::ResizeEncodeRender;
 use crate::app::App;
 use crate::input::FocusPanel;
 use crate::state::{AuthState, MessageContent};
-use crate::ui::{panel, theme};
+use crate::ui::{gradient, panel, theme};
 
 enum ChatSegment<'a> {
     DateSeparator(Line<'a>),
@@ -83,9 +83,18 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
         .unwrap_or_else(|| "No room selected".to_string());
 
     let title_text = format!(" > {} ", room_name);
-    let title_line = app
-        .chat_title_reveal
-        .render_line(&title_text, theme::title_style());
+    let title_line = if focused {
+        let revealed = app.chat_title_reveal.revealed_text(&title_text);
+        Line::from(gradient::gradient_spans(
+            &revealed,
+            theme::CYAN,
+            theme::GRADIENT_TITLE_END,
+            true,
+        ))
+    } else {
+        app.chat_title_reveal
+            .render_line(&title_text, theme::title_style())
+    };
 
     let block = panel::block(title_line, focused);
 
@@ -116,6 +125,15 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
             )))
         };
         frame.render_widget(placeholder.block(block), area);
+        if focused {
+            panel::apply_gradient_border(
+                frame.buffer_mut(),
+                area,
+                theme::GRADIENT_BORDER_START,
+                theme::GRADIENT_BORDER_END,
+                app.room_list_anim.pulse_phase,
+            );
+        }
         return;
     }
 
@@ -128,18 +146,38 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
         let msg_date = msg.timestamp.date_naive();
         if last_date != Some(msg_date) {
             let date_str = msg.timestamp.format("%B %-d, %Y").to_string();
-            let sep = format!("─── {} ───", date_str);
-            segments.push(ChatSegment::DateSeparator(Line::from(Span::styled(
-                sep,
-                theme::dim_style(),
-            ))));
+            let prefix = "─── ";
+            let suffix = " ───";
+            let full = format!("{}{}{}", prefix, date_str, suffix);
+            let chars: Vec<char> = full.chars().collect();
+            let total = chars.len();
+            let mid = total as f32 / 2.0;
+            let spans: Vec<Span> = chars
+                .into_iter()
+                .enumerate()
+                .map(|(i, ch)| {
+                    let dist = ((i as f32) - mid).abs() / mid.max(1.0);
+                    let color = gradient::lerp_color(
+                        theme::GRADIENT_DATE_BRIGHT,
+                        theme::GRADIENT_DATE_DIM,
+                        dist,
+                    );
+                    Span::styled(ch.to_string(), Style::default().fg(color))
+                })
+                .collect();
+            segments.push(ChatSegment::DateSeparator(Line::from(spans)));
             last_date = Some(msg_date);
         }
 
         let time = msg.timestamp.format("%H:%M").to_string();
         let sender_color = theme::sender_color(&msg.sender);
 
-        let mut spans = vec![Span::styled(format!("{} ", time), theme::dim_style())];
+        let mut spans = gradient::gradient_spans(
+            &format!("{} ", time),
+            theme::DIM,
+            theme::TIMESTAMP_BRIGHT,
+            false,
+        );
 
         if msg.verified == Some(false) {
             let icons = app.config.icons();
@@ -304,6 +342,16 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
 
     // Render the block border first
     frame.render_widget(block, area);
+
+    if focused {
+        panel::apply_gradient_border(
+            frame.buffer_mut(),
+            area,
+            theme::GRADIENT_BORDER_START,
+            theme::GRADIENT_BORDER_END,
+            app.room_list_anim.pulse_phase,
+        );
+    }
 
     // Inner area (inside borders)
     let inner = Rect {

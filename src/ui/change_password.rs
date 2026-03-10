@@ -11,7 +11,7 @@ const POPUP_HEIGHT: u16 = 12;
 
 const FIELDS: [&str; 3] = ["CURRENT", "NEW", "CONFIRM"];
 
-pub fn render(state: &ChangePasswordState, icons: &Icons, frame: &mut Frame) {
+pub fn render(state: &ChangePasswordState, icons: &Icons, frame: &mut Frame, phase: f32) {
     let area = frame.area();
     if area.width < 30 || area.height < 12 {
         return;
@@ -23,7 +23,7 @@ pub fn render(state: &ChangePasswordState, icons: &Icons, frame: &mut Frame) {
     let buf = frame.buffer_mut();
     let bounds = *buf.area();
 
-    popup::render_popup_chrome(buf, &bounds, popup_area, "CHANGE PASSWORD");
+    popup::render_popup_chrome(buf, &bounds, popup_area, "CHANGE PASSWORD", phase);
 
     let left = popup_area.x + 3;
     let right = popup_area.x + popup_area.width.saturating_sub(3);

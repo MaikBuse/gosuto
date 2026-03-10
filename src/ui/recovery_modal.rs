@@ -8,7 +8,7 @@ use crate::ui::theme;
 const POPUP_WIDTH: u16 = 56;
 const POPUP_HEIGHT: u16 = 14;
 
-pub fn render(state: &RecoveryModalState, frame: &mut Frame) {
+pub fn render(state: &RecoveryModalState, frame: &mut Frame, phase: f32) {
     let area = frame.area();
     if area.width < 30 || area.height < 10 {
         return;
@@ -20,7 +20,7 @@ pub fn render(state: &RecoveryModalState, frame: &mut Frame) {
     let buf = frame.buffer_mut();
     let bounds = *buf.area();
 
-    popup::render_popup_chrome(buf, &bounds, popup_area, "RECOVERY");
+    popup::render_popup_chrome(buf, &bounds, popup_area, "RECOVERY", phase);
 
     let left = popup_area.x + 3;
     let inner_w = (popup_area.width.saturating_sub(6)) as usize;

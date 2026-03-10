@@ -39,6 +39,21 @@ pub const REPLY_INDICATOR: Color = Color::Rgb(100, 180, 255);
 pub const REACTION_BG: Color = Color::Rgb(30, 35, 55);
 pub const REACTION_OWN_BG: Color = Color::Rgb(25, 50, 70);
 
+// Gradient endpoints
+pub const GRADIENT_BORDER_START: Color = Color::Rgb(0, 255, 255); // CYAN
+pub const GRADIENT_BORDER_END: Color = Color::Rgb(255, 0, 255); // MAGENTA
+pub const GRADIENT_TITLE_END: Color = Color::Rgb(100, 255, 255); // lighter cyan
+pub const GRADIENT_HIGHLIGHT_START: Color = Color::Rgb(0, 255, 255); // bright left edge
+pub const GRADIENT_HIGHLIGHT_END: Color = Color::Rgb(0, 80, 120); // deep teal right edge
+pub const GRADIENT_DATE_BRIGHT: Color = Color::Rgb(100, 100, 120); // center of date sep
+pub const GRADIENT_DATE_DIM: Color = Color::Rgb(30, 30, 45); // edge of date sep
+pub const STATUS_BAR_BG: Color = Color::Rgb(15, 15, 22); // slightly lighter than BG
+pub const UNREAD_BADGE_BG: Color = Color::Rgb(0, 40, 50); // subtle cyan tint
+pub const TIMESTAMP_BRIGHT: Color = Color::Rgb(140, 140, 160); // slightly brighter than DIM
+pub const INPUT_BORDER_GREEN_DIM: Color = Color::Rgb(0, 160, 80); // darker green
+pub const INPUT_BORDER_MAGENTA_DIM: Color = Color::Rgb(160, 0, 160); // darker magenta
+pub const PULSE_BASE: Color = Color::Rgb(20, 255, 255); // room list pulse base
+
 // Composite styles
 pub fn border_style() -> Style {
     Style::default().fg(BORDER)
@@ -62,27 +77,6 @@ pub fn dim_style() -> Style {
 
 pub fn error_style() -> Style {
     Style::default().fg(RED)
-}
-
-pub fn normal_mode_style() -> Style {
-    Style::default()
-        .fg(BLACK)
-        .bg(CYAN)
-        .add_modifier(Modifier::BOLD)
-}
-
-pub fn insert_mode_style() -> Style {
-    Style::default()
-        .fg(BLACK)
-        .bg(GREEN)
-        .add_modifier(Modifier::BOLD)
-}
-
-pub fn command_mode_style() -> Style {
-    Style::default()
-        .fg(BLACK)
-        .bg(MAGENTA)
-        .add_modifier(Modifier::BOLD)
 }
 
 // Form field styles
