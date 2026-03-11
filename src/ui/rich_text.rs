@@ -785,7 +785,6 @@ mod tests {
     #[test]
     fn lone_less_than_handled() {
         let lines = html_to_lines("a < b and c > d", base(), 0);
-        let t = text(&lines);
         // The '<' should be preserved somehow (might grab some text as a tag attempt)
         assert!(!lines.is_empty());
     }
@@ -804,7 +803,6 @@ mod tests {
             base(),
             0,
         );
-        let t = text(&lines);
         // Should have double blockquote prefix
         let deep_line = lines
             .iter()
