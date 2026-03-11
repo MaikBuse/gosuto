@@ -8,12 +8,21 @@ pub fn handle_insert(key: KeyEvent, vim: &mut VimState) -> InputResult {
         return InputResult::Quit;
     }
 
+    // Ctrl+J inserts a newline (works in all terminals/multiplexers)
+    if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('j') {
+        vim.insert_char('\n');
+        return InputResult::TypingActivity;
+    }
+
     match key.code {
         KeyCode::Esc => {
             vim.enter_normal();
             InputResult::Escape
         }
-        KeyCode::Enter if key.modifiers.contains(KeyModifiers::ALT) => {
+        KeyCode::Enter
+            if key.modifiers.contains(KeyModifiers::ALT)
+                || key.modifiers.contains(KeyModifiers::SHIFT) =>
+        {
             vim.insert_char('\n');
             InputResult::TypingActivity
         }
@@ -27,6 +36,38 @@ pub fn handle_insert(key: KeyEvent, vim: &mut VimState) -> InputResult {
         }
         KeyCode::Backspace => {
             vim.backspace();
+            InputResult::TypingActivity
+        }
+        KeyCode::Left => {
+            vim.move_left();
+            InputResult::None
+        }
+        KeyCode::Right => {
+            vim.move_right();
+            InputResult::None
+        }
+        KeyCode::Up => {
+            vim.move_up();
+            InputResult::None
+        }
+        KeyCode::Down => {
+            vim.move_down();
+            InputResult::None
+        }
+        KeyCode::Home => {
+            vim.move_line_start();
+            InputResult::None
+        }
+        KeyCode::End => {
+            vim.move_line_end();
+            InputResult::None
+        }
+        KeyCode::Delete => {
+            vim.delete_char();
+            InputResult::TypingActivity
+        }
+        KeyCode::Char('\n') if key.modifiers.contains(KeyModifiers::SHIFT) => {
+            vim.insert_char('\n');
             InputResult::TypingActivity
         }
         KeyCode::Char(c) => {
@@ -140,5 +181,116 @@ mod tests {
         vim.insert_char('b');
         let result = handle_insert(key(KeyCode::Enter), &mut vim);
         assert!(matches!(result, InputResult::SendMessage(ref s) if s == "a\nb"));
+    }
+
+    #[test]
+    fn left_arrow_moves_cursor() {
+        let mut vim = VimState::new();
+        vim.enter_insert();
+        vim.insert_char('a');
+        vim.insert_char('b');
+        let result = handle_insert(key(KeyCode::Left), &mut vim);
+        assert!(matches!(result, InputResult::None));
+        assert_eq!(vim.input_cursor, 1);
+    }
+
+    #[test]
+    fn right_arrow_moves_cursor() {
+        let mut vim = VimState::new();
+        vim.enter_insert();
+        vim.insert_char('a');
+        vim.insert_char('b');
+        vim.input_cursor = 0;
+        let result = handle_insert(key(KeyCode::Right), &mut vim);
+        assert!(matches!(result, InputResult::None));
+        assert_eq!(vim.input_cursor, 1);
+    }
+
+    #[test]
+    fn up_arrow_moves_cursor() {
+        let mut vim = VimState::new();
+        vim.enter_insert();
+        vim.insert_char('a');
+        vim.insert_char('\n');
+        vim.insert_char('b');
+        let result = handle_insert(key(KeyCode::Up), &mut vim);
+        assert!(matches!(result, InputResult::None));
+        assert_eq!(vim.cursor_row_col(), (0, 1));
+    }
+
+    #[test]
+    fn down_arrow_moves_cursor() {
+        let mut vim = VimState::new();
+        vim.enter_insert();
+        vim.insert_char('a');
+        vim.insert_char('\n');
+        vim.insert_char('b');
+        vim.input_cursor = 0;
+        let result = handle_insert(key(KeyCode::Down), &mut vim);
+        assert!(matches!(result, InputResult::None));
+        assert_eq!(vim.cursor_row_col(), (1, 0));
+    }
+
+    #[test]
+    fn home_moves_to_line_start() {
+        let mut vim = VimState::new();
+        vim.enter_insert();
+        vim.insert_char('a');
+        vim.insert_char('b');
+        vim.insert_char('c');
+        let result = handle_insert(key(KeyCode::Home), &mut vim);
+        assert!(matches!(result, InputResult::None));
+        assert_eq!(vim.input_cursor, 0);
+    }
+
+    #[test]
+    fn end_moves_to_line_end() {
+        let mut vim = VimState::new();
+        vim.enter_insert();
+        vim.insert_char('a');
+        vim.insert_char('b');
+        vim.insert_char('c');
+        vim.input_cursor = 0;
+        let result = handle_insert(key(KeyCode::End), &mut vim);
+        assert!(matches!(result, InputResult::None));
+        assert_eq!(vim.input_cursor, 3);
+    }
+
+    fn shift_enter() -> KeyEvent {
+        KeyEvent::new(KeyCode::Enter, KeyModifiers::SHIFT)
+    }
+
+    #[test]
+    fn shift_enter_inserts_newline() {
+        let mut vim = VimState::new();
+        vim.enter_insert();
+        vim.insert_char('h');
+        vim.insert_char('i');
+        let result = handle_insert(shift_enter(), &mut vim);
+        assert!(matches!(result, InputResult::TypingActivity));
+        assert_eq!(vim.input_buffer, "hi\n");
+    }
+
+    #[test]
+    fn ctrl_j_inserts_newline() {
+        let mut vim = VimState::new();
+        vim.enter_insert();
+        vim.insert_char('h');
+        vim.insert_char('i');
+        let result = handle_insert(ctrl('j'), &mut vim);
+        assert!(matches!(result, InputResult::TypingActivity));
+        assert_eq!(vim.input_buffer, "hi\n");
+    }
+
+    #[test]
+    fn delete_key_removes_forward() {
+        let mut vim = VimState::new();
+        vim.enter_insert();
+        vim.insert_char('a');
+        vim.insert_char('b');
+        vim.input_cursor = 0;
+        let result = handle_insert(key(KeyCode::Delete), &mut vim);
+        assert!(matches!(result, InputResult::TypingActivity));
+        assert_eq!(vim.input_buffer, "b");
     }
 }

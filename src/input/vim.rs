@@ -145,6 +145,112 @@ impl VimState {
         }
     }
 
+    pub fn move_left(&mut self) {
+        if self.input_cursor > 0 {
+            let prev = self.input_buffer[..self.input_cursor]
+                .char_indices()
+                .next_back()
+                .map(|(i, _)| i)
+                .unwrap_or(0);
+            self.input_cursor = prev;
+        }
+    }
+
+    pub fn move_right(&mut self) {
+        if self.input_cursor < self.input_buffer.len() {
+            let c = self.input_buffer[self.input_cursor..]
+                .chars()
+                .next()
+                .unwrap();
+            self.input_cursor += c.len_utf8();
+        }
+    }
+
+    pub fn move_up(&mut self) {
+        let (row, col) = self.cursor_row_col();
+        if row == 0 {
+            return;
+        }
+        let before_cursor = &self.input_buffer[..self.input_cursor];
+        // Find the newline ending the previous line
+        let cur_line_start = before_cursor.rfind('\n').unwrap();
+        let prev_line = &self.input_buffer[..cur_line_start];
+        let prev_line_start = match prev_line.rfind('\n') {
+            Some(pos) => pos + 1,
+            None => 0,
+        };
+        let prev_line_len = cur_line_start - prev_line_start;
+        // Walk chars to find the correct byte position, clamping to line length
+        let target_col = col.min(prev_line_len);
+        let mut byte_pos = prev_line_start;
+        let mut bytes_counted = 0;
+        for c in self.input_buffer[prev_line_start..cur_line_start].chars() {
+            if bytes_counted >= target_col {
+                break;
+            }
+            let clen = c.len_utf8();
+            if bytes_counted + clen > target_col {
+                break;
+            }
+            byte_pos += clen;
+            bytes_counted += clen;
+        }
+        self.input_cursor = byte_pos;
+    }
+
+    pub fn move_down(&mut self) {
+        let (_, col) = self.cursor_row_col();
+        let after_cursor = &self.input_buffer[self.input_cursor..];
+        // Find the newline ending the current line
+        let newline_offset = match after_cursor.find('\n') {
+            Some(offset) => offset,
+            None => return, // on last line
+        };
+        let next_line_start = self.input_cursor + newline_offset + 1;
+        let next_line_end = match self.input_buffer[next_line_start..].find('\n') {
+            Some(offset) => next_line_start + offset,
+            None => self.input_buffer.len(),
+        };
+        let next_line_len = next_line_end - next_line_start;
+        let target_col = col.min(next_line_len);
+        let mut byte_pos = next_line_start;
+        let mut bytes_counted = 0;
+        for c in self.input_buffer[next_line_start..next_line_end].chars() {
+            if bytes_counted >= target_col {
+                break;
+            }
+            let clen = c.len_utf8();
+            if bytes_counted + clen > target_col {
+                break;
+            }
+            byte_pos += clen;
+            bytes_counted += clen;
+        }
+        self.input_cursor = byte_pos;
+    }
+
+    pub fn move_line_start(&mut self) {
+        let before_cursor = &self.input_buffer[..self.input_cursor];
+        self.input_cursor = match before_cursor.rfind('\n') {
+            Some(pos) => pos + 1,
+            None => 0,
+        };
+    }
+
+    pub fn move_line_end(&mut self) {
+        let after_cursor = &self.input_buffer[self.input_cursor..];
+        self.input_cursor = match after_cursor.find('\n') {
+            Some(offset) => self.input_cursor + offset,
+            None => self.input_buffer.len(),
+        };
+    }
+
+    pub fn delete_char(&mut self) {
+        if self.input_cursor < self.input_buffer.len() {
+            self.input_buffer.remove(self.input_cursor);
+        }
+    }
+
     pub fn take_input(&mut self) -> String {
         self.input_cursor = 0;
         std::mem::take(&mut self.input_buffer)
@@ -451,5 +557,265 @@ mod tests {
         vim.insert_char('\n');
         vim.insert_char('c');
         assert_eq!(vim.cursor_row_col(), (2, 1));
+    }
+
+    // --- move_left ---
+
+    #[test]
+    fn move_left_basic() {
+        let mut vim = VimState::new();
+        vim.insert_char('a');
+        vim.insert_char('b');
+        vim.move_left();
+        assert_eq!(vim.input_cursor, 1);
+    }
+
+    #[test]
+    fn move_left_at_start_noop() {
+        let mut vim = VimState::new();
+        vim.move_left();
+        assert_eq!(vim.input_cursor, 0);
+    }
+
+    #[test]
+    fn move_left_multibyte() {
+        let mut vim = VimState::new();
+        vim.insert_char('é'); // 2 bytes
+        vim.insert_char('!');
+        vim.move_left();
+        assert_eq!(vim.input_cursor, 2); // at start of '!'
+        vim.move_left();
+        assert_eq!(vim.input_cursor, 0); // at start of 'é'
+    }
+
+    // --- move_right ---
+
+    #[test]
+    fn move_right_basic() {
+        let mut vim = VimState::new();
+        vim.insert_char('a');
+        vim.insert_char('b');
+        vim.input_cursor = 0;
+        vim.move_right();
+        assert_eq!(vim.input_cursor, 1);
+    }
+
+    #[test]
+    fn move_right_at_end_noop() {
+        let mut vim = VimState::new();
+        vim.insert_char('a');
+        vim.move_right();
+        assert_eq!(vim.input_cursor, 1);
+    }
+
+    #[test]
+    fn move_right_multibyte() {
+        let mut vim = VimState::new();
+        vim.insert_char('日'); // 3 bytes
+        vim.insert_char('本'); // 3 bytes
+        vim.input_cursor = 0;
+        vim.move_right();
+        assert_eq!(vim.input_cursor, 3);
+        vim.move_right();
+        assert_eq!(vim.input_cursor, 6);
+    }
+
+    // --- move_up ---
+
+    #[test]
+    fn move_up_basic() {
+        let mut vim = VimState::new();
+        vim.insert_char('a');
+        vim.insert_char('b');
+        vim.insert_char('\n');
+        vim.insert_char('c');
+        vim.insert_char('d');
+        // cursor at (1, 2), move up to (0, 2)
+        vim.move_up();
+        assert_eq!(vim.input_cursor, 2);
+        assert_eq!(vim.cursor_row_col(), (0, 2));
+    }
+
+    #[test]
+    fn move_up_clamps_to_shorter_line() {
+        let mut vim = VimState::new();
+        vim.insert_char('a');
+        vim.insert_char('\n');
+        vim.insert_char('b');
+        vim.insert_char('c');
+        vim.insert_char('d');
+        // cursor at (1, 3), line 0 has len 1
+        vim.move_up();
+        assert_eq!(vim.input_cursor, 1);
+        assert_eq!(vim.cursor_row_col(), (0, 1));
+    }
+
+    #[test]
+    fn move_up_first_line_noop() {
+        let mut vim = VimState::new();
+        vim.insert_char('a');
+        vim.insert_char('b');
+        vim.move_up();
+        assert_eq!(vim.input_cursor, 2);
+    }
+
+    #[test]
+    fn move_up_multibyte() {
+        let mut vim = VimState::new();
+        // line 0: "日本" (6 bytes)
+        vim.insert_char('日');
+        vim.insert_char('本');
+        vim.insert_char('\n');
+        // line 1: "abc" cursor at col 3
+        vim.insert_char('a');
+        vim.insert_char('b');
+        vim.insert_char('c');
+        vim.move_up();
+        // col 3 bytes into "日本" = after '日' (3 bytes)
+        assert_eq!(vim.input_cursor, 3);
+    }
+
+    // --- move_down ---
+
+    #[test]
+    fn move_down_basic() {
+        let mut vim = VimState::new();
+        vim.insert_char('a');
+        vim.insert_char('b');
+        vim.insert_char('\n');
+        vim.insert_char('c');
+        vim.insert_char('d');
+        // Move cursor to line 0
+        vim.input_cursor = 2; // (0, 2)
+        vim.move_down();
+        assert_eq!(vim.cursor_row_col(), (1, 2));
+    }
+
+    #[test]
+    fn move_down_clamps_to_shorter_line() {
+        let mut vim = VimState::new();
+        vim.insert_char('a');
+        vim.insert_char('b');
+        vim.insert_char('c');
+        vim.insert_char('\n');
+        vim.insert_char('d');
+        // cursor at (0, 3), line 1 has len 1
+        vim.input_cursor = 3;
+        vim.move_down();
+        assert_eq!(vim.input_cursor, 5); // 'd' end
+        assert_eq!(vim.cursor_row_col(), (1, 1));
+    }
+
+    #[test]
+    fn move_down_last_line_noop() {
+        let mut vim = VimState::new();
+        vim.insert_char('a');
+        vim.move_down();
+        assert_eq!(vim.input_cursor, 1);
+    }
+
+    #[test]
+    fn move_down_multibyte() {
+        let mut vim = VimState::new();
+        // line 0: "abc"
+        vim.insert_char('a');
+        vim.insert_char('b');
+        vim.insert_char('c');
+        vim.insert_char('\n');
+        // line 1: "日本" (6 bytes)
+        vim.insert_char('日');
+        vim.insert_char('本');
+        vim.input_cursor = 3; // (0, 3) at end of "abc"
+        vim.move_down();
+        // col 3 bytes into "日本" = after '日' (3 bytes), so byte 4+3=7
+        assert_eq!(vim.input_cursor, 7);
+    }
+
+    // --- move_line_start ---
+
+    #[test]
+    fn move_line_start_single_line() {
+        let mut vim = VimState::new();
+        vim.insert_char('a');
+        vim.insert_char('b');
+        vim.insert_char('c');
+        vim.move_line_start();
+        assert_eq!(vim.input_cursor, 0);
+    }
+
+    #[test]
+    fn move_line_start_middle_line() {
+        let mut vim = VimState::new();
+        // "a\nbc\nd" — line 0: "a", line 1: "bc", line 2: "d"
+        vim.insert_char('a');
+        vim.insert_char('\n');
+        vim.insert_char('b');
+        vim.insert_char('c');
+        vim.insert_char('\n');
+        vim.insert_char('d');
+        // cursor at end of line 2 (pos 6), move to start of line 2
+        vim.move_line_start();
+        assert_eq!(vim.input_cursor, 5); // start of line 2 (after second '\n')
+    }
+
+    // --- move_line_end ---
+
+    #[test]
+    fn move_line_end_single_line() {
+        let mut vim = VimState::new();
+        vim.insert_char('a');
+        vim.insert_char('b');
+        vim.insert_char('c');
+        vim.input_cursor = 0;
+        vim.move_line_end();
+        assert_eq!(vim.input_cursor, 3);
+    }
+
+    #[test]
+    fn move_line_end_middle_line() {
+        let mut vim = VimState::new();
+        vim.insert_char('a');
+        vim.insert_char('\n');
+        vim.insert_char('b');
+        vim.insert_char('c');
+        vim.insert_char('\n');
+        vim.insert_char('d');
+        vim.input_cursor = 2; // start of line 1
+        vim.move_line_end();
+        assert_eq!(vim.input_cursor, 4); // before '\n' on line 1
+    }
+
+    // --- delete_char ---
+
+    #[test]
+    fn delete_char_basic() {
+        let mut vim = VimState::new();
+        vim.insert_char('a');
+        vim.insert_char('b');
+        vim.insert_char('c');
+        vim.input_cursor = 1;
+        vim.delete_char();
+        assert_eq!(vim.input_buffer, "ac");
+        assert_eq!(vim.input_cursor, 1);
+    }
+
+    #[test]
+    fn delete_char_at_end_noop() {
+        let mut vim = VimState::new();
+        vim.insert_char('a');
+        vim.delete_char();
+        assert_eq!(vim.input_buffer, "a");
+        assert_eq!(vim.input_cursor, 1);
+    }
+
+    #[test]
+    fn delete_char_multibyte() {
+        let mut vim = VimState::new();
+        vim.insert_char('日');
+        vim.insert_char('本');
+        vim.input_cursor = 0;
+        vim.delete_char();
+        assert_eq!(vim.input_buffer, "本");
+        assert_eq!(vim.input_cursor, 0);
     }
 }
