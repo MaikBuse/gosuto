@@ -960,6 +960,7 @@ async fn main() -> Result<()> {
             app.effects
                 .tick_members_emp(dt, members_area, members_focused);
 
+            app.anim_clock.tick(dt);
             app.room_list_anim.tick(dt);
             app.chat_title_reveal.tick(dt);
             app.members_title_reveal.tick(dt);

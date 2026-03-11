@@ -149,7 +149,7 @@ fn category_title(cat: WhichKeyCategory) -> &'static str {
 // ── Rendering ──────────────────────────────────────────
 
 pub fn render(which_key: Option<WhichKeyCategory>, app: &App, frame: &mut Frame) {
-    let phase = app.room_list_anim.pulse_phase;
+    let phase = app.anim_clock.phase;
     match which_key {
         None => render_root(frame, phase),
         Some(cat) => render_category(cat, app, frame, phase),

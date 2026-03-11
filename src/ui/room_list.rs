@@ -12,7 +12,6 @@ use crate::ui::tooltip::{self, Direction, set_cell_if, write_str_clipped};
 use crate::ui::{gradient, panel, theme};
 
 pub struct RoomListAnimState {
-    pub pulse_phase: f32,
     pub flash_timer: Option<u64>,
     pub flash_row: Option<usize>,
 }
@@ -20,19 +19,12 @@ pub struct RoomListAnimState {
 impl RoomListAnimState {
     pub fn new() -> Self {
         Self {
-            pulse_phase: 0.0,
             flash_timer: None,
             flash_row: None,
         }
     }
 
     pub fn tick(&mut self, dt_ms: u64) {
-        // Advance pulse phase — full cycle ~1600ms
-        self.pulse_phase += (dt_ms as f32 / 1600.0) * std::f32::consts::TAU;
-        if self.pulse_phase > std::f32::consts::TAU {
-            self.pulse_phase -= std::f32::consts::TAU;
-        }
-
         // Decay flash timer
         if let Some(ref mut remaining) = self.flash_timer {
             if *remaining <= dt_ms {
@@ -49,9 +41,9 @@ impl RoomListAnimState {
         self.flash_row = Some(row);
     }
 
-    fn pulse_style(&self) -> Style {
-        let t = (self.pulse_phase.sin() + 1.0) / 2.0;
-        let shimmer = ((self.pulse_phase * 3.7).sin() + 1.0) / 2.0;
+    fn pulse_style(&self, phase: f32) -> Style {
+        let t = (phase.sin() + 1.0) / 2.0;
+        let shimmer = ((phase * 3.7).sin() + 1.0) / 2.0;
         let factor = 0.45 + (t + shimmer * 0.08) * 0.55;
 
         Style::default()
@@ -73,7 +65,13 @@ impl RoomListAnimState {
         )
     }
 
-    fn row_style(&self, row_idx: usize, is_selected: bool, focused: bool) -> Option<Style> {
+    fn row_style(
+        &self,
+        row_idx: usize,
+        is_selected: bool,
+        focused: bool,
+        phase: f32,
+    ) -> Option<Style> {
         if !is_selected {
             return None;
         }
@@ -83,7 +81,7 @@ impl RoomListAnimState {
             {
                 return Some(flash);
             }
-            Some(self.pulse_style())
+            Some(self.pulse_style(phase))
         } else {
             // Static cyan highlight when panel is not focused
             Some(
@@ -125,7 +123,7 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
             area,
             theme::GRADIENT_BORDER_START,
             theme::GRADIENT_BORDER_END,
-            app.room_list_anim.pulse_phase,
+            app.anim_clock.phase,
         );
     }
 
@@ -142,8 +140,8 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
     }
 
     if app.room_list.loading && app.room_list.display_rows.is_empty() {
-        let anim = &app.room_list_anim;
-        let dots = match ((anim.pulse_phase / std::f32::consts::TAU * 3.0) as usize) % 3 {
+        let phase = app.anim_clock.phase;
+        let dots = match ((phase / std::f32::consts::TAU * 3.0) as usize) % 3 {
             0 => "·  ",
             1 => "·· ",
             _ => "···",
@@ -161,6 +159,7 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
     let display_rows = &app.room_list.display_rows;
     let selected = app.room_list.selected;
     let anim = &app.room_list_anim;
+    let phase = app.anim_clock.phase;
     let visible_height = inner.height as usize;
     let total_rows = display_rows.len();
 
@@ -207,7 +206,7 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
                 let label = format!("{} {} {}", arrow, icons.space, name);
 
                 let style = anim
-                    .row_style(row_idx, is_selected, focused)
+                    .row_style(row_idx, is_selected, focused, phase)
                     .unwrap_or_else(|| {
                         Style::default()
                             .fg(theme::DIM)
@@ -258,7 +257,7 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
                     let indent_px = *indent as u16;
 
                     let style = anim
-                        .row_style(row_idx, is_selected, focused)
+                        .row_style(row_idx, is_selected, focused, phase)
                         .unwrap_or_else(theme::text_style);
 
                     // Fill background for selected row

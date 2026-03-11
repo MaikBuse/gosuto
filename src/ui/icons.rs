@@ -51,13 +51,13 @@ pub const UNICODE: Icons = Icons {
 };
 
 pub const NERD: Icons = Icons {
-    room: "\u{f4ad}",
+    room: "\u{f075}",
     dm: "\u{f007}",
     space: "\u{f07c}",
     expand: "\u{f0d7}",
     collapse: "\u{f0da}",
     unverified: "\u{f071}",
-    power_owner: "\u{f521}",
+    power_owner: "\u{edeb}",
     power_admin: "\u{f132}",
     power_mod: "\u{f005}",
     power_voice: "\u{f130}",

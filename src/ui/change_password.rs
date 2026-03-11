@@ -11,7 +11,13 @@ const POPUP_HEIGHT: u16 = 12;
 
 const FIELDS: [&str; 3] = ["CURRENT", "NEW", "CONFIRM"];
 
-pub fn render(state: &ChangePasswordState, icons: &Icons, frame: &mut Frame, phase: f32) {
+pub fn render(
+    state: &ChangePasswordState,
+    icons: &Icons,
+    frame: &mut Frame,
+    phase: f32,
+    cursor_visible: bool,
+) {
     let area = frame.area();
     if area.width < 30 || area.height < 12 {
         return;
@@ -85,13 +91,9 @@ pub fn render(state: &ChangePasswordState, icons: &Icons, frame: &mut Frame, pha
         );
 
         // Blinking cursor on selected field
-        if selected {
+        if selected && cursor_visible {
             let cursor_x = value_x + masked.chars().count() as u16;
-            let cursor_s = Style::default()
-                .fg(theme::GREEN)
-                .bg(theme::BG)
-                .add_modifier(Modifier::SLOW_BLINK);
-            popup::set_cell(buf, &bounds, cursor_x, row, '_', cursor_s);
+            popup::set_cell(buf, &bounds, cursor_x, row, '_', theme::edit_cursor_style());
         }
 
         row += 1;

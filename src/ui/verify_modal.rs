@@ -11,7 +11,7 @@ const POPUP_WIDTH: u16 = 48;
 const POPUP_HEIGHT: u16 = 14;
 const MENU_HEIGHT: u16 = 12;
 
-pub fn render(state: &VerificationModalState, frame: &mut Frame, phase: f32) {
+pub fn render(state: &VerificationModalState, frame: &mut Frame, phase: f32, cursor_visible: bool) {
     let area = frame.area();
     if area.width < 30 || area.height < 10 {
         return;
@@ -80,7 +80,14 @@ pub fn render(state: &VerificationModalState, frame: &mut Frame, phase: f32) {
 
             let value_x = left;
             let value_y = label_y + 2;
-            form_field::render_editing(buf, value_x, right, value_y, &state.user_id_buffer);
+            form_field::render_editing(
+                buf,
+                value_x,
+                right,
+                value_y,
+                &state.user_id_buffer,
+                cursor_visible,
+            );
 
             popup::render_hint(buf, &bounds, popup_area, "Enter verify  Esc back");
         }
@@ -101,17 +108,16 @@ pub fn render(state: &VerificationModalState, frame: &mut Frame, phase: f32) {
                 &line1,
                 Style::default().fg(theme::TEXT).bg(theme::BG),
             );
-            popup::write_str(
-                buf,
-                &bounds,
-                x2,
-                y + 2,
-                line2,
-                Style::default()
-                    .fg(theme::CYAN)
-                    .bg(theme::BG)
-                    .add_modifier(Modifier::SLOW_BLINK),
-            );
+            if cursor_visible {
+                popup::write_str(
+                    buf,
+                    &bounds,
+                    x2,
+                    y + 2,
+                    line2,
+                    Style::default().fg(theme::CYAN).bg(theme::BG),
+                );
+            }
 
             popup::render_hint(buf, &bounds, popup_area, "Esc cancel");
         }

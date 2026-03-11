@@ -71,6 +71,7 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
             let name_with_id = format!("{} ({})", member.display_name, id_label);
             let mut spans = vec![
                 Span::styled(prefix, prefix_style),
+                Span::raw(" "),
                 Span::styled(name_with_id, name_style),
             ];
 
@@ -108,7 +109,7 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
             area,
             theme::GRADIENT_BORDER_START,
             theme::GRADIENT_BORDER_END,
-            app.room_list_anim.pulse_phase,
+            app.anim_clock.phase,
         );
 
         // Post-pass: gradient highlight on selected row

@@ -8,7 +8,13 @@ use crate::ui::{form_field, popup, theme};
 const POPUP_WIDTH: u16 = 54;
 const POPUP_HEIGHT: u16 = 22;
 
-pub fn render(state: &UserConfigState, icons: &Icons, frame: &mut Frame, phase: f32) {
+pub fn render(
+    state: &UserConfigState,
+    icons: &Icons,
+    frame: &mut Frame,
+    phase: f32,
+    cursor_visible: bool,
+) {
     let area = frame.area();
     if area.width < 30 || area.height < 12 {
         return;
@@ -108,7 +114,14 @@ pub fn render(state: &UserConfigState, icons: &Icons, frame: &mut Frame, phase: 
     );
 
     if state.editing_display_name {
-        form_field::render_editing(buf, value_x, right, row, &state.display_name_buffer);
+        form_field::render_editing(
+            buf,
+            value_x,
+            right,
+            row,
+            &state.display_name_buffer,
+            cursor_visible,
+        );
     } else {
         let name = state.display_name.as_deref().unwrap_or("\u{2014}");
         form_field::render_value(buf, value_x, right, row, name, name_selected);

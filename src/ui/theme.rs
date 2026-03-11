@@ -116,10 +116,7 @@ pub fn edit_text_style() -> Style {
 }
 
 pub fn edit_cursor_style() -> Style {
-    Style::default()
-        .fg(GREEN)
-        .bg(BG)
-        .add_modifier(Modifier::SLOW_BLINK)
+    Style::default().fg(GREEN).bg(BG)
 }
 
 pub fn highlight_focused_style() -> Style {

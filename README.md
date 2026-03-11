@@ -74,13 +74,13 @@ The goal is simple: a fast, keyboard-driven Matrix experience with full voice su
 <!-- FEATURES -->
 ## Features
 
-- **Vim-first navigation** — Normal, Insert, and Command modes
-- **Encrypted chat** — rooms, spaces, DMs, full E2EE with automatic key forwarding
-- **VoIP calls** — LiveKit-based voice with push-to-talk support
-- **Room management** — create, join, leave, view member lists and power levels
-- **Visual effects** — matrix rain, glitch, text reveal animations (all togglable)
-- **Element compatible** — tested against Element Web and Element X
-- **Lightweight** — under 60 MB of RAM for everything
+* **Vim-first navigation** — Normal, Insert, and Command modes
+* **Encrypted chat** — rooms, spaces, DMs, full E2EE with automatic key forwarding
+* **VoIP calls** — LiveKit-based voice with push-to-talk support
+* **Room management** — create, join, leave, view member lists and power levels
+* **Visual effects** — matrix rain, glitch, text reveal animations (all togglable)
+* **Element compatible** — tested against Element Web and Element X
+* **Lightweight** — under 60 MB of RAM for everything
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -89,8 +89,8 @@ The goal is simple: a fast, keyboard-driven Matrix experience with full voice su
 
 ### Prerequisites
 
-- **Rust toolchain** (only if building from source) — install via [rustup](https://rustup.rs/)
-- **Nerd Font** (optional) — enables icon glyphs throughout the UI; toggleable in config, falls back to plain Unicode when disabled
+* **Rust toolchain** (only if building from source) — install via [rustup](https://rustup.rs/)
+* **Nerd Font** (optional) — enables icon glyphs throughout the UI; toggleable in config, falls back to plain Unicode when disabled
 
 ### Installation
 
@@ -202,8 +202,8 @@ See the [build scripts](https://github.com/MaikBuse/gosuto-livekit-sdks/tree/mai
 
 Licensed under either of
 
-- [Apache License, Version 2.0](LICENSE.md#apache-license-version-20)
-- [MIT License](LICENSE.md#mit-license)
+* [Apache License, Version 2.0](LICENSE.md#apache-license-version-20)
+* [MIT License](LICENSE.md#mit-license)
 
 at your option.
 
@@ -212,7 +212,7 @@ at your option.
 <!-- CONTACT -->
 ## Contact
 
-Maik Buse — [GitHub](https://github.com/MaikBuse)
+Maik Buse — [Homepage](https://buse.io)
 
 Project Link: [https://github.com/MaikBuse/gosuto](https://github.com/MaikBuse/gosuto)
 

@@ -67,7 +67,7 @@ pub fn restore() -> Result<()> {
     // Pop keyboard enhancement (gracefully ignored if not supported)
     let _ = crossterm::execute!(stdout, crossterm::event::PopKeyboardEnhancementFlags);
 
-    execute!(stdout, LeaveAlternateScreen)?;
+    execute!(stdout, crossterm::cursor::Show, LeaveAlternateScreen)?;
     terminal::disable_raw_mode()?;
     Ok(())
 }

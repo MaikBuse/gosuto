@@ -38,13 +38,7 @@ pub fn render(app: &App, frame: &mut Frame) {
     {
         let buf = frame.buffer_mut();
         let bounds = area;
-        popup::render_popup_chrome(
-            buf,
-            &bounds,
-            popup_rect,
-            "React",
-            app.room_list_anim.pulse_phase,
-        );
+        popup::render_popup_chrome(buf, &bounds, popup_rect, "React", app.anim_clock.phase);
 
         // Hint bar at bottom
         let hint = if picker.filter_active {

@@ -8,7 +8,13 @@ use crate::ui::{form_field, popup, theme};
 const POPUP_WIDTH: u16 = 54;
 const POPUP_HEIGHT: u16 = 20;
 
-pub fn render(state: &RoomInfoState, icons: &Icons, frame: &mut Frame, phase: f32) {
+pub fn render(
+    state: &RoomInfoState,
+    icons: &Icons,
+    frame: &mut Frame,
+    phase: f32,
+    cursor_visible: bool,
+) {
     let area = frame.area();
     if area.width < 30 || area.height < 12 {
         return;
@@ -54,7 +60,7 @@ pub fn render(state: &RoomInfoState, icons: &Icons, frame: &mut Frame, phase: f3
     form_field::render_label(buf, left, label_x, row, "NAME", name_selected, icons);
 
     if state.editing_name {
-        form_field::render_editing(buf, value_x, right, row, &state.name_buffer);
+        form_field::render_editing(buf, value_x, right, row, &state.name_buffer, cursor_visible);
     } else {
         let name = state.name.as_deref().unwrap_or("\u{2014}");
         form_field::render_value(buf, value_x, right, row, name, name_selected);
@@ -66,7 +72,14 @@ pub fn render(state: &RoomInfoState, icons: &Icons, frame: &mut Frame, phase: f3
     form_field::render_label(buf, left, label_x, row, "TOPIC", topic_selected, icons);
 
     if state.editing_topic {
-        form_field::render_editing(buf, value_x, right, row, &state.topic_buffer);
+        form_field::render_editing(
+            buf,
+            value_x,
+            right,
+            row,
+            &state.topic_buffer,
+            cursor_visible,
+        );
     } else {
         let topic = state.topic.as_deref().unwrap_or("\u{2014}");
         form_field::render_value(buf, value_x, right, row, topic, topic_selected);

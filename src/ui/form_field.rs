@@ -71,7 +71,14 @@ pub fn render_value(
 }
 
 /// Render an editable text buffer with a blinking cursor.
-pub fn render_editing(buf: &mut Buffer, value_x: u16, right: u16, row: u16, text: &str) {
+pub fn render_editing(
+    buf: &mut Buffer,
+    value_x: u16,
+    right: u16,
+    row: u16,
+    text: &str,
+    cursor_visible: bool,
+) {
     let bounds = *buf.area();
     let max_w = (right - value_x) as usize;
     let display = popup::truncate_str(text, max_w.saturating_sub(1));
@@ -83,8 +90,10 @@ pub fn render_editing(buf: &mut Buffer, value_x: u16, right: u16, row: u16, text
         &display,
         theme::edit_text_style(),
     );
-    let cursor_x = value_x + display.chars().count() as u16;
-    popup::set_cell(buf, &bounds, cursor_x, row, '_', theme::edit_cursor_style());
+    if cursor_visible {
+        let cursor_x = value_x + display.chars().count() as u16;
+        popup::set_cell(buf, &bounds, cursor_x, row, '_', theme::edit_cursor_style());
+    }
 }
 
 /// Render a `< value >` cycle selector.

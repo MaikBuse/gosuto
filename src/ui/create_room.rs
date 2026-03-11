@@ -8,7 +8,13 @@ use crate::ui::{form_field, popup, theme};
 const POPUP_WIDTH: u16 = 54;
 const POPUP_HEIGHT: u16 = 22;
 
-pub fn render(state: &CreateRoomState, icons: &Icons, frame: &mut Frame, phase: f32) {
+pub fn render(
+    state: &CreateRoomState,
+    icons: &Icons,
+    frame: &mut Frame,
+    phase: f32,
+    cursor_visible: bool,
+) {
     let area = frame.area();
     if area.width < 30 || area.height < 12 {
         return;
@@ -36,7 +42,7 @@ pub fn render(state: &CreateRoomState, icons: &Icons, frame: &mut Frame, phase: 
     form_field::render_label(buf, left, label_x, row, "NAME", name_selected, icons);
 
     if state.editing_name {
-        form_field::render_editing(buf, value_x, right, row, &state.name_buffer);
+        form_field::render_editing(buf, value_x, right, row, &state.name_buffer, cursor_visible);
     } else {
         let name = if state.name_buffer.is_empty() {
             "\u{2014}"
@@ -52,7 +58,14 @@ pub fn render(state: &CreateRoomState, icons: &Icons, frame: &mut Frame, phase: 
     form_field::render_label(buf, left, label_x, row, "TOPIC", topic_selected, icons);
 
     if state.editing_topic {
-        form_field::render_editing(buf, value_x, right, row, &state.topic_buffer);
+        form_field::render_editing(
+            buf,
+            value_x,
+            right,
+            row,
+            &state.topic_buffer,
+            cursor_visible,
+        );
     } else {
         let topic = if state.topic_buffer.is_empty() {
             "\u{2014}"

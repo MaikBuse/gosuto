@@ -27,6 +27,7 @@ use crate::state::{
     RecoveryAction, RecoveryModalState, RecoveryStage, RecoveryTransition, RoomInfoAction,
     RoomInfoState, RoomListState, UserConfigAction, UserConfigState, recovery_key_action,
 };
+use crate::ui::animation::AnimationClock;
 use crate::ui::call_overlay::TransmissionPopup;
 use crate::ui::effects::{EffectsState, TextReveal};
 use crate::ui::login::LoginState;
@@ -124,6 +125,7 @@ pub struct App {
     // Visual effects
     pub effects: EffectsState,
     pub call_popup: TransmissionPopup,
+    pub anim_clock: AnimationClock,
     pub room_list_anim: RoomListAnimState,
     pub chat_title_reveal: TextReveal,
     pub members_title_reveal: TextReveal,
@@ -222,6 +224,7 @@ impl App {
             pending_credential_clear: false,
             effects: EffectsState::new(rain_enabled, glitch_enabled),
             call_popup: TransmissionPopup::new(),
+            anim_clock: AnimationClock::new(),
             room_list_anim: RoomListAnimState::new(),
             chat_title_reveal: TextReveal::new(0xC0DE_CAFE_0001),
             members_title_reveal: TextReveal::new(0xC0DE_CAFE_0002),

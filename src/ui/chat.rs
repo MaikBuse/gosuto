@@ -126,7 +126,7 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
                 area,
                 theme::GRADIENT_BORDER_START,
                 theme::GRADIENT_BORDER_END,
-                app.room_list_anim.pulse_phase,
+                app.anim_clock.phase,
             );
         }
         return;
@@ -344,7 +344,7 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
             area,
             theme::GRADIENT_BORDER_START,
             theme::GRADIENT_BORDER_END,
-            app.room_list_anim.pulse_phase,
+            app.anim_clock.phase,
         );
     }
 

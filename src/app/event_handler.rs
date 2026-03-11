@@ -5,6 +5,7 @@ impl App {
         // Clear transient errors on any key press
         if matches!(event, AppEvent::Key(_)) {
             self.last_error = None;
+            self.anim_clock.reset_cursor();
         }
 
         match event {

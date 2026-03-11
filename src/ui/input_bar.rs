@@ -99,7 +99,7 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
     frame.render_widget(paragraph, area);
 
     // Gradient border in Insert/Command mode
-    let phase = app.room_list_anim.pulse_phase;
+    let phase = app.anim_clock.phase;
     match app.vim.mode {
         VimMode::Insert => {
             panel::apply_gradient_border(
@@ -153,6 +153,8 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
                 (x, y)
             }
         };
-        frame.set_cursor_position((cursor_x, cursor_y));
+        if app.anim_clock.cursor_visible() {
+            frame.set_cursor_position((cursor_x, cursor_y));
+        }
     }
 }

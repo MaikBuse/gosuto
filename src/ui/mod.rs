@@ -1,3 +1,4 @@
+pub mod animation;
 pub mod audio_settings;
 pub mod call_overlay;
 pub mod change_password;
@@ -99,7 +100,8 @@ pub fn render(app: &mut App, frame: &mut Frame) {
     members::render_tooltip(app, frame, layout.members_list);
 
     let icons = app.config.icons();
-    let border_phase = app.room_list_anim.pulse_phase;
+    let border_phase = app.anim_clock.phase;
+    let cursor_visible = app.anim_clock.cursor_visible();
 
     // Render call overlay on top for any active call state or incoming ringing
     if let Some(ref info) = app.call_info {
@@ -134,22 +136,28 @@ pub fn render(app: &mut App, frame: &mut Frame) {
 
     // Room info modal overlay
     if app.room_info.open {
-        room_info::render(&app.room_info, icons, frame, border_phase);
+        room_info::render(&app.room_info, icons, frame, border_phase, cursor_visible);
     }
 
     // Create room modal overlay
     if app.create_room.open {
-        create_room::render(&app.create_room, icons, frame, border_phase);
+        create_room::render(&app.create_room, icons, frame, border_phase, cursor_visible);
     }
 
     // User config modal overlay
     if app.user_config.open {
-        configure::render(&app.user_config, icons, frame, border_phase);
+        configure::render(&app.user_config, icons, frame, border_phase, cursor_visible);
     }
 
     // Change password modal overlay
     if app.change_password.open {
-        change_password::render(&app.change_password, icons, frame, border_phase);
+        change_password::render(
+            &app.change_password,
+            icons,
+            frame,
+            border_phase,
+            cursor_visible,
+        );
     }
 
     // Recovery modal
@@ -159,7 +167,7 @@ pub fn render(app: &mut App, frame: &mut Frame) {
 
     // Verification modal
     if let Some(ref verify_state) = app.verification_modal {
-        verify_modal::render(verify_state, frame, border_phase);
+        verify_modal::render(verify_state, frame, border_phase, cursor_visible);
     }
 
     // Invite prompt
