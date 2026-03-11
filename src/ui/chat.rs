@@ -10,7 +10,7 @@ use ratatui_image::ResizeEncodeRender;
 use crate::app::App;
 use crate::input::FocusPanel;
 use crate::state::{AuthState, MessageContent};
-use crate::ui::{gradient, panel, theme};
+use crate::ui::{gradient, panel, rich_text, theme};
 
 enum ChatSegment<'a> {
     DateSeparator(Line<'a>),
@@ -191,7 +191,10 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
         ));
 
         match &msg.content {
-            MessageContent::Text(body) => {
+            MessageContent::Text {
+                plain: body,
+                formatted_html,
+            } => {
                 let body_style = if msg.pending {
                     theme::dim_style()
                 } else if msg.is_emote {
@@ -202,25 +205,44 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
                     theme::text_style()
                 };
 
-                let body_lines: Vec<&str> = body.split('\n').collect();
-                // First line: attach to the prefix spans
-                if let Some(first) = body_lines.first() {
-                    spans.push(Span::styled(first.to_string(), body_style));
-                    if msg.pending {
-                        spans.push(Span::styled(" (sending...)", theme::dim_style()));
-                    }
-                }
-                let mut lines = vec![Line::from(spans)];
-
-                // Continuation lines: indent to align with body text
                 let indent_width = 6 + msg.sender.len() + 1;
-                let indent: String = " ".repeat(indent_width);
-                for cont_line in body_lines.iter().skip(1) {
-                    lines.push(Line::from(vec![
-                        Span::raw(indent.clone()),
-                        Span::styled(cont_line.to_string(), body_style),
-                    ]));
-                }
+
+                let use_rich =
+                    formatted_html.is_some() && !msg.pending && !msg.is_emote && !msg.is_notice;
+
+                let mut lines = if use_rich {
+                    let html = formatted_html.as_ref().unwrap();
+                    let mut rich_lines = rich_text::html_to_lines(html, body_style, indent_width);
+                    if rich_lines.is_empty() {
+                        vec![Line::from(spans)]
+                    } else {
+                        let first = rich_lines.remove(0);
+                        spans.extend(first.spans);
+                        let mut result = vec![Line::from(spans)];
+                        result.extend(rich_lines);
+                        result
+                    }
+                } else {
+                    let body_lines: Vec<&str> = body.split('\n').collect();
+                    // First line: attach to the prefix spans
+                    if let Some(first) = body_lines.first() {
+                        spans.push(Span::styled(first.to_string(), body_style));
+                        if msg.pending {
+                            spans.push(Span::styled(" (sending...)", theme::dim_style()));
+                        }
+                    }
+                    let mut lines = vec![Line::from(spans)];
+
+                    // Continuation lines: indent to align with body text
+                    let indent: String = " ".repeat(indent_width);
+                    for cont_line in body_lines.iter().skip(1) {
+                        lines.push(Line::from(vec![
+                            Span::raw(indent.clone()),
+                            Span::styled(cont_line.to_string(), body_style),
+                        ]));
+                    }
+                    lines
+                };
 
                 // Prepend reply quote line if this message is a reply
                 if let Some(ref reply) = msg.in_reply_to {

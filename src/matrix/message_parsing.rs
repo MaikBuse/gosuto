@@ -1,5 +1,7 @@
 use chrono::{DateTime, Local};
-use matrix_sdk::ruma::events::room::message::{ImageMessageEventContent, MessageType};
+use matrix_sdk::ruma::events::room::message::{
+    ImageMessageEventContent, MessageFormat, MessageType,
+};
 
 use crate::event::EventSender;
 use crate::state::MessageContent;
@@ -23,19 +25,40 @@ pub enum ParsedMessage {
 pub fn parse_message_type(msgtype: &MessageType) -> ParsedMessage {
     match msgtype {
         MessageType::Text(text) => ParsedMessage::Message {
-            content: MessageContent::Text(text.body.clone()),
+            content: MessageContent::Text {
+                plain: text.body.clone(),
+                formatted_html: text
+                    .formatted
+                    .as_ref()
+                    .filter(|f| f.format == MessageFormat::Html)
+                    .map(|f| f.body.clone()),
+            },
             is_emote: false,
             is_notice: false,
             image_to_fetch: None,
         },
         MessageType::Emote(emote) => ParsedMessage::Message {
-            content: MessageContent::Text(emote.body.clone()),
+            content: MessageContent::Text {
+                plain: emote.body.clone(),
+                formatted_html: emote
+                    .formatted
+                    .as_ref()
+                    .filter(|f| f.format == MessageFormat::Html)
+                    .map(|f| f.body.clone()),
+            },
             is_emote: true,
             is_notice: false,
             image_to_fetch: None,
         },
         MessageType::Notice(notice) => ParsedMessage::Message {
-            content: MessageContent::Text(notice.body.clone()),
+            content: MessageContent::Text {
+                plain: notice.body.clone(),
+                formatted_html: notice
+                    .formatted
+                    .as_ref()
+                    .filter(|f| f.format == MessageFormat::Html)
+                    .map(|f| f.body.clone()),
+            },
             is_emote: false,
             is_notice: true,
             image_to_fetch: None,
@@ -64,7 +87,10 @@ pub fn parse_message_type(msgtype: &MessageType) -> ParsedMessage {
         }
         MessageType::VerificationRequest(_) => ParsedMessage::Skip,
         _ => ParsedMessage::Message {
-            content: MessageContent::Text("[unsupported message type]".to_string()),
+            content: MessageContent::Text {
+                plain: "[unsupported message type]".to_string(),
+                formatted_html: None,
+            },
             is_emote: false,
             is_notice: false,
             image_to_fetch: None,
@@ -126,7 +152,9 @@ mod tests {
                 is_notice,
                 image_to_fetch,
             } => {
-                assert!(matches!(content, MessageContent::Text(ref s) if s == "hello"));
+                assert!(
+                    matches!(content, MessageContent::Text { ref plain, .. } if plain == "hello")
+                );
                 assert!(!is_emote);
                 assert!(!is_notice);
                 assert!(image_to_fetch.is_none());

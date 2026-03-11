@@ -66,6 +66,7 @@ keyring = { version = "3", features = ["sync-secret-service", "crypto-rust"] }
 url = "2.5.8"
 base64 = "0.22"
 arboard = "3"
+pulldown-cmark = { version = "0.13", default-features = false, features = ["html"] }
 libc = "0.2"
 
 # Inline images

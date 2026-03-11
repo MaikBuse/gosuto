@@ -80,6 +80,7 @@ The goal is simple: a fast, keyboard-driven Matrix experience with full voice su
 * **Room management** — create, join, leave, view member lists and power levels
 * **Visual effects** — matrix rain, glitch, text reveal animations (all togglable)
 * **Element compatible** — tested against Element Web and Element X
+* **Markdown messages** — bold, italic, strikethrough, code, links, lists, and more — auto-converted to HTML for other Matrix clients
 * **Lightweight** — under 60 MB of RAM for everything
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>

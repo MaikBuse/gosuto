@@ -20,6 +20,7 @@ pub mod panel;
 pub mod popup;
 pub mod reaction_picker;
 pub mod recovery_modal;
+pub mod rich_text;
 pub mod room_info;
 pub mod room_list;
 pub mod status_bar;

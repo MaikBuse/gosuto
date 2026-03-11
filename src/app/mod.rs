@@ -286,7 +286,10 @@ impl App {
             let msg = crate::state::DisplayMessage {
                 event_id: String::new(),
                 sender,
-                content: crate::state::MessageContent::Text(body.clone()),
+                content: crate::state::MessageContent::Text {
+                    plain: body.clone(),
+                    formatted_html: None,
+                },
                 timestamp: chrono::Local::now(),
                 is_emote: false,
                 is_notice: false,

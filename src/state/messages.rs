@@ -21,7 +21,10 @@ pub struct Reaction {
 
 #[derive(Debug, Clone)]
 pub enum MessageContent {
-    Text(String),
+    Text {
+        plain: String,
+        formatted_html: Option<String>,
+    },
     Image {
         body: String,
         width: Option<u32>,
@@ -46,7 +49,7 @@ pub struct DisplayMessage {
 impl DisplayMessage {
     pub fn body_text(&self) -> &str {
         match &self.content {
-            MessageContent::Text(s) => s,
+            MessageContent::Text { plain, .. } => plain,
             MessageContent::Image { body, .. } => body,
         }
     }
@@ -253,7 +256,10 @@ mod tests {
         DisplayMessage {
             event_id: event_id.to_string(),
             sender: "@user:example.com".to_string(),
-            content: MessageContent::Text(body.to_string()),
+            content: MessageContent::Text {
+                plain: body.to_string(),
+                formatted_html: None,
+            },
             timestamp: Local::now(),
             is_emote: false,
             is_notice: false,

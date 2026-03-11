@@ -60,6 +60,13 @@ pub const INPUT_BORDER_GREEN_DIM: Color = Color::Rgb(0, 160, 80); // darker gree
 pub const INPUT_BORDER_MAGENTA_DIM: Color = Color::Rgb(160, 0, 160); // darker magenta
 pub const PULSE_BASE: Color = Color::Rgb(20, 255, 255); // room list pulse base
 
+// Rich text / formatted message colors
+pub const CODE_INLINE_FG: Color = Color::Rgb(220, 180, 255); // light purple for inline code
+pub const CODE_INLINE_BG: Color = Color::Rgb(30, 25, 45); // subtle purple tint background
+pub const CODE_BLOCK_BG: Color = Color::Rgb(20, 20, 30); // dark background for code blocks
+pub const LINK_FG: Color = Color::Rgb(100, 180, 255); // blue for hyperlinks
+pub const BLOCKQUOTE_FG: Color = Color::Rgb(140, 140, 160); // muted for block quotes
+
 // Composite styles
 pub fn border_style() -> Style {
     Style::default().fg(BORDER)
@@ -144,6 +151,24 @@ pub fn reaction_badge_style() -> Style {
 
 pub fn reaction_own_badge_style() -> Style {
     Style::default().fg(CYAN).bg(REACTION_OWN_BG)
+}
+
+pub fn code_inline_style() -> Style {
+    Style::default().fg(CODE_INLINE_FG).bg(CODE_INLINE_BG)
+}
+
+pub fn code_block_style() -> Style {
+    Style::default().fg(TEXT).bg(CODE_BLOCK_BG)
+}
+
+pub fn link_style() -> Style {
+    Style::default()
+        .fg(LINK_FG)
+        .add_modifier(Modifier::UNDERLINED)
+}
+
+pub fn blockquote_style() -> Style {
+    Style::default().fg(BLOCKQUOTE_FG)
 }
 
 pub fn loading_style() -> Style {
