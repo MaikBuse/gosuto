@@ -217,7 +217,7 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
                 let indent: String = " ".repeat(indent_width);
                 for cont_line in body_lines.iter().skip(1) {
                     lines.push(Line::from(vec![
-                        Span::styled(indent.clone(), theme::dim_style()),
+                        Span::raw(indent.clone()),
                         Span::styled(cont_line.to_string(), body_style),
                     ]));
                 }
@@ -226,13 +226,13 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
                 if let Some(ref reply) = msg.in_reply_to {
                     let reply_line = if reply.sender.is_empty() {
                         Line::from(vec![
-                            Span::styled("     ", theme::dim_style()),
+                            Span::raw("     "),
                             Span::styled("| ", theme::reply_indicator_style()),
                             Span::styled("[unknown message]", theme::dim_style()),
                         ])
                     } else {
                         Line::from(vec![
-                            Span::styled("     ", theme::dim_style()),
+                            Span::raw("     "),
                             Span::styled("| ", theme::reply_indicator_style()),
                             Span::styled(
                                 format!("{}: ", reply.sender),
@@ -249,7 +249,7 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
                         AuthState::LoggedIn { user_id, .. } => user_id.as_str(),
                         _ => "",
                     };
-                    let mut reaction_spans = vec![Span::styled("      ", theme::dim_style())];
+                    let mut reaction_spans = vec![Span::raw("      ")];
                     for reaction in &msg.reactions {
                         let is_own = reaction.senders.iter().any(|s| s.user_id == own_id);
                         let badge = format!(" {} {} ", reaction.key, reaction.senders.len());
