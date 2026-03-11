@@ -52,7 +52,11 @@ pub fn render(app: &mut App, frame: &mut Frame) {
         .as_ref()
         .and_then(|rid| app.typing_users.get(rid))
         .is_some_and(|names| !names.is_empty());
-    let reply_extra = if app.reply_context.is_some() { 1 } else { 0 };
+    let reply_extra = if app.reply_context.is_some() || app.edit_context.is_some() {
+        1
+    } else {
+        0
+    };
     let layout =
         layout::compute_layout(frame, app.vim.input_line_count() + reply_extra, has_typing);
 

@@ -31,6 +31,7 @@ pub enum InputResult {
     VerifyMember,
     ReplyToSelected,
     ReactToSelected,
+    EditSelected,
     Escape,
 }
 

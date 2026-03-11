@@ -44,6 +44,7 @@ pub struct DisplayMessage {
     pub verified: Option<bool>,
     pub in_reply_to: Option<ReplyInfo>,
     pub reactions: Vec<Reaction>,
+    pub edited: bool,
 }
 
 impl DisplayMessage {
@@ -235,6 +236,17 @@ impl MessageState {
         }
     }
 
+    pub fn update_message_content(&mut self, target_event_id: &str, new_content: MessageContent) {
+        if let Some(msg) = self
+            .messages
+            .iter_mut()
+            .find(|m| m.event_id == target_event_id)
+        {
+            msg.content = new_content;
+            msg.edited = true;
+        }
+    }
+
     pub fn confirm_sent(&mut self, pending_body: &str, event_id: &str) {
         if let Some(msg) = self
             .messages
@@ -267,6 +279,7 @@ mod tests {
             verified: None,
             in_reply_to: None,
             reactions: Vec::new(),
+            edited: false,
         }
     }
 
@@ -528,6 +541,39 @@ mod tests {
         assert!(state.is_selecting());
         state.set_room(Some("!room2:example.com".to_string()));
         assert_eq!(state.selected_index, None);
+    }
+
+    // --- Edit ---
+
+    #[test]
+    fn update_message_content_updates_content_and_edited() {
+        let mut state = MessageState::new();
+        state.add_message(make_msg("$1", "hello", false));
+        assert!(!state.messages[0].edited);
+        state.update_message_content(
+            "$1",
+            MessageContent::Text {
+                plain: "hello edited".to_string(),
+                formatted_html: None,
+            },
+        );
+        assert_eq!(state.messages[0].body_text(), "hello edited");
+        assert!(state.messages[0].edited);
+    }
+
+    #[test]
+    fn update_message_content_noop_missing_event_id() {
+        let mut state = MessageState::new();
+        state.add_message(make_msg("$1", "hello", false));
+        state.update_message_content(
+            "$999",
+            MessageContent::Text {
+                plain: "nope".to_string(),
+                formatted_html: None,
+            },
+        );
+        assert_eq!(state.messages[0].body_text(), "hello");
+        assert!(!state.messages[0].edited);
     }
 
     // --- Reactions ---

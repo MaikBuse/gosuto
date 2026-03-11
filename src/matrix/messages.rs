@@ -36,6 +36,8 @@ pub async fn fetch_messages(
     let mut skipped = 0usize;
     // key: target_event_id → Vec<(emoji_key, sender, reaction_event_id)>
     let mut reaction_map: HashMap<String, Vec<(String, String, String)>> = HashMap::new();
+    // key: target_event_id → new content from edit
+    let mut edit_map: HashMap<String, MessageContent> = HashMap::new();
 
     for event in &response.chunk {
         let timeline_event = event.raw().deserialize();
@@ -57,6 +59,23 @@ pub async fn fetch_messages(
                     }
                     _ => continue,
                 };
+
+                // Check for edit (replacement) events FIRST, before parsing fallback content
+                if let Some(matrix_sdk::ruma::events::room::message::Relation::Replacement(
+                    replacement,
+                )) = &content.relates_to
+                {
+                    let target_eid = replacement.event_id.to_string();
+                    let edit_parsed = parse_message_type(&replacement.new_content.msgtype);
+                    if let ParsedMessage::Message {
+                        content: edit_content,
+                        ..
+                    } = edit_parsed
+                    {
+                        edit_map.entry(target_eid).or_insert(edit_content);
+                    }
+                    continue;
+                }
 
                 let in_reply_to = match &content.relates_to {
                     Some(matrix_sdk::ruma::events::room::message::Relation::Reply {
@@ -95,6 +114,7 @@ pub async fn fetch_messages(
                     verified: None,
                     in_reply_to,
                     reactions: Vec::new(),
+                    edited: false,
                 });
             }
             Ok(matrix_sdk::ruma::events::AnySyncTimelineEvent::MessageLike(
@@ -128,6 +148,7 @@ pub async fn fetch_messages(
                     verified: None,
                     in_reply_to: None,
                     reactions: Vec::new(),
+                    edited: false,
                 });
             }
             Ok(matrix_sdk::ruma::events::AnySyncTimelineEvent::MessageLike(
@@ -175,6 +196,14 @@ pub async fn fetch_messages(
                 }
             }
             total_reactions += msg.reactions.len();
+        }
+    }
+
+    // Apply edits from edit_map
+    for msg in &mut messages {
+        if let Some(new_content) = edit_map.remove(&msg.event_id) {
+            msg.content = new_content;
+            msg.edited = true;
         }
     }
 
@@ -252,6 +281,59 @@ pub async fn send_message(
                 error: e.to_string(),
             })
             .warn_closed("SendError");
+        }
+    }
+
+    Ok(())
+}
+
+pub async fn send_edit(
+    client: &Client,
+    room_id: &str,
+    target_event_id: &str,
+    new_body: &str,
+    tx: &EventSender,
+) -> Result<()> {
+    use matrix_sdk::ruma::events::room::message::ReplacementMetadata;
+
+    let room_id_parsed: matrix_sdk::ruma::OwnedRoomId = room_id.try_into()?;
+    let target_eid: matrix_sdk::ruma::OwnedEventId = target_event_id.try_into()?;
+    let room = client
+        .get_room(&room_id_parsed)
+        .ok_or_else(|| anyhow::anyhow!("Room not found: {}", room_id))?;
+
+    let mut content = if has_markdown(new_body) {
+        let html_body = markdown_to_html(new_body);
+        RoomMessageEventContent::text_html(new_body, html_body)
+    } else if new_body.contains('\n') {
+        let html_body = new_body
+            .split('\n')
+            .map(escape_html)
+            .collect::<Vec<_>>()
+            .join("<br>");
+        RoomMessageEventContent::text_html(new_body, html_body)
+    } else {
+        RoomMessageEventContent::text_plain(new_body)
+    };
+
+    let metadata = ReplacementMetadata::new(target_eid, None);
+    content = content.make_replacement(metadata);
+
+    match room.send(content).await {
+        Ok(_response) => {
+            tx.send(AppEvent::MessageSent {
+                room_id: room_id.to_string(),
+                event_id: target_event_id.to_string(),
+                body: new_body.to_string(),
+            })
+            .warn_closed("MessageSent(edit)");
+        }
+        Err(e) => {
+            error!("Failed to send edit: {}", e);
+            tx.send(AppEvent::SendError {
+                error: e.to_string(),
+            })
+            .warn_closed("SendError(edit)");
         }
     }
 

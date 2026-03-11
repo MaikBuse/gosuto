@@ -73,6 +73,11 @@ pub enum AppEvent {
         event_id: String,
         body: String,
     },
+    MessageEdited {
+        room_id: String,
+        target_event_id: String,
+        new_content: crate::state::MessageContent,
+    },
     SendError {
         error: String,
     },

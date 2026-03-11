@@ -29,7 +29,10 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
                 let search = format!("/{}", app.vim.search_query);
                 (search, theme::CYAN)
             } else if app.vim.focus == FocusPanel::Messages {
-                ("j/k: navigate, r: reply, a: react".to_string(), theme::DIM)
+                (
+                    "j/k: navigate, r: reply, e: edit, a: react".to_string(),
+                    theme::DIM,
+                )
             } else if app.vim.focus == FocusPanel::Members {
                 ("Enter: dm, c: call, v: verify".to_string(), theme::DIM)
             } else {
@@ -91,6 +94,12 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
             ),
             Span::styled(format!("  {}", ctx.body_preview), theme::dim_style()),
         ]));
+    } else if let Some(ref ctx) = app.edit_context {
+        let preview = crate::app::truncate_preview(&ctx.original_body, 50);
+        all_lines.push(Line::from(vec![
+            Span::styled(" Editing ", theme::edit_indicator_style()),
+            Span::styled(format!(" {}", preview), theme::dim_style()),
+        ]));
     }
     all_lines.extend(text_lines);
 
@@ -133,7 +142,11 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
 
     // Show cursor in insert/command mode
     if app.vim.mode == VimMode::Insert || app.vim.mode == VimMode::Command || app.vim.searching {
-        let reply_offset: u16 = if app.reply_context.is_some() { 1 } else { 0 };
+        let reply_offset: u16 = if app.reply_context.is_some() || app.edit_context.is_some() {
+            1
+        } else {
+            0
+        };
         let (cursor_x, cursor_y) = match app.vim.mode {
             VimMode::Insert => {
                 let (row, col) = app.vim.cursor_row_col();

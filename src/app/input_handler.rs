@@ -21,6 +21,7 @@ impl App {
             }
             InputResult::Escape => {
                 self.reply_context = None;
+                self.edit_context = None;
             }
             InputResult::MoveUp => match self.vim.focus {
                 FocusPanel::RoomList => self.room_list.move_up(),
@@ -160,6 +161,38 @@ impl App {
                         sender: msg.sender.clone(),
                         body_preview: truncate_preview(msg.body_text(), 50),
                     });
+                    self.messages.deselect();
+                    self.vim.enter_insert();
+                }
+            }
+            InputResult::EditSelected => {
+                if let Some(idx) = self.messages.selected_index
+                    && let Some(msg) = self.messages.messages.get(idx)
+                {
+                    if msg.event_id.is_empty() {
+                        return; // can't edit pending messages
+                    }
+                    let own_id = match &self.auth {
+                        AuthState::LoggedIn { user_id, .. } => user_id.clone(),
+                        _ => return,
+                    };
+                    if msg.sender != own_id {
+                        self.last_error = Some("Can only edit your own messages".to_string());
+                        return;
+                    }
+                    let body = match &msg.content {
+                        crate::state::MessageContent::Text { plain, .. } => plain.clone(),
+                        _ => {
+                            self.last_error = Some("Can only edit text messages".to_string());
+                            return;
+                        }
+                    };
+                    self.edit_context = Some(EditContext {
+                        event_id: msg.event_id.clone(),
+                        original_body: body.clone(),
+                    });
+                    self.vim.input_buffer = body;
+                    self.vim.input_cursor = self.vim.input_buffer.len();
                     self.messages.deselect();
                     self.vim.enter_insert();
                 }

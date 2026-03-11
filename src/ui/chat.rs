@@ -214,10 +214,16 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
                     let html = formatted_html.as_ref().unwrap();
                     let mut rich_lines = rich_text::html_to_lines(html, body_style, indent_width);
                     if rich_lines.is_empty() {
+                        if msg.edited {
+                            spans.push(Span::styled(" (edited)", theme::dim_style()));
+                        }
                         vec![Line::from(spans)]
                     } else {
                         let first = rich_lines.remove(0);
                         spans.extend(first.spans);
+                        if msg.edited {
+                            spans.push(Span::styled(" (edited)", theme::dim_style()));
+                        }
                         let mut result = vec![Line::from(spans)];
                         result.extend(rich_lines);
                         result
@@ -229,6 +235,8 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
                         spans.push(Span::styled(first.to_string(), body_style));
                         if msg.pending {
                             spans.push(Span::styled(" (sending...)", theme::dim_style()));
+                        } else if msg.edited {
+                            spans.push(Span::styled(" (edited)", theme::dim_style()));
                         }
                     }
                     let mut lines = vec![Line::from(spans)];

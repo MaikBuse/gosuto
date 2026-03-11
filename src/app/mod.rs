@@ -42,6 +42,12 @@ pub struct ReplyContext {
     pub body_preview: String,
 }
 
+#[derive(Debug, Clone)]
+pub struct EditContext {
+    pub event_id: String,
+    pub original_body: String,
+}
+
 pub(crate) fn truncate_preview(text: &str, max_len: usize) -> String {
     let first_line = text.lines().next().unwrap_or("");
     if first_line.len() <= max_len {
@@ -55,6 +61,7 @@ pub struct PendingSend {
     pub room_id: String,
     pub body: String,
     pub reply_to: Option<ReplyContext>,
+    pub edit: Option<EditContext>,
 }
 
 pub const QUICK_EMOJIS: &[&str] = &[
@@ -103,6 +110,7 @@ pub struct App {
     pub pending_refetch: bool,
     pending_send: Option<PendingSend>,
     pub reply_context: Option<ReplyContext>,
+    pub edit_context: Option<EditContext>,
     pending_join: Option<String>,  // room_id_or_alias
     pending_leave: Option<String>, // room_id
     pending_dm: Option<String>,    // user_id
@@ -205,6 +213,7 @@ impl App {
             pending_refetch: false,
             pending_send: None,
             reply_context: None,
+            edit_context: None,
             pending_join: None,
             pending_leave: None,
             pending_dm: None,
@@ -269,44 +278,64 @@ impl App {
 
     pub(crate) fn send_message(&mut self, body: String) {
         if let Some(room_id) = self.messages.current_room_id.clone() {
-            // Get the actual user_id for the sender display
-            let sender = match &self.auth {
-                AuthState::LoggedIn { user_id, .. } => user_id.clone(),
-                _ => "me".to_string(),
-            };
+            let edit = self.edit_context.take();
 
-            let reply_to = self.reply_context.take();
-            let in_reply_to = reply_to.as_ref().map(|r| crate::state::ReplyInfo {
-                event_id: r.event_id.clone(),
-                sender: r.sender.clone(),
-                body_preview: r.body_preview.clone(),
-            });
-
-            // Add optimistic message
-            let msg = crate::state::DisplayMessage {
-                event_id: String::new(),
-                sender,
-                content: crate::state::MessageContent::Text {
+            if let Some(ref edit_ctx) = edit {
+                // Editing: update the existing message in-place
+                let new_content = crate::state::MessageContent::Text {
                     plain: body.clone(),
                     formatted_html: None,
-                },
-                timestamp: chrono::Local::now(),
-                is_emote: false,
-                is_notice: false,
-                pending: true,
-                verified: None,
-                in_reply_to,
-                reactions: Vec::new(),
-            };
-            self.messages.add_message(msg);
-            self.messages.scroll_to_bottom();
+                };
+                self.messages
+                    .update_message_content(&edit_ctx.event_id, new_content);
+                self.pending_send = Some(PendingSend {
+                    room_id,
+                    body,
+                    reply_to: None,
+                    edit,
+                });
+            } else {
+                // Get the actual user_id for the sender display
+                let sender = match &self.auth {
+                    AuthState::LoggedIn { user_id, .. } => user_id.clone(),
+                    _ => "me".to_string(),
+                };
 
-            // Queue for main loop to send
-            self.pending_send = Some(PendingSend {
-                room_id,
-                body,
-                reply_to,
-            });
+                let reply_to = self.reply_context.take();
+                let in_reply_to = reply_to.as_ref().map(|r| crate::state::ReplyInfo {
+                    event_id: r.event_id.clone(),
+                    sender: r.sender.clone(),
+                    body_preview: r.body_preview.clone(),
+                });
+
+                // Add optimistic message
+                let msg = crate::state::DisplayMessage {
+                    event_id: String::new(),
+                    sender,
+                    content: crate::state::MessageContent::Text {
+                        plain: body.clone(),
+                        formatted_html: None,
+                    },
+                    timestamp: chrono::Local::now(),
+                    is_emote: false,
+                    is_notice: false,
+                    pending: true,
+                    verified: None,
+                    in_reply_to,
+                    reactions: Vec::new(),
+                    edited: false,
+                };
+                self.messages.add_message(msg);
+                self.messages.scroll_to_bottom();
+
+                // Queue for main loop to send
+                self.pending_send = Some(PendingSend {
+                    room_id,
+                    body,
+                    reply_to,
+                    edit: None,
+                });
+            }
         }
     }
 

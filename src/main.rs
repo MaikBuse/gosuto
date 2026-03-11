@@ -370,12 +370,20 @@ async fn main() -> Result<()> {
                         // Handle message sending
                         if let Some(pending) = app.take_pending_send() {
                             let tx = event_tx.clone();
-                            spawn_with_client!(matrix_client, |client| async move {
-                                let reply_to = pending.reply_to.as_ref().map(|r| (r.event_id.as_str(), r.sender.as_str()));
-                                if let Err(e) = matrix::messages::send_message(&client, &pending.room_id, &pending.body, reply_to, &tx).await {
-                                    error!("Failed to send message: {}", e);
-                                }
-                            });
+                            if let Some(edit_ctx) = pending.edit {
+                                spawn_with_client!(matrix_client, |client| async move {
+                                    if let Err(e) = matrix::messages::send_edit(&client, &pending.room_id, &edit_ctx.event_id, &pending.body, &tx).await {
+                                        error!("Failed to send edit: {}", e);
+                                    }
+                                });
+                            } else {
+                                spawn_with_client!(matrix_client, |client| async move {
+                                    let reply_to = pending.reply_to.as_ref().map(|r| (r.event_id.as_str(), r.sender.as_str()));
+                                    if let Err(e) = matrix::messages::send_message(&client, &pending.room_id, &pending.body, reply_to, &tx).await {
+                                        error!("Failed to send message: {}", e);
+                                    }
+                                });
+                            }
                         }
 
                         // Handle reaction sending

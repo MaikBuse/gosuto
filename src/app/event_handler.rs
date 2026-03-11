@@ -206,6 +206,16 @@ impl App {
                     self.messages.confirm_sent(&body, &event_id);
                 }
             }
+            AppEvent::MessageEdited {
+                room_id,
+                target_event_id,
+                new_content,
+            } => {
+                if self.messages.current_room_id.as_deref() == Some(&room_id) {
+                    self.messages
+                        .update_message_content(&target_event_id, new_content);
+                }
+            }
             AppEvent::SendError { error, .. } => {
                 self.last_error = Some(error);
             }

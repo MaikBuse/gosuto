@@ -40,6 +40,13 @@ pub fn handle_normal(key: KeyEvent, vim: &mut VimState) -> InputResult {
                 InputResult::AnswerCall
             }
         }
+        KeyCode::Char('e') => {
+            if vim.focus == FocusPanel::Messages {
+                InputResult::EditSelected
+            } else {
+                InputResult::None
+            }
+        }
         KeyCode::Char('r') => {
             if vim.focus == FocusPanel::Messages {
                 InputResult::ReplyToSelected
@@ -273,6 +280,22 @@ mod tests {
         vim.focus = FocusPanel::Messages;
         let result = handle_normal(key(KeyCode::Char('r')), &mut vim);
         assert!(matches!(result, InputResult::ReplyToSelected));
+    }
+
+    #[test]
+    fn e_edits_when_messages_focused() {
+        let mut vim = VimState::new();
+        vim.focus = FocusPanel::Messages;
+        let result = handle_normal(key(KeyCode::Char('e')), &mut vim);
+        assert!(matches!(result, InputResult::EditSelected));
+    }
+
+    #[test]
+    fn e_noop_when_not_messages_focused() {
+        let mut vim = VimState::new();
+        vim.focus = FocusPanel::RoomList;
+        let result = handle_normal(key(KeyCode::Char('e')), &mut vim);
+        assert!(matches!(result, InputResult::None));
     }
 
     #[test]

@@ -44,6 +44,7 @@ pub const MESSAGE_SELECT_BG: Color = Color::Rgb(25, 30, 50);
 pub const REPLY_INDICATOR: Color = Color::Rgb(100, 180, 255);
 pub const REACTION_BG: Color = Color::Rgb(30, 35, 55);
 pub const REACTION_OWN_BG: Color = Color::Rgb(25, 50, 70);
+pub const EDIT_INDICATOR: Color = Color::Rgb(100, 200, 150);
 
 // Gradient endpoints
 pub const GRADIENT_BORDER_START: Color = Color::Rgb(0, 255, 255); // CYAN
@@ -151,6 +152,12 @@ pub fn reaction_badge_style() -> Style {
 
 pub fn reaction_own_badge_style() -> Style {
     Style::default().fg(CYAN).bg(REACTION_OWN_BG)
+}
+
+pub fn edit_indicator_style() -> Style {
+    Style::default()
+        .fg(EDIT_INDICATOR)
+        .add_modifier(Modifier::BOLD)
 }
 
 pub fn code_inline_style() -> Style {

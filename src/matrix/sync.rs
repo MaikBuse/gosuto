@@ -70,6 +70,28 @@ pub async fn start_sync(
                 let millis: i64 = event.origin_server_ts.0.into();
                 let timestamp = millis_to_local(millis);
 
+                // Check for edit (replacement) events FIRST, before parsing fallback content
+                if let Some(matrix_sdk::ruma::events::room::message::Relation::Replacement(
+                    replacement,
+                )) = &event.content.relates_to
+                {
+                    let target_eid = replacement.event_id.to_string();
+                    let parsed = parse_message_type(&replacement.new_content.msgtype);
+                    if let ParsedMessage::Message {
+                        content: new_content,
+                        ..
+                    } = parsed
+                    {
+                        tx.send(AppEvent::MessageEdited {
+                            room_id: room_id.clone(),
+                            target_event_id: target_eid,
+                            new_content,
+                        })
+                        .warn_closed("MessageEdited");
+                    }
+                    return;
+                }
+
                 let parsed = parse_message_type(&event.content.msgtype);
                 let ParsedMessage::Message {
                     content: msg_content,
@@ -107,6 +129,7 @@ pub async fn start_sync(
                     verified: None,
                     in_reply_to,
                     reactions: Vec::new(),
+                    edited: false,
                 };
 
                 tx.send(AppEvent::NewMessage {
