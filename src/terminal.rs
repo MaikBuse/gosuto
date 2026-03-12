@@ -16,7 +16,7 @@ use std::sync::OnceLock;
 /// Ratatui writes through a dup'd fd so we can redirect the original fd 1
 /// to `/dev/null` without breaking the TUI output.
 #[cfg(unix)]
-pub type Tui = Terminal<CrosstermBackend<std::fs::File>>;
+pub type Tui = Terminal<CrosstermBackend<std::io::BufWriter<std::fs::File>>>;
 
 #[cfg(not(unix))]
 pub type Tui = Terminal<CrosstermBackend<io::Stdout>>;
@@ -34,7 +34,8 @@ pub fn init() -> Result<Tui> {
     // SAFETY: dup is standard POSIX; we own the returned fd via File.
     let tui_fd = unsafe { libc::dup(1) };
     anyhow::ensure!(tui_fd >= 0, "dup(stdout) failed");
-    let mut writer = unsafe { std::fs::File::from_raw_fd(tui_fd) };
+    let file = unsafe { std::fs::File::from_raw_fd(tui_fd) };
+    let mut writer = std::io::BufWriter::with_capacity(1 << 20, file);
 
     terminal::enable_raw_mode()?;
     execute!(writer, EnterAlternateScreen)?;
