@@ -13,6 +13,16 @@ impl App {
         }
     }
 
+    fn maybe_trigger_load_more(&mut self) {
+        if self.messages.selected_index == Some(0)
+            && self.messages.has_more
+            && !self.messages.loading
+        {
+            self.messages.loading = true;
+            self.pending_load_more = true;
+        }
+    }
+
     pub(crate) fn process_input(&mut self, result: InputResult) {
         match result {
             InputResult::None => {}
@@ -25,7 +35,10 @@ impl App {
             }
             InputResult::MoveUp => match self.vim.focus {
                 FocusPanel::RoomList => self.room_list.move_up(),
-                FocusPanel::Messages => self.messages.select_up(),
+                FocusPanel::Messages => {
+                    self.messages.select_up();
+                    self.maybe_trigger_load_more();
+                }
                 FocusPanel::Members => self.members_list.move_up(),
             },
             InputResult::MoveDown => match self.vim.focus {
@@ -35,7 +48,10 @@ impl App {
             },
             InputResult::MoveTop => match self.vim.focus {
                 FocusPanel::RoomList => self.room_list.move_top(),
-                FocusPanel::Messages => self.messages.select_top(),
+                FocusPanel::Messages => {
+                    self.messages.select_top();
+                    self.maybe_trigger_load_more();
+                }
                 FocusPanel::Members => self.members_list.move_top(),
             },
             InputResult::MoveBottom => match self.vim.focus {

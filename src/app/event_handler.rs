@@ -1,3 +1,5 @@
+use tracing::info;
+
 use super::*;
 
 impl App {
@@ -168,10 +170,12 @@ impl App {
                 room_id,
                 messages,
                 has_more,
+                pagination_token,
             } => {
                 if self.messages.current_room_id.as_deref() == Some(&room_id) {
                     let last_event_id = messages.last().map(|m| m.event_id.clone());
-                    self.messages.prepend_messages(messages, has_more);
+                    self.messages
+                        .prepend_messages(messages, has_more, pagination_token);
                     // Resolve reply info from local messages
                     let resolutions: HashMap<String, (String, String)> = self
                         .messages
@@ -266,6 +270,15 @@ impl App {
                     .or_default()
                     .insert(user_id.clone());
                 self.room_list.rebuild_display_rows();
+                let member_count = self
+                    .room_list
+                    .room_call_members
+                    .get(&room_id)
+                    .map_or(0, |m| m.len());
+                info!(
+                    "CallMemberJoined: user={}, room={}, member_count={}",
+                    user_id, room_id, member_count
+                );
 
                 // If we're already in a call, ignore ringing logic
                 if self.call_info.is_some() {
@@ -305,6 +318,15 @@ impl App {
                     }
                 }
                 self.room_list.rebuild_display_rows();
+                let member_count = self
+                    .room_list
+                    .room_call_members
+                    .get(&room_id)
+                    .map_or(0, |m| m.len());
+                info!(
+                    "CallMemberLeft: user={}, room={}, member_count={}",
+                    user_id, room_id, member_count
+                );
 
                 // If it was the incoming caller, clear ringing state
                 if self.incoming_call_room.as_deref() == Some(&room_id)

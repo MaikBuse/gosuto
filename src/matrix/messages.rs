@@ -3,15 +3,21 @@ use std::collections::HashMap;
 use anyhow::Result;
 use matrix_sdk::Client;
 use matrix_sdk::room::MessagesOptions;
+use matrix_sdk::ruma::OwnedUserId;
 use matrix_sdk::ruma::events::room::message::RoomMessageEventContent;
 use matrix_sdk::ruma::uint;
-use tracing::{debug, error};
+use tracing::{debug, error, trace};
 
 use crate::event::{AppEvent, EventSender, WarnClosed};
 use crate::matrix::message_parsing::{
     ParsedMessage, millis_to_local, parse_message_type, spawn_image_fetch,
 };
 use crate::state::{DisplayMessage, MessageContent, Reaction, ReactionSender};
+
+/// Minimum displayable messages to collect before stopping pagination.
+const MIN_MESSAGES: usize = 20;
+/// Maximum backward pages to fetch in a single load.
+const MAX_PAGES: usize = 5;
 
 pub async fn fetch_messages(
     client: &Client,
@@ -24,116 +30,78 @@ pub async fn fetch_messages(
         .get_room(&room_id_parsed)
         .ok_or_else(|| anyhow::anyhow!("Room not found: {}", room_id))?;
 
-    let mut options = MessagesOptions::backward();
-    options.limit = uint!(50);
-    if let Some(token) = sync_token {
-        options.from = Some(token);
-    }
-    let response = room.messages(options).await?;
-
     let mut messages: Vec<DisplayMessage> = Vec::new();
-    let chunk_size = response.chunk.len();
+    let mut total_chunk_events = 0usize;
     let mut skipped = 0usize;
+    let mut utd_count = 0usize;
     // key: target_event_id → Vec<(emoji_key, sender, reaction_event_id)>
     let mut reaction_map: HashMap<String, Vec<(String, String, String)>> = HashMap::new();
     // key: target_event_id → new content from edit
     let mut edit_map: HashMap<String, MessageContent> = HashMap::new();
 
-    for event in &response.chunk {
-        let timeline_event = event.raw().deserialize();
-        match timeline_event {
-            Ok(matrix_sdk::ruma::events::AnySyncTimelineEvent::MessageLike(
-                matrix_sdk::ruma::events::AnySyncMessageLikeEvent::RoomMessage(msg_event),
-            )) => {
-                let (sender, event_id, timestamp, content) = match msg_event {
-                    matrix_sdk::ruma::events::room::message::SyncRoomMessageEvent::Original(
-                        orig,
-                    ) => {
-                        let millis: i64 = orig.origin_server_ts.0.into();
-                        (
-                            orig.sender.to_string(),
-                            orig.event_id.to_string(),
-                            millis_to_local(millis),
-                            orig.content,
-                        )
-                    }
-                    _ => continue,
-                };
+    let mut next_token = sync_token.clone();
+    let had_sync_token = sync_token.is_some();
 
-                // Check for edit (replacement) events FIRST, before parsing fallback content
-                if let Some(matrix_sdk::ruma::events::room::message::Relation::Replacement(
-                    replacement,
-                )) = &content.relates_to
-                {
-                    let target_eid = replacement.event_id.to_string();
-                    let edit_parsed = parse_message_type(&replacement.new_content.msgtype);
-                    if let ParsedMessage::Message {
-                        content: edit_content,
+    for page in 0..MAX_PAGES {
+        let mut options = MessagesOptions::backward();
+        options.limit = uint!(50);
+        if let Some(ref token) = next_token {
+            options.from = Some(token.clone());
+        }
+        let response = room.messages(options).await?;
+
+        debug!(
+            "room.messages() page {} returned {} events for room {} (token: {})",
+            page,
+            response.chunk.len(),
+            room_id,
+            next_token.is_some()
+        );
+
+        if response.chunk.is_empty() {
+            next_token = response.end;
+            break;
+        }
+
+        total_chunk_events += response.chunk.len();
+
+        for event in &response.chunk {
+            trace!(
+                "Event kind={}, event_id={:?}, event_type={:?}",
+                match &event.kind {
+                    matrix_sdk::deserialized_responses::TimelineEventKind::Decrypted(_) =>
+                        "Decrypted",
+                    matrix_sdk::deserialized_responses::TimelineEventKind::UnableToDecrypt {
                         ..
-                    } = edit_parsed
-                    {
-                        edit_map.entry(target_eid).or_insert(edit_content);
+                    } => "UnableToDecrypt",
+                    matrix_sdk::deserialized_responses::TimelineEventKind::PlainText { .. } =>
+                        "PlainText",
+                },
+                event.event_id(),
+                event.kind.event_type(),
+            );
+
+            // Handle unable-to-decrypt events before attempting deserialization,
+            // since raw() returns encrypted JSON that won't deserialize to message types
+            if event.kind.is_utd() {
+                utd_count += 1;
+                let event_id = event
+                    .event_id()
+                    .map(|id| id.to_string())
+                    .unwrap_or_default();
+                let sender = event
+                    .raw()
+                    .get_field::<OwnedUserId>("sender")
+                    .ok()
+                    .flatten()
+                    .map_or_else(|| "unknown".to_string(), |u| u.to_string());
+                let timestamp = match event.timestamp() {
+                    Some(ts) => {
+                        let millis: i64 = ts.0.into();
+                        millis_to_local(millis)
                     }
-                    continue;
-                }
-
-                let in_reply_to = match &content.relates_to {
-                    Some(matrix_sdk::ruma::events::room::message::Relation::Reply {
-                        in_reply_to,
-                    }) => Some(crate::state::ReplyInfo {
-                        event_id: in_reply_to.event_id.to_string(),
-                        sender: String::new(),
-                        body_preview: String::new(),
-                    }),
-                    _ => None,
+                    None => chrono::Local::now(),
                 };
-
-                let parsed = parse_message_type(&content.msgtype);
-                let ParsedMessage::Message {
-                    content: msg_content,
-                    is_emote,
-                    is_notice,
-                    image_to_fetch,
-                } = parsed
-                else {
-                    continue;
-                };
-
-                if let Some(ref img) = image_to_fetch {
-                    spawn_image_fetch(client, event_id.clone(), img, tx);
-                }
-
-                messages.push(DisplayMessage {
-                    event_id,
-                    sender,
-                    content: msg_content,
-                    timestamp,
-                    is_emote,
-                    is_notice,
-                    pending: false,
-                    verified: None,
-                    in_reply_to,
-                    reactions: Vec::new(),
-                    edited: false,
-                });
-            }
-            Ok(matrix_sdk::ruma::events::AnySyncTimelineEvent::MessageLike(
-                matrix_sdk::ruma::events::AnySyncMessageLikeEvent::RoomEncrypted(enc_event),
-            )) => {
-                let (sender, event_id, timestamp) = match enc_event {
-                    matrix_sdk::ruma::events::room::encrypted::SyncRoomEncryptedEvent::Original(
-                        orig,
-                    ) => {
-                        let millis: i64 = orig.origin_server_ts.0.into();
-                        (
-                            orig.sender.to_string(),
-                            orig.event_id.to_string(),
-                            millis_to_local(millis),
-                        )
-                    }
-                    _ => continue,
-                };
-
                 messages.push(DisplayMessage {
                     event_id,
                     sender,
@@ -150,27 +118,168 @@ pub async fn fetch_messages(
                     reactions: Vec::new(),
                     edited: false,
                 });
+                continue;
             }
-            Ok(matrix_sdk::ruma::events::AnySyncTimelineEvent::MessageLike(
-                matrix_sdk::ruma::events::AnySyncMessageLikeEvent::Reaction(reaction_event),
-            )) => {
-                if let matrix_sdk::ruma::events::reaction::SyncReactionEvent::Original(orig) =
-                    reaction_event
-                {
-                    let target = orig.content.relates_to.event_id.to_string();
-                    let emoji_key = orig.content.relates_to.key.clone();
-                    let sender = orig.sender.to_string();
-                    let reaction_eid = orig.event_id.to_string();
-                    reaction_map
-                        .entry(target)
-                        .or_default()
-                        .push((emoji_key, sender, reaction_eid));
+
+            let timeline_event = event.raw().deserialize();
+            match timeline_event {
+                Ok(matrix_sdk::ruma::events::AnySyncTimelineEvent::MessageLike(
+                    matrix_sdk::ruma::events::AnySyncMessageLikeEvent::RoomMessage(msg_event),
+                )) => {
+                    let (sender, event_id, timestamp, content) = match msg_event {
+                        matrix_sdk::ruma::events::room::message::SyncRoomMessageEvent::Original(
+                            orig,
+                        ) => {
+                            let millis: i64 = orig.origin_server_ts.0.into();
+                            (
+                                orig.sender.to_string(),
+                                orig.event_id.to_string(),
+                                millis_to_local(millis),
+                                orig.content,
+                            )
+                        }
+                        _ => {
+                            debug!("Skipping redacted RoomMessage event");
+                            continue;
+                        }
+                    };
+
+                    // Check for edit (replacement) events FIRST, before parsing fallback content
+                    if let Some(matrix_sdk::ruma::events::room::message::Relation::Replacement(
+                        replacement,
+                    )) = &content.relates_to
+                    {
+                        let target_eid = replacement.event_id.to_string();
+                        let edit_parsed = parse_message_type(&replacement.new_content.msgtype);
+                        if let ParsedMessage::Message {
+                            content: edit_content,
+                            ..
+                        } = edit_parsed
+                        {
+                            edit_map.entry(target_eid).or_insert(edit_content);
+                        }
+                        debug!(
+                            "Skipping edit/replacement event for {}",
+                            replacement.event_id
+                        );
+                        continue;
+                    }
+
+                    let in_reply_to = match &content.relates_to {
+                        Some(matrix_sdk::ruma::events::room::message::Relation::Reply {
+                            in_reply_to,
+                        }) => Some(crate::state::ReplyInfo {
+                            event_id: in_reply_to.event_id.to_string(),
+                            sender: String::new(),
+                            body_preview: String::new(),
+                        }),
+                        _ => None,
+                    };
+
+                    let parsed = parse_message_type(&content.msgtype);
+                    let ParsedMessage::Message {
+                        content: msg_content,
+                        is_emote,
+                        is_notice,
+                        image_to_fetch,
+                    } = parsed
+                    else {
+                        debug!("Skipping unsupported message type in event {}", event_id);
+                        continue;
+                    };
+
+                    if let Some(ref img) = image_to_fetch {
+                        spawn_image_fetch(client, event_id.clone(), img, tx);
+                    }
+
+                    messages.push(DisplayMessage {
+                        event_id,
+                        sender,
+                        content: msg_content,
+                        timestamp,
+                        is_emote,
+                        is_notice,
+                        pending: false,
+                        verified: None,
+                        in_reply_to,
+                        reactions: Vec::new(),
+                        edited: false,
+                    });
+                }
+                Ok(matrix_sdk::ruma::events::AnySyncTimelineEvent::MessageLike(
+                    matrix_sdk::ruma::events::AnySyncMessageLikeEvent::RoomEncrypted(enc_event),
+                )) => {
+                    let (sender, event_id, timestamp) = match enc_event {
+                        matrix_sdk::ruma::events::room::encrypted::SyncRoomEncryptedEvent::Original(
+                            orig,
+                        ) => {
+                            let millis: i64 = orig.origin_server_ts.0.into();
+                            (
+                                orig.sender.to_string(),
+                                orig.event_id.to_string(),
+                                millis_to_local(millis),
+                            )
+                        }
+                        _ => continue,
+                    };
+
+                    messages.push(DisplayMessage {
+                        event_id,
+                        sender,
+                        content: MessageContent::Text {
+                            plain: "[Unable to decrypt]".to_string(),
+                            formatted_html: None,
+                        },
+                        timestamp,
+                        is_emote: false,
+                        is_notice: false,
+                        pending: false,
+                        verified: None,
+                        in_reply_to: None,
+                        reactions: Vec::new(),
+                        edited: false,
+                    });
+                }
+                Ok(matrix_sdk::ruma::events::AnySyncTimelineEvent::MessageLike(
+                    matrix_sdk::ruma::events::AnySyncMessageLikeEvent::Reaction(reaction_event),
+                )) => {
+                    if let matrix_sdk::ruma::events::reaction::SyncReactionEvent::Original(orig) =
+                        reaction_event
+                    {
+                        let target = orig.content.relates_to.event_id.to_string();
+                        let emoji_key = orig.content.relates_to.key.clone();
+                        let sender = orig.sender.to_string();
+                        let reaction_eid = orig.event_id.to_string();
+                        reaction_map.entry(target).or_default().push((
+                            emoji_key,
+                            sender,
+                            reaction_eid,
+                        ));
+                    }
+                }
+                Ok(other) => {
+                    debug!("Skipped non-message event type: {:?}", other.event_type());
+                    skipped += 1;
+                }
+                Err(e) => {
+                    debug!("Failed to deserialize timeline event: {e}");
+                    skipped += 1;
                 }
             }
-            _ => {
-                skipped += 1;
-            }
         }
+
+        next_token = response.end;
+
+        if messages.len() >= MIN_MESSAGES || next_token.is_none() {
+            break;
+        }
+
+        debug!(
+            "Only {} messages so far (need {}), fetching page {}...",
+            messages.len(),
+            MIN_MESSAGES,
+            page + 1
+        );
     }
 
     // Attach historical reactions to their target messages
@@ -207,24 +316,28 @@ pub async fn fetch_messages(
         }
     }
 
+    let pagination_token = next_token;
+    let has_more = pagination_token.is_some();
+
     debug!(
-        "Fetched {} events for room {}: {} messages, {} reactions, {} skipped non-message events",
-        chunk_size,
+        "Fetched {} events for room {}: {} messages, {} reactions, {} UTD, {} skipped (sync_token: {})",
+        total_chunk_events,
         room_id,
         messages.len(),
         total_reactions,
-        skipped
+        utd_count,
+        skipped,
+        had_sync_token
     );
 
     // Reverse so oldest is first
     messages.reverse();
 
-    let has_more = response.end.is_some();
-
     tx.send(AppEvent::MessagesLoaded {
         room_id: room_id.to_string(),
         messages,
         has_more,
+        pagination_token,
     })
     .warn_closed("MessagesLoaded");
 

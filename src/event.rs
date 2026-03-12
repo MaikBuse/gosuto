@@ -67,6 +67,7 @@ pub enum AppEvent {
         room_id: String,
         messages: Vec<DisplayMessage>,
         has_more: bool,
+        pagination_token: Option<String>,
     },
     MessageSent {
         room_id: String,

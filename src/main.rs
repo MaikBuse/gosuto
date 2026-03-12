@@ -372,6 +372,25 @@ async fn main() -> Result<()> {
                             }
                         }
 
+                        // Lazy-load older messages when user scrolls to top
+                        if app.pending_load_more {
+                            app.pending_load_more = false;
+                            if let Some(ref room_id) = app.messages.current_room_id.clone() {
+                                let tx = event_tx.clone();
+                                let rid = room_id.clone();
+                                let token = app.messages.pagination_token.clone();
+                                spawn_with_client!(matrix_client, |client| async move {
+                                    if let Err(e) = matrix::messages::fetch_messages(&client, &rid, &tx, token).await {
+                                        error!("Failed to load more messages for {}: {:?}", rid, e);
+                                        tx.send(AppEvent::FetchError {
+                                            room_id: rid,
+                                            error: e.to_string(),
+                                        }).warn_closed("FetchError");
+                                    }
+                                });
+                            }
+                        }
+
                         // Handle message sending
                         if let Some(pending) = app.take_pending_send() {
                             let tx = event_tx.clone();
