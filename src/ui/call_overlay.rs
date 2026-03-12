@@ -7,7 +7,7 @@ use crate::ui::effects::{TextReveal, Xorshift64};
 use crate::ui::icons::Icons;
 use crate::ui::popup;
 use crate::ui::theme;
-use crate::voip::{CallInfo, CallState};
+use crate::voip::{CallInfo, CallState, ConnectingPhase};
 
 const POPUP_WIDTH: u16 = 52;
 const BASE_POPUP_HEIGHT: u16 = 13;
@@ -31,8 +31,6 @@ pub struct TransmissionPopup {
     waveform: [f32; WAVEFORM_LEN],
     waveform_targets: [f32; WAVEFORM_LEN],
     waveform_phase: f32,
-    connecting_dots: u8,
-    connecting_accum_ms: u64,
     progress_bar_pos: u16,
     progress_accum_ms: u64,
 }
@@ -47,8 +45,6 @@ impl TransmissionPopup {
             waveform: [0.0; WAVEFORM_LEN],
             waveform_targets: [0.0; WAVEFORM_LEN],
             waveform_phase: 0.0,
-            connecting_dots: 0,
-            connecting_accum_ms: 0,
             progress_bar_pos: 0,
             progress_accum_ms: 0,
         }
@@ -84,13 +80,6 @@ impl TransmissionPopup {
         self.generate_waveform_targets(amplitude);
         for i in 0..WAVEFORM_LEN {
             self.waveform[i] += (self.waveform_targets[i] - self.waveform[i]) * 0.3;
-        }
-
-        // Cycle dots (0..3) every 500ms
-        self.connecting_accum_ms += dt_ms;
-        if self.connecting_accum_ms >= 500 {
-            self.connecting_accum_ms -= 500;
-            self.connecting_dots = (self.connecting_dots + 1) % 4;
         }
 
         // Slide progress bar packet every 80ms
@@ -424,14 +413,16 @@ impl TransmissionPopup {
                 popup::write_str(buf, bounds, left, row + 1, "AWAITING RESPONSE", s);
             }
             CallDisplayState::Connecting => {
-                let texts = ["NEGOTIATING HANDSHAKE", "EXCHANGING KEYS", "ROUTING SIGNAL"];
-                let idx = (self.connecting_dots as usize) % texts.len();
+                let phase_label = match &info.state {
+                    CallState::Connecting(phase) => phase.label(),
+                    _ => "CONNECTING",
+                };
                 popup::write_str(
                     buf,
                     bounds,
                     left,
                     row,
-                    texts[idx],
+                    phase_label,
                     Style::default().fg(theme::CYAN).bg(theme::BG),
                 );
 
@@ -591,7 +582,7 @@ pub fn render_ringing(
     let info = CallInfo {
         room_id: room_id.to_string(),
         room_name: room_name.map(|s| s.to_string()),
-        state: CallState::Connecting, // doesn't matter, display_state overrides
+        state: CallState::Connecting(ConnectingPhase::DiscoveringService), // doesn't matter, display_state overrides
         is_incoming: true,
         participants: vec![caller.to_string()],
         started_at: None,

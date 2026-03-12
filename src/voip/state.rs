@@ -1,9 +1,28 @@
 use std::time::Instant;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConnectingPhase {
+    DiscoveringService,
+    NegotiatingHandshake,
+    ExchangingKeys,
+    EstablishingLink,
+}
+
+impl ConnectingPhase {
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::DiscoveringService => "DISCOVERING SERVICE",
+            Self::NegotiatingHandshake => "NEGOTIATING HANDSHAKE",
+            Self::ExchangingKeys => "EXCHANGING KEYS",
+            Self::EstablishingLink => "ESTABLISHING LINK",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CallState {
     /// Acquiring JWT + connecting to LiveKit
-    Connecting,
+    Connecting(ConnectingPhase),
     /// Connected, audio flowing
     Active,
 }
@@ -23,7 +42,7 @@ impl CallInfo {
         Self {
             room_id,
             room_name,
-            state: CallState::Connecting,
+            state: CallState::Connecting(ConnectingPhase::DiscoveringService),
             is_incoming: false,
             participants: Vec::new(),
             started_at: None,
@@ -34,7 +53,7 @@ impl CallInfo {
         Self {
             room_id,
             room_name,
-            state: CallState::Connecting,
+            state: CallState::Connecting(ConnectingPhase::DiscoveringService),
             is_incoming: true,
             participants: vec![caller],
             started_at: None,
@@ -64,7 +83,10 @@ mod tests {
         let call = CallInfo::new_outgoing("!room:x".to_string(), Some("Room".to_string()));
         assert_eq!(call.room_id, "!room:x");
         assert_eq!(call.room_name.as_deref(), Some("Room"));
-        assert_eq!(call.state, CallState::Connecting);
+        assert_eq!(
+            call.state,
+            CallState::Connecting(ConnectingPhase::DiscoveringService)
+        );
         assert!(!call.is_incoming);
         assert!(call.participants.is_empty());
         assert!(call.started_at.is_none());
@@ -85,7 +107,10 @@ mod tests {
         );
         assert_eq!(call.room_id, "!room:x");
         assert!(call.is_incoming);
-        assert_eq!(call.state, CallState::Connecting);
+        assert_eq!(
+            call.state,
+            CallState::Connecting(ConnectingPhase::DiscoveringService)
+        );
         assert_eq!(call.participants, vec!["@caller:x"]);
     }
 

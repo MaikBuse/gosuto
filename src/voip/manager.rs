@@ -15,7 +15,7 @@ use crate::event::{AppEvent, EventSender, WarnClosed};
 use crate::voip::audio::AudioPipeline;
 use crate::voip::livekit::{LiveKitEvent, LiveKitSession};
 use crate::voip::matrixrtc;
-use crate::voip::state::CallState;
+use crate::voip::state::{CallState, ConnectingPhase};
 
 /// Commands sent from the App to the CallManager
 #[derive(Debug)]
@@ -169,6 +169,15 @@ impl CallManager {
         }
     }
 
+    fn send_phase(&self, room_id: &OwnedRoomId, phase: ConnectingPhase) {
+        self.event_tx
+            .send(AppEvent::CallStateChanged {
+                room_id: room_id.to_string(),
+                state: CallState::Connecting(phase),
+            })
+            .warn_closed("CallStateChanged");
+    }
+
     async fn initiate_call(&mut self, room_id: String) {
         info!("Initiating call in room {}", room_id);
 
@@ -211,6 +220,7 @@ impl CallManager {
         };
 
         // 1. Discover LiveKit focus
+        self.send_phase(&room_id, ConnectingPhase::DiscoveringService);
         let focus = match matrixrtc::discover_livekit_focus(&client).await {
             Ok(f) => f,
             Err(e) => {
@@ -232,6 +242,8 @@ impl CallManager {
                 .warn_closed("CallError");
             return;
         }
+
+        self.send_phase(&room_id, ConnectingPhase::NegotiatingHandshake);
 
         // 3. Publish m.call.member state event (before requesting JWT —
         //    some SFU implementations expect the state event to exist)
@@ -256,6 +268,8 @@ impl CallManager {
                 e
             );
         }
+
+        self.send_phase(&room_id, ConnectingPhase::ExchangingKeys);
 
         // 4. Get LiveKit credentials (JWT) — SFU can now see the call member event
         let creds = match matrixrtc::get_livekit_credentials(
@@ -310,6 +324,8 @@ impl CallManager {
         if !published_encryption_keys {
             warn!("Failed to publish encryption keys (call will proceed without E2EE signaling)");
         }
+
+        self.send_phase(&room_id, ConnectingPhase::EstablishingLink);
 
         // 5c. Connect to LiveKit with E2EE
         warn!("Connecting to LiveKit server: {}", creds.server_url);
@@ -446,13 +462,6 @@ impl CallManager {
                 .warn_closed("CallError");
             return;
         }
-
-        self.event_tx
-            .send(AppEvent::CallStateChanged {
-                room_id: room_id.to_string(),
-                state: CallState::Connecting,
-            })
-            .warn_closed("CallStateChanged");
 
         self.active_call = Some(ActiveCall {
             room_id,

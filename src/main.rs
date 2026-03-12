@@ -112,8 +112,11 @@ async fn main() -> Result<()> {
 
     terminal::init_keyboard_enhancement();
 
-    // Suppress native-library stderr writes (e.g. "VAAPI is supported") that
-    // would bleed through the TUI as visual artifacts.
+    // Suppress native-library stdout/stderr writes (e.g. "VAAPI is supported")
+    // that would bleed through the TUI as visual artifacts.  Must happen AFTER
+    // init_keyboard_enhancement which still writes to fd 1.
+    #[cfg(unix)]
+    let saved_stdout = terminal::suppress_stdout();
     #[cfg(unix)]
     let saved_stderr = terminal::suppress_stderr();
 
@@ -121,6 +124,8 @@ async fn main() -> Result<()> {
     // instead of corrupting the raw-mode terminal.
     let default_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
+        #[cfg(unix)]
+        terminal::restore_stdout_from_global();
         let _ = terminal::restore();
         default_hook(info);
     }));
@@ -974,7 +979,9 @@ async fn main() -> Result<()> {
             app.members_title_reveal.tick(dt);
             if let Some(ref info) = app.call_info {
                 let ds = match info.state {
-                    voip::CallState::Connecting => ui::call_overlay::CallDisplayState::Connecting,
+                    voip::CallState::Connecting(_) => {
+                        ui::call_overlay::CallDisplayState::Connecting
+                    }
                     voip::CallState::Active => ui::call_overlay::CallDisplayState::Active,
                 };
                 app.call_popup.tick(dt, &ds);
@@ -1019,6 +1026,10 @@ async fn main() -> Result<()> {
             .store(false, std::sync::atomic::Ordering::Relaxed);
     }
     let _ = call_cmd_tx.send(voip::manager::CallCommand::Shutdown);
+    #[cfg(unix)]
+    if let Some(ref fd) = saved_stdout {
+        terminal::restore_stdout(fd);
+    }
     #[cfg(unix)]
     if let Some(ref fd) = saved_stderr {
         terminal::restore_stderr(fd);

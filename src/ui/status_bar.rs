@@ -84,7 +84,7 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
     if let Some(ref info) = app.call_info {
         let label = participants_label(info);
         match info.state {
-            CallState::Connecting => {
+            CallState::Connecting(_) => {
                 sections.push(Section {
                     text: format!(" CONNECTING: {} ", label),
                     fg: theme::CYAN,
