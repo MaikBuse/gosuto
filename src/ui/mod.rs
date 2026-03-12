@@ -86,11 +86,6 @@ pub fn render(app: &mut App, frame: &mut Frame) {
         {
             effects::composite(frame.buffer_mut(), &emp_buf, layout.members_list);
         }
-
-        // Chat: matrix rain (room list + members use EMP instead)
-        if let Some(effect_buf) = app.effects.render_to_buffer(frame.area()) {
-            effects::composite(frame.buffer_mut(), &effect_buf, layout.chat_area);
-        }
     }
 
     // Glitch post-processing: displace content bands with chromatic aberration

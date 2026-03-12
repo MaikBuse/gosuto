@@ -67,6 +67,7 @@ pub struct MessageState {
     pub current_room_id: Option<String>,
     pub selected_index: Option<usize>,
     pub pagination_token: Option<String>,
+    pub needs_rain_capture: bool,
 }
 
 impl MessageState {
@@ -80,6 +81,7 @@ impl MessageState {
             current_room_id: None,
             selected_index: None,
             pagination_token: None,
+            needs_rain_capture: false,
         }
     }
 
@@ -93,6 +95,7 @@ impl MessageState {
             self.fetch_error = None;
             self.selected_index = None;
             self.pagination_token = None;
+            self.needs_rain_capture = true;
         }
     }
 

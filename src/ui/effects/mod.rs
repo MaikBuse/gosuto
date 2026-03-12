@@ -1,6 +1,7 @@
 pub mod emp_pulse;
 pub mod glitch;
 pub mod matrix_rain;
+pub mod message_rain;
 pub mod text_reveal;
 
 pub use text_reveal::TextReveal;
@@ -13,6 +14,7 @@ use super::theme;
 use emp_pulse::EmpPulse;
 use glitch::GlitchEffect;
 use matrix_rain::MatrixRain;
+use message_rain::MessageRain;
 
 /// Minimal XorShift64 PRNG — no external dependency needed
 pub(crate) struct Xorshift64(u64);
@@ -64,6 +66,7 @@ pub struct EffectsState {
     glitch: GlitchEffect,
     pub emp_pulse: EmpPulse,
     pub members_emp_pulse: EmpPulse,
+    message_rain: MessageRain,
 }
 
 impl EffectsState {
@@ -75,6 +78,7 @@ impl EffectsState {
             glitch: GlitchEffect::new(),
             emp_pulse: EmpPulse::new(),
             members_emp_pulse: EmpPulse::new(),
+            message_rain: MessageRain::new(),
         }
     }
 
@@ -86,13 +90,23 @@ impl EffectsState {
         self.glitch_enabled = !self.glitch_enabled;
     }
 
-    pub fn tick(&mut self, dt_ms: u64, area: Rect) {
-        if self.enabled {
+    pub fn tick(&mut self, dt_ms: u64, area: Rect, logged_in: bool) {
+        if self.enabled && !logged_in {
             self.matrix_rain.tick(dt_ms, area);
         }
         if self.glitch_enabled {
             self.glitch.tick(dt_ms, area.height);
         }
+        let rain_area = self.message_rain.area();
+        self.message_rain.tick(dt_ms, rain_area);
+    }
+
+    pub fn message_rain_mut(&mut self) -> &mut MessageRain {
+        &mut self.message_rain
+    }
+
+    pub fn message_rain(&self) -> &MessageRain {
+        &self.message_rain
     }
 
     pub fn tick_emp(&mut self, dt_ms: u64, area: Rect, focused: bool) {

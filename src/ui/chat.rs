@@ -1,5 +1,6 @@
 use ratatui::{
     Frame,
+    buffer::Buffer,
     layout::Rect,
     style::{Modifier, Style},
     text::{Line, Span},
@@ -540,5 +541,23 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
                 }
             }
         }
+    }
+
+    // Message rain effect: capture snapshot when entering a room
+    if app.messages.needs_rain_capture && app.effects.enabled {
+        // Clone the inner chat area as a snapshot for the rain effect
+        let mut snapshot = Buffer::empty(inner);
+        for y in inner.y..inner.y + inner.height {
+            for x in inner.x..inner.x + inner.width {
+                snapshot[(x, y)] = frame.buffer_mut()[(x, y)].clone();
+            }
+        }
+        app.effects.message_rain_mut().start(&snapshot, inner);
+        app.messages.needs_rain_capture = false;
+    }
+
+    // Render the message rain animation over the chat area
+    if app.effects.message_rain().is_active() {
+        app.effects.message_rain_mut().render(frame.buffer_mut());
     }
 }

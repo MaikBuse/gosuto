@@ -982,7 +982,8 @@ async fn main() -> Result<()> {
 
             let term_size = tui.size()?;
             let term_area = ratatui::layout::Rect::new(0, 0, term_size.width, term_size.height);
-            app.effects.tick(dt, term_area);
+            let logged_in = app.auth.is_logged_in();
+            app.effects.tick(dt, term_area, logged_in);
 
             // Tick EMP effect with approximate room pane area
             let room_focused = app.vim.focus == crate::input::FocusPanel::RoomList;
