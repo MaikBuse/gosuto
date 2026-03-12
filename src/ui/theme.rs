@@ -93,6 +93,10 @@ pub fn error_style() -> Style {
     Style::default().fg(RED)
 }
 
+pub fn dim_italic_style() -> Style {
+    Style::default().fg(DIM).add_modifier(Modifier::ITALIC)
+}
+
 // Form field styles
 pub fn field_marker_style(selected: bool) -> Style {
     let color = if selected { CYAN } else { DIM };

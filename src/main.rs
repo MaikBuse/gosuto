@@ -440,6 +440,19 @@ async fn main() -> Result<()> {
                             }
                         }
 
+                        // Handle message redaction
+                        if let Some(pending) = app.take_pending_redact() {
+                            let tx = event_tx.clone();
+                            let rid = pending.room_id;
+                            let eid = pending.event_id;
+                            spawn_with_client!(matrix_client, |client| async move {
+                                let _ = matrix::messages::redact_message(
+                                    &client, &rid, &eid, &tx,
+                                )
+                                .await;
+                            });
+                        }
+
                         // Handle outgoing typing notice
                         if let Some((room_id, typing)) = app.take_pending_typing_notice() {
                             spawn_with_client!(matrix_client, |client| async move {

@@ -190,6 +190,15 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
                 .add_modifier(Modifier::BOLD),
         ));
 
+        if msg.redacted {
+            spans.push(Span::styled("[message deleted]", theme::dim_italic_style()));
+            segments.push(ChatSegment::TextMessage {
+                lines: vec![Line::from(spans)],
+                msg_index: idx,
+            });
+            continue;
+        }
+
         match &msg.content {
             MessageContent::Text {
                 plain: body,

@@ -30,7 +30,7 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
                 (search, theme::CYAN)
             } else if app.vim.focus == FocusPanel::Messages {
                 (
-                    "j/k: navigate, r: reply, e: edit, a: react".to_string(),
+                    "j/k: navigate, r: reply, e: edit, a: react, d: delete".to_string(),
                     theme::DIM,
                 )
             } else if app.vim.focus == FocusPanel::Members {

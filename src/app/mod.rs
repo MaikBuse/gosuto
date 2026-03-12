@@ -57,6 +57,17 @@ pub(crate) fn truncate_preview(text: &str, max_len: usize) -> String {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct RedactConfirmState {
+    pub event_id: String,
+    pub body_preview: String,
+}
+
+pub struct PendingRedact {
+    pub room_id: String,
+    pub event_id: String,
+}
+
 pub struct PendingSend {
     pub room_id: String,
     pub body: String,
@@ -186,6 +197,9 @@ pub struct App {
     // Reaction picker
     pub reaction_picker: Option<ReactionPickerState>,
     pending_reaction: Option<PendingReaction>,
+    // Redact confirmation
+    pub redact_confirm: Option<RedactConfirmState>,
+    pending_redact: Option<PendingRedact>,
 }
 
 impl App {
@@ -275,6 +289,8 @@ impl App {
             pending_invite_user: None,
             reaction_picker: None,
             pending_reaction: None,
+            redact_confirm: None,
+            pending_redact: None,
         }
     }
 
@@ -326,6 +342,7 @@ impl App {
                     in_reply_to,
                     reactions: Vec::new(),
                     edited: false,
+                    redacted: false,
                 };
                 self.messages.add_message(msg);
                 self.messages.scroll_to_bottom();
@@ -408,5 +425,9 @@ impl App {
 
     pub fn take_pending_reaction(&mut self) -> Option<PendingReaction> {
         self.pending_reaction.take()
+    }
+
+    pub fn take_pending_redact(&mut self) -> Option<PendingRedact> {
+        self.pending_redact.take()
     }
 }

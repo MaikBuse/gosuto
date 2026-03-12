@@ -243,6 +243,33 @@ impl App {
         }
     }
 
+    // ── Redact Confirm ────────────────────────────────
+
+    pub(crate) fn handle_redact_confirm_key(&mut self, key: KeyEvent) {
+        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
+            self.redact_confirm = None;
+            self.running = false;
+            return;
+        }
+
+        match key.code {
+            KeyCode::Char('y') | KeyCode::Enter => {
+                if let Some(confirm) = self.redact_confirm.take()
+                    && let Some(room_id) = self.messages.current_room_id.clone()
+                {
+                    self.pending_redact = Some(PendingRedact {
+                        room_id,
+                        event_id: confirm.event_id,
+                    });
+                }
+            }
+            KeyCode::Char('n') | KeyCode::Esc => {
+                self.redact_confirm = None;
+            }
+            _ => {}
+        }
+    }
+
     // ── Reaction Picker ────────────────────────────────
 
     pub(crate) fn handle_reaction_picker_key(&mut self, key: KeyEvent) {

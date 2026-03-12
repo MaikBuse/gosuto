@@ -45,6 +45,7 @@ pub struct DisplayMessage {
     pub in_reply_to: Option<ReplyInfo>,
     pub reactions: Vec<Reaction>,
     pub edited: bool,
+    pub redacted: bool,
 }
 
 impl DisplayMessage {
@@ -256,6 +257,17 @@ impl MessageState {
         }
     }
 
+    pub fn mark_redacted(&mut self, event_id: &str) {
+        if let Some(msg) = self.messages.iter_mut().find(|m| m.event_id == event_id) {
+            msg.redacted = true;
+            msg.content = MessageContent::Text {
+                plain: "[message deleted]".to_string(),
+                formatted_html: None,
+            };
+            msg.reactions.clear();
+        }
+    }
+
     pub fn confirm_sent(&mut self, pending_body: &str, event_id: &str) {
         if let Some(msg) = self
             .messages
@@ -289,6 +301,7 @@ mod tests {
             in_reply_to: None,
             reactions: Vec::new(),
             edited: false,
+            redacted: false,
         }
     }
 

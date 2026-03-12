@@ -130,6 +130,7 @@ pub async fn start_sync(
                     in_reply_to,
                     reactions: Vec::new(),
                     edited: false,
+                    redacted: false,
                 };
 
                 tx.send(AppEvent::NewMessage {
@@ -177,13 +178,20 @@ pub async fn start_sync(
                     return;
                 };
                 let room_id = room.room_id().to_string();
-                let reaction_event_id = redacted_id.to_string();
+                let redacted_event_id = redacted_id.to_string();
 
+                // Send both events — the handlers will no-op if the event_id
+                // doesn't match their domain (reaction vs message).
                 tx.send(AppEvent::ReactionRedacted {
-                    room_id,
-                    reaction_event_id,
+                    room_id: room_id.clone(),
+                    reaction_event_id: redacted_event_id.clone(),
                 })
                 .warn_closed("ReactionRedacted");
+                tx.send(AppEvent::MessageRedacted {
+                    room_id,
+                    target_event_id: redacted_event_id,
+                })
+                .warn_closed("MessageRedacted");
             }
         },
     );

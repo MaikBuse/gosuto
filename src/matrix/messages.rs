@@ -117,6 +117,7 @@ pub async fn fetch_messages(
                     in_reply_to: None,
                     reactions: Vec::new(),
                     edited: false,
+                    redacted: false,
                 });
                 continue;
             }
@@ -204,6 +205,7 @@ pub async fn fetch_messages(
                         in_reply_to,
                         reactions: Vec::new(),
                         edited: false,
+                        redacted: false,
                     });
                 }
                 Ok(matrix_sdk::ruma::events::AnySyncTimelineEvent::MessageLike(
@@ -238,6 +240,7 @@ pub async fn fetch_messages(
                         in_reply_to: None,
                         reactions: Vec::new(),
                         edited: false,
+                        redacted: false,
                     });
                 }
                 Ok(matrix_sdk::ruma::events::AnySyncTimelineEvent::MessageLike(
@@ -516,6 +519,37 @@ pub async fn redact_reaction(
         }
         Err(e) => {
             error!("Failed to redact reaction: {}", e);
+            tx.send(AppEvent::SendError {
+                error: e.to_string(),
+            })
+            .warn_closed("SendError");
+        }
+    }
+    Ok(())
+}
+
+pub async fn redact_message(
+    client: &Client,
+    room_id: &str,
+    event_id: &str,
+    tx: &EventSender,
+) -> Result<()> {
+    let room_id_parsed: matrix_sdk::ruma::OwnedRoomId = room_id.try_into()?;
+    let event_id_parsed: matrix_sdk::ruma::OwnedEventId = event_id.try_into()?;
+    let room = client
+        .get_room(&room_id_parsed)
+        .ok_or_else(|| anyhow::anyhow!("Room not found: {}", room_id))?;
+
+    match room.redact(&event_id_parsed, None, None).await {
+        Ok(_) => {
+            tx.send(AppEvent::MessageRedacted {
+                room_id: room_id.to_string(),
+                target_event_id: event_id.to_string(),
+            })
+            .warn_closed("MessageRedacted");
+        }
+        Err(e) => {
+            error!("Failed to redact message: {}", e);
             tx.send(AppEvent::SendError {
                 error: e.to_string(),
             })

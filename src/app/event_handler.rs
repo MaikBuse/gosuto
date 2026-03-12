@@ -30,6 +30,8 @@ impl App {
                     self.handle_recovery_key(key);
                 } else if self.invite_prompt_room.is_some() {
                     self.handle_invite_prompt_key(key);
+                } else if self.redact_confirm.is_some() {
+                    self.handle_redact_confirm_key(key);
                 } else if self.reaction_picker.is_some() {
                     self.handle_reaction_picker_key(key);
                 } else if self.which_key.is_some() {
@@ -594,6 +596,14 @@ impl App {
                 if self.messages.current_room_id.as_deref() == Some(&room_id) {
                     self.messages
                         .remove_reaction_by_event_id(&reaction_event_id);
+                }
+            }
+            AppEvent::MessageRedacted {
+                room_id,
+                target_event_id,
+            } => {
+                if self.messages.current_room_id.as_deref() == Some(&room_id) {
+                    self.messages.mark_redacted(&target_event_id);
                 }
             }
             // Image events

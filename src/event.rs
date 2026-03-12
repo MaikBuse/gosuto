@@ -210,6 +210,10 @@ pub enum AppEvent {
         room_id: String,
         reaction_event_id: String,
     },
+    MessageRedacted {
+        room_id: String,
+        target_event_id: String,
+    },
     // Image events
     ImageLoaded {
         event_id: String,

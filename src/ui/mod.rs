@@ -20,6 +20,7 @@ pub mod panel;
 pub mod popup;
 pub mod reaction_picker;
 pub mod recovery_modal;
+pub mod redact_confirm;
 pub mod rich_text;
 pub mod room_info;
 pub mod room_list;
@@ -183,6 +184,11 @@ pub fn render(app: &mut App, frame: &mut Frame) {
     // Reaction picker
     if app.reaction_picker.is_some() {
         reaction_picker::render(app, frame);
+    }
+
+    // Redact confirmation
+    if app.redact_confirm.is_some() {
+        redact_confirm::render(app, frame);
     }
 
     // Which-key leader popup

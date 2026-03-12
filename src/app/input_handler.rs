@@ -213,6 +213,27 @@ impl App {
                     self.vim.enter_insert();
                 }
             }
+            InputResult::RedactConfirmSelected => {
+                if let Some(idx) = self.messages.selected_index
+                    && let Some(msg) = self.messages.messages.get(idx)
+                {
+                    if msg.event_id.is_empty() {
+                        return; // can't redact pending messages
+                    }
+                    let own_id = match &self.auth {
+                        AuthState::LoggedIn { user_id, .. } => user_id.clone(),
+                        _ => return,
+                    };
+                    if msg.sender != own_id {
+                        self.last_error = Some("Can only delete your own messages".to_string());
+                        return;
+                    }
+                    self.redact_confirm = Some(RedactConfirmState {
+                        event_id: msg.event_id.clone(),
+                        body_preview: truncate_preview(msg.body_text(), 50),
+                    });
+                }
+            }
             InputResult::ReactToSelected => {
                 if let Some(idx) = self.messages.selected_index
                     && let Some(msg) = self.messages.messages.get(idx)
