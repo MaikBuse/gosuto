@@ -1,9 +1,14 @@
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
-use ratatui::style::Style;
+use ratatui::style::{Color, Style};
 
 use super::Xorshift64;
 use crate::ui::theme;
+
+/// Half-width Katakana range (U+FF66–FF9D): single-cell-wide in terminals
+const KATAKANA_START: u32 = 0xFF66;
+const KATAKANA_END: u32 = 0xFF9D;
+const KATAKANA_COUNT: u32 = KATAKANA_END - KATAKANA_START + 1;
 
 struct FallingCell {
     target_x: u16,
@@ -14,6 +19,7 @@ struct FallingCell {
     landed: bool,
     symbol: String,
     style: Style,
+    rain_char: char,
 }
 
 pub struct MessageRain {
@@ -22,6 +28,7 @@ pub struct MessageRain {
     elapsed_ms: f32,
     area: Rect,
     rng: Xorshift64,
+    char_cycle_accum: f32,
 }
 
 impl MessageRain {
@@ -32,12 +39,19 @@ impl MessageRain {
             elapsed_ms: 0.0,
             area: Rect::default(),
             rng: Xorshift64::new(0xCAFE_BABE_DEAD_BEEF),
+            char_cycle_accum: 0.0,
         }
+    }
+
+    fn next_katakana(&mut self) -> char {
+        let idx = (self.rng.next() % KATAKANA_COUNT as u64) as u32;
+        char::from_u32(KATAKANA_START + idx).unwrap_or('ア')
     }
 
     pub fn start(&mut self, snapshot: &Buffer, area: Rect) {
         self.cells.clear();
         self.elapsed_ms = 0.0;
+        self.char_cycle_accum = 0.0;
         self.area = area;
 
         let width = area.width as f32;
@@ -61,6 +75,8 @@ impl MessageRain {
 
                 let speed = self.rng.next_range(25.0, 45.0);
 
+                let rain_char = self.next_katakana();
+
                 self.cells.push(FallingCell {
                     target_x: x,
                     target_y: y,
@@ -70,6 +86,7 @@ impl MessageRain {
                     landed: false,
                     symbol: sym.to_string(),
                     style: cell.style(),
+                    rain_char,
                 });
             }
         }
@@ -101,7 +118,14 @@ impl MessageRain {
         let dt_sec = dt_ms as f32 / 1000.0;
         let mut all_landed = true;
 
-        for cell in &mut self.cells {
+        // Cycle random katakana characters periodically (~150ms)
+        self.char_cycle_accum += dt_ms as f32;
+        let cycle_chars = self.char_cycle_accum >= 150.0;
+        if cycle_chars {
+            self.char_cycle_accum -= 150.0;
+        }
+
+        for cell in self.cells.iter_mut() {
             if cell.landed {
                 continue;
             }
@@ -119,6 +143,15 @@ impl MessageRain {
                 cell.landed = true;
             } else {
                 all_landed = false;
+            }
+        }
+
+        // Cycle katakana for in-flight cells
+        if cycle_chars {
+            let rng = &mut self.rng;
+            for cell in self.cells.iter_mut().filter(|c| !c.landed) {
+                let idx = (rng.next() % KATAKANA_COUNT as u64) as u32;
+                cell.rain_char = char::from_u32(KATAKANA_START + idx).unwrap_or('ア');
             }
         }
 
@@ -157,8 +190,30 @@ impl MessageRain {
             }
 
             let c = &mut buf[(cell.target_x, draw_y)];
-            c.set_symbol(&cell.symbol);
-            c.set_style(cell.style);
+
+            if cell.landed {
+                c.set_symbol(&cell.symbol);
+                c.set_style(cell.style);
+            } else {
+                // Matrix-style katakana with green trail coloring
+                let distance = cell.target_y as f32 - cell.current_y;
+                let max_distance = (cell.target_y as f32 - self.area.y as f32).max(1.0);
+                let t = (distance / max_distance).clamp(0.0, 1.0);
+
+                let color = if t < 0.05 {
+                    // Head: bright white-green
+                    Color::Rgb(200, 255, 200)
+                } else {
+                    // Trail: quadratic falloff from bright green to dim green
+                    let t2 = t * t;
+                    let g = (180.0 - 120.0 * t2) as u8;
+                    let b = (60.0 - 50.0 * t2) as u8;
+                    Color::Rgb(0, g, b)
+                };
+
+                c.set_char(cell.rain_char);
+                c.set_style(Style::default().fg(color).bg(theme::BG));
+            }
         }
     }
 
