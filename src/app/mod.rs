@@ -108,6 +108,7 @@ pub struct App {
     // Pending actions for main loop to process
     pub pending_logout: bool,
     pub pending_refetch: bool,
+    pub pending_load_more: bool,
     pending_send: Option<PendingSend>,
     pub reply_context: Option<ReplyContext>,
     pub edit_context: Option<EditContext>,
@@ -211,6 +212,7 @@ impl App {
             config,
             pending_logout: false,
             pending_refetch: false,
+            pending_load_more: false,
             pending_send: None,
             reply_context: None,
             edit_context: None,

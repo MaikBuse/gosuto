@@ -65,6 +65,7 @@ pub struct MessageState {
     pub fetch_error: Option<String>,
     pub current_room_id: Option<String>,
     pub selected_index: Option<usize>,
+    pub pagination_token: Option<String>,
 }
 
 impl MessageState {
@@ -77,6 +78,7 @@ impl MessageState {
             fetch_error: None,
             current_room_id: None,
             selected_index: None,
+            pagination_token: None,
         }
     }
 
@@ -89,6 +91,7 @@ impl MessageState {
             self.loading = true;
             self.fetch_error = None;
             self.selected_index = None;
+            self.pagination_token = None;
         }
     }
 
@@ -100,7 +103,12 @@ impl MessageState {
         self.messages.push(msg);
     }
 
-    pub fn prepend_messages(&mut self, msgs: Vec<DisplayMessage>, has_more: bool) {
+    pub fn prepend_messages(
+        &mut self,
+        msgs: Vec<DisplayMessage>,
+        has_more: bool,
+        pagination_token: Option<String>,
+    ) {
         // Filter out messages that already exist (by event_id) to avoid duplicates
         // when sync events overlap with fetched messages
         let mut new_msgs: Vec<DisplayMessage> = msgs
@@ -120,6 +128,7 @@ impl MessageState {
             self.selected_index = Some(idx + prepended_count);
         }
         self.has_more = has_more;
+        self.pagination_token = pagination_token;
         self.loading = false;
         self.fetch_error = None;
     }
@@ -314,6 +323,7 @@ mod tests {
         state.prepend_messages(
             vec![make_msg("$1", "dup", false), make_msg("$2", "new", false)],
             true,
+            None,
         );
         assert_eq!(state.messages.len(), 2);
         assert_eq!(state.messages[0].body_text(), "new");
@@ -327,6 +337,7 @@ mod tests {
         state.prepend_messages(
             vec![make_msg("$1", "A", false), make_msg("$2", "B", false)],
             false,
+            None,
         );
         assert_eq!(state.messages[0].body_text(), "A");
         assert_eq!(state.messages[1].body_text(), "B");
@@ -336,9 +347,9 @@ mod tests {
     #[test]
     fn prepend_messages_sets_has_more() {
         let mut state = MessageState::new();
-        state.prepend_messages(vec![make_msg("$1", "msg", false)], false);
+        state.prepend_messages(vec![make_msg("$1", "msg", false)], false, None);
         assert!(!state.has_more);
-        state.prepend_messages(vec![make_msg("$2", "msg2", false)], true);
+        state.prepend_messages(vec![make_msg("$2", "msg2", false)], true, None);
         assert!(state.has_more);
     }
 
@@ -346,7 +357,7 @@ mod tests {
     fn prepend_messages_clears_loading() {
         let mut state = MessageState::new();
         state.loading = true;
-        state.prepend_messages(vec![], false);
+        state.prepend_messages(vec![], false, None);
         assert!(!state.loading);
     }
 
@@ -520,6 +531,7 @@ mod tests {
         state.prepend_messages(
             vec![make_msg("$1", "A", false), make_msg("$2", "B", false)],
             true,
+            None,
         );
         // Original index 0 should shift by 2
         assert_eq!(state.selected_index, Some(2));
@@ -529,7 +541,7 @@ mod tests {
     fn prepend_messages_preserves_none_selection() {
         let mut state = MessageState::new();
         state.add_message(make_msg("$2", "B", false));
-        state.prepend_messages(vec![make_msg("$1", "A", false)], true);
+        state.prepend_messages(vec![make_msg("$1", "A", false)], true, None);
         assert_eq!(state.selected_index, None);
     }
 

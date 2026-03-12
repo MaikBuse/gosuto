@@ -421,60 +421,41 @@ pub async fn publish_call_member(
     device_id: &OwnedDeviceId,
     focus: &LivekitFocus,
 ) -> Result<String> {
-    let user_id = client.user_id().context("Not logged in")?;
+    use matrix_sdk::ruma::events::call::member::{
+        ActiveFocus, ActiveLivekitFocus, Application, CallApplicationContent, CallMemberStateKey,
+        CallScope, Focus, LivekitFocus as RumaLivekitFocus,
+    };
+
+    let user_id = client.user_id().context("Not logged in")?.to_owned();
     let room = client.get_room(room_id).context("Room not found")?;
 
-    let state_key = format!("_{}_{}_{}", user_id, device_id, "m.call");
+    let state_key = CallMemberStateKey::new(user_id, Some(format!("{device_id}_m.call")), true);
 
-    let content = serde_json::json!({
-        "application": "m.call",
-        "call_id": "",
-        "scope": "m.room",
-        "device_id": device_id.to_string(),
-        "expires": 7_200_000,
-        "focus_active": {
-            "type": "livekit",
-            "focus_selection": "oldest_membership",
-        },
-        "foci_preferred": [{
-            "type": "livekit",
-            "livekit_alias": room_id.to_string(),
-            "livekit_service_url": focus.livekit_service_url,
-        }],
-    });
-
-    let pretty_json = serde_json::to_string_pretty(&content).unwrap_or_default();
-    debug!(
-        "Publishing m.call.member: state_key={}, content={}",
-        state_key, pretty_json
+    let content = matrix_sdk::ruma::events::call::member::CallMemberEventContent::new(
+        Application::Call(CallApplicationContent::new(String::new(), CallScope::Room)),
+        device_id.to_owned(),
+        ActiveFocus::Livekit(ActiveLivekitFocus::new()),
+        vec![Focus::Livekit(RumaLivekitFocus::new(
+            room_id.to_string(),
+            focus.livekit_service_url.clone(),
+        ))],
+        None,
+        Some(std::time::Duration::from_secs(7200)),
     );
 
-    // Try unstable event type first (Element X watches for this), fall back to stable
-    let result = room
-        .send_state_event_raw(
-            "org.matrix.msc3401.call.member",
-            &state_key,
-            content.clone(),
-        )
-        .await;
+    debug!("Publishing m.call.member: state_key={}", state_key.as_ref(),);
 
-    let event_id = match result {
-        Ok(resp) => resp.event_id.to_string(),
-        Err(unstable_err) => {
-            debug!(
-                "Unstable org.matrix.msc3401.call.member failed ({unstable_err:#}), trying stable type"
-            );
-            let resp = room
-                .send_state_event_raw("m.call.member", &state_key, content)
-                .await
-                .context("Failed to publish m.call.member state event")?;
-            resp.event_id.to_string()
-        }
-    };
+    let resp = room
+        .send_state_event_for_key(&state_key, content)
+        .await
+        .context("Failed to publish m.call.member state event")?;
+    let event_id = resp.event_id.to_string();
 
     info!(
         "Published m.call.member for room {} (state_key: {}, event_id: {})",
-        room_id, state_key, event_id
+        room_id,
+        state_key.as_ref(),
+        event_id
     );
     Ok(event_id)
 }
@@ -755,34 +736,23 @@ pub async fn remove_call_member(
     room_id: &OwnedRoomId,
     device_id: &OwnedDeviceId,
 ) -> Result<()> {
-    let user_id = client.user_id().context("Not logged in")?;
+    use matrix_sdk::ruma::events::call::member::CallMemberStateKey;
+
+    let user_id = client.user_id().context("Not logged in")?.to_owned();
     let room = client.get_room(room_id).context("Room not found")?;
 
-    let state_key = format!("_{}_{}_{}", user_id, device_id, "m.call");
+    let state_key = CallMemberStateKey::new(user_id, Some(format!("{device_id}_m.call")), true);
 
-    let content = serde_json::json!({});
+    let content = matrix_sdk::ruma::events::call::member::CallMemberEventContent::new_empty(None);
 
-    // Try unstable event type first (Element X watches for this), fall back to stable
-    let result = room
-        .send_state_event_raw(
-            "org.matrix.msc3401.call.member",
-            &state_key,
-            content.clone(),
-        )
-        .await;
-
-    if let Err(unstable_err) = result {
-        debug!(
-            "Unstable org.matrix.msc3401.call.member failed ({unstable_err:#}), trying stable type"
-        );
-        room.send_state_event_raw("m.call.member", &state_key, content)
-            .await
-            .context("Failed to remove m.call.member state event")?;
-    }
+    room.send_state_event_for_key(&state_key, content)
+        .await
+        .context("Failed to remove m.call.member state event")?;
 
     info!(
         "Removed m.call.member for room {} (state_key: {})",
-        room_id, state_key
+        room_id,
+        state_key.as_ref()
     );
     Ok(())
 }

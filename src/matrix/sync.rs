@@ -460,55 +460,34 @@ fn register_matrixrtc_handlers(
         );
     }
 
-    // Handle raw m.call.member / org.matrix.msc3401.call.member state events
+    // Handle typed m.call.member / org.matrix.msc3401.call.member state events
     let member_tx = tx.clone();
     client.add_event_handler(
-        move |event: matrix_sdk::ruma::events::AnySyncStateEvent, room: matrix_sdk::Room| {
+        move |event: matrix_sdk::ruma::events::SyncStateEvent<
+            matrix_sdk::ruma::events::call::member::CallMemberEventContent,
+        >,
+              room: matrix_sdk::Room| {
             let tx = member_tx.clone();
             async move {
-                let event_type = event.event_type().to_string();
-                if event_type != "org.matrix.msc3401.call.member" && event_type != "m.call.member" {
-                    return;
-                }
+                use matrix_sdk::ruma::events::SyncStateEvent;
+                use matrix_sdk::ruma::events::call::member::CallMemberEventContent;
 
                 let sender = event.sender().to_string();
                 let room_id = room.room_id().to_string();
 
-                let raw_content = event
-                    .original_content()
-                    .map(|raw| {
-                        serde_json::to_string_pretty(&serde_json::to_value(raw).unwrap_or_default())
-                            .unwrap_or_default()
-                    })
-                    .unwrap_or_else(|| "<redacted>".to_string());
                 debug!(
-                    "m.call.member raw: type={}, sender={}, room={}, state_key={}, content={}",
-                    event_type,
+                    "m.call.member: sender={}, room={}, state_key={}",
                     sender,
                     room_id,
-                    event.state_key(),
-                    raw_content,
+                    event.state_key().as_ref(),
                 );
 
-                // Parse the content to check for active memberships
-                // New format (MSC4143): top-level "application" field means joined
-                // Old format (MSC3401): non-empty "memberships" array means joined
-                // Leave: empty {} or empty memberships array
-                let content = event.original_content();
-                let has_active_memberships = content
-                    .map(|raw| {
-                        let json = serde_json::to_value(raw).unwrap_or_default();
-                        // New format: presence of "application" field = active
-                        if json.get("application").is_some() {
-                            return true;
-                        }
-                        // Old format: non-empty memberships array = active
-                        json.get("memberships")
-                            .and_then(|m| m.as_array())
-                            .map(|arr| !arr.is_empty())
-                            .unwrap_or(false)
-                    })
-                    .unwrap_or(false);
+                let has_active_memberships = match &event {
+                    SyncStateEvent::Original(ev) => {
+                        !matches!(ev.content, CallMemberEventContent::Empty(_))
+                    }
+                    SyncStateEvent::Redacted(_) => false,
+                };
 
                 if has_active_memberships {
                     info!("m.call.member joined: {} in {}", sender, room_id);
