@@ -22,7 +22,7 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
             } else {
                 app.vim.input_buffer.clone()
             };
-            (text, theme::GREEN)
+            (text, theme::CYAN)
         }
         VimMode::Normal => {
             if app.vim.searching {
@@ -114,8 +114,8 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
             panel::apply_gradient_border_with_bg(
                 frame.buffer_mut(),
                 area,
-                theme::GREEN,
-                theme::INPUT_BORDER_GREEN_DIM,
+                theme::CYAN,
+                theme::INPUT_BORDER_CYAN_DIM,
                 phase,
                 theme::CHAT_BG,
             );

@@ -60,7 +60,7 @@ pub const GRADIENT_DATE_DIM: Color = Color::Rgb(59, 66, 97); // edge of date sep
 pub const STATUS_BAR_BG: Color = Color::Rgb(22, 22, 30);
 pub const UNREAD_BADGE_BG: Color = Color::Rgb(57, 75, 112);
 pub const TIMESTAMP_BRIGHT: Color = Color::Rgb(115, 122, 162);
-pub const INPUT_BORDER_GREEN_DIM: Color = Color::Rgb(0, 160, 80); // darker green
+pub const INPUT_BORDER_CYAN_DIM: Color = Color::Rgb(0, 160, 160); // darker cyan
 pub const INPUT_BORDER_MAGENTA_DIM: Color = Color::Rgb(160, 0, 160); // darker magenta
 
 // Rich text / formatted message colors
