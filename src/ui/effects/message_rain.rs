@@ -171,7 +171,7 @@ impl MessageRain {
             for x in self.area.x..self.area.x + self.area.width {
                 let c = &mut buf[(x, y)];
                 c.reset();
-                c.set_style(Style::default().bg(theme::BG));
+                c.set_style(Style::default().bg(theme::CHAT_BG));
             }
         }
 
@@ -212,7 +212,7 @@ impl MessageRain {
                 };
 
                 c.set_char(cell.rain_char);
-                c.set_style(Style::default().fg(color).bg(theme::BG));
+                c.set_style(Style::default().fg(color).bg(theme::CHAT_BG));
             }
         }
     }

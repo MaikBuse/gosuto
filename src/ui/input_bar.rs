@@ -53,7 +53,7 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(theme::border_style())
-        .style(Style::default().bg(theme::BG));
+        .style(Style::default().bg(theme::CHAT_BG));
 
     let prefix = match app.vim.mode {
         VimMode::Insert => "> ",
@@ -111,30 +111,33 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
     let phase = app.anim_clock.phase;
     match app.vim.mode {
         VimMode::Insert => {
-            panel::apply_gradient_border(
+            panel::apply_gradient_border_with_bg(
                 frame.buffer_mut(),
                 area,
                 theme::GREEN,
                 theme::INPUT_BORDER_GREEN_DIM,
                 phase,
+                theme::CHAT_BG,
             );
         }
         VimMode::Command => {
-            panel::apply_gradient_border(
+            panel::apply_gradient_border_with_bg(
                 frame.buffer_mut(),
                 area,
                 theme::MAGENTA,
                 theme::INPUT_BORDER_MAGENTA_DIM,
                 phase,
+                theme::CHAT_BG,
             );
         }
         VimMode::Normal if app.vim.searching => {
-            panel::apply_gradient_border(
+            panel::apply_gradient_border_with_bg(
                 frame.buffer_mut(),
                 area,
                 theme::CYAN,
                 theme::GRADIENT_BORDER_END,
                 phase,
+                theme::CHAT_BG,
             );
         }
         VimMode::Normal => {}

@@ -6,8 +6,8 @@ use ratatui::widgets::{Block, Borders};
 
 use crate::ui::{gradient, theme};
 
-/// Build a standard panel block with consistent border/title styling.
-pub fn block<'a>(title: Line<'a>, focused: bool) -> Block<'a> {
+/// Build a panel block with a custom background color.
+pub fn block_with_bg<'a>(title: Line<'a>, focused: bool, bg: Color) -> Block<'a> {
     let border_style = if focused {
         theme::border_focused_style()
     } else {
@@ -18,7 +18,7 @@ pub fn block<'a>(title: Line<'a>, focused: bool) -> Block<'a> {
         .title(title)
         .borders(Borders::ALL)
         .border_style(border_style)
-        .style(Style::default().bg(theme::BG))
+        .style(Style::default().bg(bg))
 }
 
 /// Box-drawing characters used by ratatui's default `Borders::ALL`.
@@ -31,7 +31,14 @@ fn is_box_char(ch: char) -> bool {
 /// Overwrite border-character cells with a gradient fg color (cyan→magenta)
 /// walking clockwise around the perimeter. Skips cells that are not
 /// box-drawing characters (i.e., title text).
-pub fn apply_gradient_border(buf: &mut Buffer, area: Rect, start: Color, end: Color, phase: f32) {
+pub fn apply_gradient_border_with_bg(
+    buf: &mut Buffer,
+    area: Rect,
+    start: Color,
+    end: Color,
+    phase: f32,
+    bg: Color,
+) {
     let bounds = *buf.area();
     gradient::walk_perimeter(area, |x, y, i, total| {
         if x < bounds.x
@@ -47,7 +54,7 @@ pub fn apply_gradient_border(buf: &mut Buffer, area: Rect, start: Color, end: Co
             return;
         }
         let color = gradient::perimeter_color(i, total, start, end, phase);
-        cell.set_style(Style::default().fg(color).bg(theme::BG));
+        cell.set_style(Style::default().fg(color).bg(bg));
     });
 }
 

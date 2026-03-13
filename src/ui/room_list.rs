@@ -113,17 +113,18 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
     } else {
         Line::from(vec![Span::styled(" ROOMS ", theme::title_style())])
     };
-    let block = panel::block(title_line, focused);
+    let block = panel::block_with_bg(title_line, focused, theme::SIDEBAR_BG);
 
     frame.render_widget(block, area);
 
     if focused {
-        panel::apply_gradient_border(
+        panel::apply_gradient_border_with_bg(
             frame.buffer_mut(),
             area,
             theme::GRADIENT_BORDER_START,
             theme::GRADIENT_BORDER_END,
             app.anim_clock.phase,
+            theme::SIDEBAR_BG,
         );
     }
 
@@ -181,12 +182,12 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
             DisplayRow::SectionHeader { label } => {
                 let style = Style::default()
                     .fg(theme::DIM)
-                    .bg(theme::BG)
+                    .bg(theme::SIDEBAR_BG)
                     .add_modifier(Modifier::BOLD);
                 let text = format!(" {} ", label);
                 write_str_clipped(buf, inner.x + 1, y, &text, style, &inner, true);
                 // Fill remaining with ─
-                let line_style = Style::default().fg(theme::DIM).bg(theme::BG);
+                let line_style = Style::default().fg(theme::DIM).bg(theme::SIDEBAR_BG);
                 let text_end = inner.x + 1 + text.len() as u16;
                 for x in text_end..inner.x + inner.width {
                     set_cell_if(buf, &bounds, x, y, '─', line_style);
@@ -210,7 +211,7 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
                     .unwrap_or_else(|| {
                         Style::default()
                             .fg(theme::DIM)
-                            .bg(theme::BG)
+                            .bg(theme::SIDEBAR_BG)
                             .add_modifier(Modifier::BOLD)
                     });
 
@@ -303,7 +304,7 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
             }
             DisplayRow::CallParticipant { display_name } => {
                 let label = format!("    > {}", display_name);
-                let style = Style::default().fg(theme::GREEN).bg(theme::BG);
+                let style = Style::default().fg(theme::GREEN).bg(theme::SIDEBAR_BG);
                 write_str_clipped(buf, inner.x + 1, y, &label, style, &inner, true);
             }
         }

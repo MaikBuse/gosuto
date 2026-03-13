@@ -46,7 +46,7 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
             .render_line(&title, theme::title_style())
     };
 
-    let block = panel::block(title_line, focused);
+    let block = panel::block_with_bg(title_line, focused, theme::SIDEBAR_BG);
 
     let icons = app.config.icons();
 
@@ -104,12 +104,13 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
     frame.render_stateful_widget(list, area, &mut list_state);
 
     if focused {
-        panel::apply_gradient_border(
+        panel::apply_gradient_border_with_bg(
             frame.buffer_mut(),
             area,
             theme::GRADIENT_BORDER_START,
             theme::GRADIENT_BORDER_END,
             app.anim_clock.phase,
+            theme::SIDEBAR_BG,
         );
 
         // Post-pass: gradient highlight on selected row

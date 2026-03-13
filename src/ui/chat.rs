@@ -92,7 +92,7 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
             .render_line(&title_text, theme::title_style())
     };
 
-    let block = panel::block(title_line, focused);
+    let block = panel::block_with_bg(title_line, focused, theme::CHAT_BG);
 
     let inner_height = area.height.saturating_sub(2) as usize; // borders
     let inner_width = area.width.saturating_sub(2) as usize; // borders
@@ -122,12 +122,13 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
         };
         frame.render_widget(placeholder.block(block), area);
         if focused {
-            panel::apply_gradient_border(
+            panel::apply_gradient_border_with_bg(
                 frame.buffer_mut(),
                 area,
                 theme::GRADIENT_BORDER_START,
                 theme::GRADIENT_BORDER_END,
                 app.anim_clock.phase,
+                theme::CHAT_BG,
             );
         }
         return;
@@ -379,12 +380,13 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
     frame.render_widget(block, area);
 
     if focused {
-        panel::apply_gradient_border(
+        panel::apply_gradient_border_with_bg(
             frame.buffer_mut(),
             area,
             theme::GRADIENT_BORDER_START,
             theme::GRADIENT_BORDER_END,
             app.anim_clock.phase,
+            theme::CHAT_BG,
         );
     }
 
