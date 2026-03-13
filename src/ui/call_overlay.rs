@@ -33,6 +33,8 @@ pub struct TransmissionPopup {
     waveform_phase: f32,
     progress_bar_pos: u16,
     progress_accum_ms: u64,
+    color_blend: f32,
+    color_blend_target: f32,
 }
 
 impl TransmissionPopup {
@@ -47,6 +49,8 @@ impl TransmissionPopup {
             waveform_phase: 0.0,
             progress_bar_pos: 0,
             progress_accum_ms: 0,
+            color_blend: 1.0,
+            color_blend_target: 1.0,
         }
     }
 
@@ -55,7 +59,15 @@ impl TransmissionPopup {
         if self.last_display_state.as_ref() != Some(display_state) {
             self.title_reveal.trigger();
             self.last_display_state = Some(display_state.clone());
+            self.color_blend_target = match display_state {
+                CallDisplayState::Ringing => 0.0,
+                CallDisplayState::Connecting | CallDisplayState::Active => 1.0,
+            };
         }
+
+        // Smooth color blend toward target (~500ms transition)
+        let blend_speed = 1.0 - (-(dt_ms as f32) / 200.0).exp();
+        self.color_blend += (self.color_blend_target - self.color_blend) * blend_speed;
 
         self.title_reveal.tick(dt_ms);
 
@@ -141,10 +153,10 @@ impl TransmissionPopup {
         // Fill background
         popup::fill_bg(buf, &bounds, popup_area);
 
-        let border_color = self.pulse_color(display_state);
+        let border_color = self.pulse_color();
         self.render_border(buf, &bounds, popup_area, border_color);
         self.render_title(buf, &bounds, popup_area, border_color, display_state, info);
-        self.render_caller_line(buf, &bounds, popup_area, info, display_state, icons);
+        self.render_caller_line(buf, &bounds, popup_area, info, icons);
         self.render_separator(buf, &bounds, popup_area, room_name_line);
         self.render_state_content(
             buf,
@@ -155,16 +167,21 @@ impl TransmissionPopup {
             room_name_line,
         );
         if show_waveform {
-            self.render_waveform(buf, &bounds, popup_area, display_state, room_name_line);
+            self.render_waveform(buf, &bounds, popup_area, room_name_line);
         }
         self.render_hints(buf, &bounds, popup_area, display_state);
     }
 
-    fn pulse_color(&self, state: &CallDisplayState) -> Color {
-        let base = match state {
-            CallDisplayState::Connecting => theme::CYAN,
-            CallDisplayState::Ringing | CallDisplayState::Active => theme::GREEN,
-        };
+    fn state_color(&self) -> Color {
+        let t = self.color_blend;
+        // MAGENTA (255,0,255) -> CYAN (0,255,255)
+        let r = (255.0 * (1.0 - t)) as u8;
+        let g = (255.0 * t) as u8;
+        Color::Rgb(r, g, 255)
+    }
+
+    fn pulse_color(&self) -> Color {
+        let base = self.state_color();
         let brightness = (self.pulse_phase.sin() + 1.0) / 2.0;
         let factor = 0.35 + brightness * 0.65;
         if let Color::Rgb(r, g, b) = base {
@@ -265,17 +282,13 @@ impl TransmissionPopup {
         bounds: &Rect,
         area: Rect,
         info: &CallInfo,
-        state: &CallDisplayState,
         icons: &Icons,
     ) {
         let row = area.y + 2;
         let left = area.x + 3;
         let right = area.x + area.width.saturating_sub(3);
 
-        let color = match state {
-            CallDisplayState::Ringing | CallDisplayState::Active => theme::GREEN,
-            _ => theme::CYAN,
-        };
+        let color = self.state_color();
 
         let name_s = Style::default()
             .fg(color)
@@ -408,7 +421,7 @@ impl TransmissionPopup {
 
         match state {
             CallDisplayState::Ringing => {
-                let s = Style::default().fg(theme::GREEN).bg(theme::BG);
+                let s = Style::default().fg(self.state_color()).bg(theme::BG);
                 popup::write_str(buf, bounds, left, row, "SIGNAL DETECTED", s);
                 popup::write_str(buf, bounds, left, row + 1, "AWAITING RESPONSE", s);
             }
@@ -417,20 +430,21 @@ impl TransmissionPopup {
                     CallState::Connecting(phase) => phase.label(),
                     _ => "CONNECTING",
                 };
+                let sc = self.state_color();
                 popup::write_str(
                     buf,
                     bounds,
                     left,
                     row,
                     phase_label,
-                    Style::default().fg(theme::CYAN).bg(theme::BG),
+                    Style::default().fg(sc).bg(theme::BG),
                 );
 
                 // Progress bar with sliding packet
                 let bar_w = (right - left) as usize;
                 if bar_w > 0 {
                     let pos = self.progress_bar_pos as usize % bar_w;
-                    let bar_s = Style::default().fg(theme::CYAN).bg(theme::BG);
+                    let bar_s = Style::default().fg(sc).bg(theme::BG);
                     for i in 0..bar_w {
                         let ch = if i == pos { '╸' } else { '━' };
                         popup::set_cell(buf, bounds, left + i as u16, row + 1, ch, bar_s);
@@ -438,9 +452,8 @@ impl TransmissionPopup {
                     // Bright packet highlight
                     let px = left + pos as u16;
                     if popup::in_bounds(px, row + 1, bounds) {
-                        buf[(px, row + 1)].set_style(
-                            Style::default().fg(Color::Rgb(255, 255, 255)).bg(theme::BG),
-                        );
+                        buf[(px, row + 1)]
+                            .set_style(Style::default().fg(theme::WHITE).bg(theme::BG));
                     }
                 }
             }
@@ -453,20 +466,13 @@ impl TransmissionPopup {
                     left,
                     row,
                     &text,
-                    Style::default().fg(theme::GREEN).bg(theme::BG),
+                    Style::default().fg(self.state_color()).bg(theme::BG),
                 );
             }
         }
     }
 
-    fn render_waveform(
-        &self,
-        buf: &mut Buffer,
-        bounds: &Rect,
-        area: Rect,
-        state: &CallDisplayState,
-        y_offset: u16,
-    ) {
+    fn render_waveform(&self, buf: &mut Buffer, bounds: &Rect, area: Rect, y_offset: u16) {
         let top = area.y + 8 + y_offset;
         let mid = area.y + 9 + y_offset;
         let bot = area.y + 10 + y_offset;
@@ -504,10 +510,7 @@ impl TransmissionPopup {
             Style::default().bg(theme::BG),
         );
 
-        let wave_color = match state {
-            CallDisplayState::Active | CallDisplayState::Ringing => theme::GREEN,
-            _ => theme::CYAN,
-        };
+        let wave_color = self.state_color();
         let ws = Style::default().fg(wave_color).bg(theme::BG);
         let wave_x = left + 2;
         for i in 0..WAVEFORM_LEN {
