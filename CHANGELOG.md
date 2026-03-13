@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.9.0](https://github.com/MaikBuse/gosuto/compare/v0.8.0...v0.9.0) (2026-03-13)
+
+
+### Features
+
+* add cursor movement, forward delete, and Ctrl+J newline to input editor ([8c7cab3](https://github.com/MaikBuse/gosuto/commit/8c7cab3ae6ce78a3ce14e1a8c3516f142fabcdb6))
+* add lazy loading to the chat pane ([f87293d](https://github.com/MaikBuse/gosuto/commit/f87293db200403374e953a75ebe5b09eac3b9877))
+* add lazy-loading pagination and use typed MatrixRTC events ([42bf01b](https://github.com/MaikBuse/gosuto/commit/42bf01b31cd4b2a672f511b34b462ba9610c45c2))
+* add markdown formatting for outgoing messages ([d80d8cd](https://github.com/MaikBuse/gosuto/commit/d80d8cd0c7cf0e50ae61c83982a79c72212cda3e))
+* add message editing with e key and fix multi-edit persistence ([a195aea](https://github.com/MaikBuse/gosuto/commit/a195aea9ee218f565c2ff9597712c7af0e1719fd))
+* add message redaction with d key and confirmation prompt ([289adda](https://github.com/MaikBuse/gosuto/commit/289addaa9ec616ec8e2e23ffc6ea5035f44f7384))
+* default login focus to homeserver and split hint lines ([cb76c78](https://github.com/MaikBuse/gosuto/commit/cb76c7827bdc76f89db12c798b1d225783b1db19))
+* embed ghost icon in Windows executable ([86d683f](https://github.com/MaikBuse/gosuto/commit/86d683fe12c1625c49898d0231943832a85567fd))
+* replace chat matrix rain with one-shot message rain effect ([cd91249](https://github.com/MaikBuse/gosuto/commit/cd91249c825efcbdb31a4ece102be6d65a2a8223))
+* retheme UI to Tokyo Night and equalize sidebar widths ([e9d0be7](https://github.com/MaikBuse/gosuto/commit/e9d0be7e56d1055519cc19152bc4d7e6a59e5e52))
+* show matrix-style katakana characters during message rain fall ([f9e45b5](https://github.com/MaikBuse/gosuto/commit/f9e45b5030254deabaaa3370d27d519a8ea10f29))
+* smooth color transitions between call overlay states ([1109f46](https://github.com/MaikBuse/gosuto/commit/1109f468a85c7d6d23737f09e55c24dac3c86fbb))
+
+
+### Bug Fixes
+
+* brighten date separators and remove dead pulse animation ([5a94c70](https://github.com/MaikBuse/gosuto/commit/5a94c70711578e80089adefccc8f732ccd4846ee))
+* keep existing messages visible during partial rain effect ([005c537](https://github.com/MaikBuse/gosuto/commit/005c537d36cf834ff2d45e66a73b3775b95892cf))
+* remove unused variables ([2459a3c](https://github.com/MaikBuse/gosuto/commit/2459a3cbcd510349c7ea44f80156e7728033df08))
+* suppress native library stdout corruption and add real connection phases ([96aeffd](https://github.com/MaikBuse/gosuto/commit/96aeffda95b8c71a5d96eabcded653de20daab6a))
+* use raw spans for indent spaces so matrix rain shows through ([2bfecbf](https://github.com/MaikBuse/gosuto/commit/2bfecbfbfd1e5a139902f1e33556d1b3fef1a33e))
+* wrap dup'd fd in BufWriter to eliminate cursor flicker ([777c734](https://github.com/MaikBuse/gosuto/commit/777c734b916b41f42fae3d73d8e6aa5a8fa9fc65))
+
 ## [0.8.0](https://github.com/MaikBuse/gosuto/compare/v0.7.0...v0.8.0) (2026-03-10)
 
 
