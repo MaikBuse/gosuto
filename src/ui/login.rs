@@ -44,8 +44,8 @@ impl LoginState {
             password: String::new(),
             confirm_password: String::new(),
             registration_token: String::new(),
-            focused_field: LoginField::Username,
-            cursor_pos: 0,
+            focused_field: LoginField::Homeserver,
+            cursor_pos: "https://matrix.org".len(),
         }
     }
 
@@ -165,7 +165,7 @@ pub fn render(login: &LoginState, auth_state: &AuthState, frame: &mut Frame) {
     let is_register = login.mode == FormMode::Register;
 
     let form_width = 56u16.min(area.width.saturating_sub(4));
-    let form_height = if is_register { 19u16 } else { 13u16 };
+    let form_height = if is_register { 20u16 } else { 14u16 };
 
     let show_logo = area.height >= form_height + LOGO_HEIGHT + 2;
 
@@ -264,7 +264,7 @@ pub fn render(login: &LoginState, auth_state: &AuthState, frame: &mut Frame) {
 
     let status_idx = constraints.len();
     constraints.push(Constraint::Length(1)); // spacer before status
-    constraints.push(Constraint::Length(1)); // status/error
+    constraints.push(Constraint::Length(2)); // status/hints (two lines)
     constraints.push(Constraint::Min(0)); // remaining
 
     let chunks = Layout::default()
@@ -329,20 +329,34 @@ pub fn render(login: &LoginState, auth_state: &AuthState, frame: &mut Frame) {
     }
 
     // Status/error
-    let mode_hint = if is_register {
-        "Tab: next field | Enter: register | F2: login | Ctrl+C: quit"
-    } else {
-        "Tab: next field | Enter: login | F2: register | Ctrl+C: quit"
-    };
-    let status = match auth_state {
-        AuthState::LoggingIn => Span::styled("Logging in...", theme::dim_style()),
-        AuthState::AutoLoggingIn => Span::styled("Auto-logging in...", theme::dim_style()),
-        AuthState::Registering => Span::styled("Registering...", theme::dim_style()),
-        AuthState::Error(e) => Span::styled(e.as_str(), theme::error_style()),
-        _ => Span::styled(mode_hint, theme::dim_style()),
+    let status_lines: Vec<Line> = match auth_state {
+        AuthState::LoggingIn => vec![Line::from(Span::styled(
+            "Logging in...",
+            theme::dim_style(),
+        ))],
+        AuthState::AutoLoggingIn => vec![Line::from(Span::styled(
+            "Auto-logging in...",
+            theme::dim_style(),
+        ))],
+        AuthState::Registering => vec![Line::from(Span::styled(
+            "Registering...",
+            theme::dim_style(),
+        ))],
+        AuthState::Error(e) => vec![Line::from(Span::styled(e.as_str(), theme::error_style()))],
+        _ => {
+            let line1 = if is_register {
+                "Tab: next field | Enter: register | F2: login"
+            } else {
+                "Tab: next field | Enter: login | F2: register"
+            };
+            vec![
+                Line::from(Span::styled(line1, theme::dim_style())),
+                Line::from(Span::styled("Ctrl+C: quit", theme::dim_style())),
+            ]
+        }
     };
     frame.render_widget(
-        Paragraph::new(Line::from(status)).alignment(Alignment::Center),
+        Paragraph::new(status_lines).alignment(Alignment::Center),
         chunks[status_idx + 1],
     );
 
@@ -464,26 +478,26 @@ mod tests {
     fn next_field_cycles_correctly_login() {
         let mut state = LoginState::new();
         assert_eq!(state.mode, FormMode::Login);
-        // Starts at Username
+        // Starts at Homeserver
+        assert_eq!(state.focused_field, LoginField::Homeserver);
+        state.next_field();
         assert_eq!(state.focused_field, LoginField::Username);
         state.next_field();
         assert_eq!(state.focused_field, LoginField::Password);
         state.next_field();
         assert_eq!(state.focused_field, LoginField::Homeserver);
-        state.next_field();
-        assert_eq!(state.focused_field, LoginField::Username);
     }
 
     #[test]
     fn prev_field_cycles_correctly_login() {
         let mut state = LoginState::new();
-        assert_eq!(state.focused_field, LoginField::Username);
-        state.prev_field();
         assert_eq!(state.focused_field, LoginField::Homeserver);
         state.prev_field();
         assert_eq!(state.focused_field, LoginField::Password);
         state.prev_field();
         assert_eq!(state.focused_field, LoginField::Username);
+        state.prev_field();
+        assert_eq!(state.focused_field, LoginField::Homeserver);
     }
 
     #[test]
@@ -512,6 +526,7 @@ mod tests {
     #[test]
     fn field_switch_sets_cursor_to_end() {
         let mut state = LoginState::new();
+        state.focused_field = LoginField::Username;
         state.username = "user".to_string();
         state.cursor_pos = 0; // cursor at start of username
         state.next_field(); // move to password
