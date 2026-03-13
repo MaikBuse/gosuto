@@ -41,17 +41,6 @@ impl RoomListAnimState {
         self.flash_row = Some(row);
     }
 
-    fn pulse_style(&self, phase: f32) -> Style {
-        let t = (phase.sin() + 1.0) / 2.0;
-        let shimmer = ((phase * 3.7).sin() + 1.0) / 2.0;
-        let factor = 0.45 + (t + shimmer * 0.08) * 0.55;
-
-        Style::default()
-            .fg(theme::BLACK)
-            .bg(gradient::scale_color(theme::PULSE_BASE, factor))
-            .add_modifier(Modifier::BOLD)
-    }
-
     fn flash_style(&self) -> Option<Style> {
         let remaining = self.flash_timer?;
         let intensity = (remaining as f32 / 250.0).powi(2);
@@ -65,32 +54,21 @@ impl RoomListAnimState {
         )
     }
 
-    fn row_style(
-        &self,
-        row_idx: usize,
-        is_selected: bool,
-        focused: bool,
-        phase: f32,
-    ) -> Option<Style> {
+    fn row_style(&self, row_idx: usize, is_selected: bool) -> Option<Style> {
         if !is_selected {
             return None;
         }
-        if focused {
-            if self.flash_row == Some(row_idx)
-                && let Some(flash) = self.flash_style()
-            {
-                return Some(flash);
-            }
-            Some(self.pulse_style(phase))
-        } else {
-            // Static cyan highlight when panel is not focused
-            Some(
-                Style::default()
-                    .fg(theme::BLACK)
-                    .bg(theme::CYAN)
-                    .add_modifier(Modifier::BOLD),
-            )
+        if self.flash_row == Some(row_idx)
+            && let Some(flash) = self.flash_style()
+        {
+            return Some(flash);
         }
+        Some(
+            Style::default()
+                .fg(theme::BLACK)
+                .bg(theme::CYAN)
+                .add_modifier(Modifier::BOLD),
+        )
     }
 }
 
@@ -160,7 +138,6 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
     let display_rows = &app.room_list.display_rows;
     let selected = app.room_list.selected;
     let anim = &app.room_list_anim;
-    let phase = app.anim_clock.phase;
     let visible_height = inner.height as usize;
     let total_rows = display_rows.len();
 
@@ -206,14 +183,12 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
                 };
                 let label = format!("{} {} {}", arrow, icons.space, name);
 
-                let style = anim
-                    .row_style(row_idx, is_selected, focused, phase)
-                    .unwrap_or_else(|| {
-                        Style::default()
-                            .fg(theme::DIM)
-                            .bg(theme::SIDEBAR_BG)
-                            .add_modifier(Modifier::BOLD)
-                    });
+                let style = anim.row_style(row_idx, is_selected).unwrap_or_else(|| {
+                    Style::default()
+                        .fg(theme::DIM)
+                        .bg(theme::SIDEBAR_BG)
+                        .add_modifier(Modifier::BOLD)
+                });
 
                 // Fill background for selected row
                 if is_selected && focused {
@@ -258,7 +233,7 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
                     let indent_px = *indent as u16;
 
                     let style = anim
-                        .row_style(row_idx, is_selected, focused, phase)
+                        .row_style(row_idx, is_selected)
                         .unwrap_or_else(theme::text_style);
 
                     // Fill background for selected row
