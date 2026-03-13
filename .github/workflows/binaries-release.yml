@@ -75,6 +75,63 @@ jobs:
           asset_name: gosuto-${{ github.event.release.tag_name }}-${{ matrix.target }}.${{ matrix.archive_ext }}
           asset_content_type: application/octet-stream
 
+      - name: Upload Windows exe artifact
+        if: matrix.os == 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-exe
+          path: target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
+          retention-days: 1
+
+  msstore:
+    needs: build
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Windows exe artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-exe
+          path: msix
+
+      - name: Extract version from Cargo.toml
+        id: version
+        shell: pwsh
+        run: |
+          $ver = (Select-String -Path Cargo.toml -Pattern '^version\s*=\s*"(.+)"').Matches.Groups[1].Value
+          echo "MSIX_VERSION=$ver.0" >> $env:GITHUB_OUTPUT
+
+      - name: Patch AppxManifest.xml
+        shell: pwsh
+        run: |
+          $manifest = Get-Content msix/AppxManifest.xml -Raw
+          $manifest = $manifest -replace 'REPLACE_WITH_IDENTITY_NAME', '${{ secrets.MSIX_IDENTITY_NAME }}'
+          $manifest = $manifest -replace 'REPLACE_WITH_PUBLISHER_ID', '${{ secrets.MSIX_PUBLISHER_ID }}'
+          $manifest = $manifest -replace 'REPLACE_WITH_PUBLISHER_DISPLAY', '${{ secrets.MSIX_PUBLISHER_DISPLAY }}'
+          $manifest = $manifest -replace 'REPLACE_WITH_VERSION', '${{ steps.version.outputs.MSIX_VERSION }}'
+          Set-Content msix/AppxManifest.xml $manifest
+
+      - name: Create MSIX package
+        shell: pwsh
+        run: |
+          $sdkDir = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\10.*" -Directory |
+            Sort-Object Name -Descending | Select-Object -First 1
+          & "$sdkDir\x64\makeappx.exe" pack /f msix/mapping.txt /p gosuto.msix /o
+
+      - name: Install MSStore CLI
+        run: dotnet tool install --global MSStore.CLI
+
+      - name: Publish to Microsoft Store
+        shell: pwsh
+        run: |
+          msstore publish gosuto.msix `
+            --tenantId '${{ secrets.AZURE_AD_TENANT_ID }}' `
+            --clientId '${{ secrets.AZURE_AD_CLIENT_ID }}' `
+            --clientSecret '${{ secrets.AZURE_AD_CLIENT_SECRET }}' `
+            --appId '${{ secrets.STORE_APP_ID }}'
+
   publish:
     needs: build
     runs-on: ubuntu-latest
