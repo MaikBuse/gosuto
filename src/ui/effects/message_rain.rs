@@ -27,6 +27,7 @@ pub struct MessageRain {
     active: bool,
     elapsed_ms: f32,
     area: Rect,
+    clear_rect: Rect,
     rng: Xorshift64,
     char_cycle_accum: f32,
 }
@@ -38,6 +39,7 @@ impl MessageRain {
             active: false,
             elapsed_ms: 0.0,
             area: Rect::default(),
+            clear_rect: Rect::default(),
             rng: Xorshift64::new(0xCAFE_BABE_DEAD_BEEF),
             char_cycle_accum: 0.0,
         }
@@ -53,6 +55,7 @@ impl MessageRain {
         self.elapsed_ms = 0.0;
         self.char_cycle_accum = 0.0;
         self.area = area;
+        self.clear_rect = area;
 
         let width = area.width as f32;
         let height = area.height as f32;
@@ -92,6 +95,10 @@ impl MessageRain {
         }
 
         self.active = !self.cells.is_empty();
+    }
+
+    pub fn set_clear_rect(&mut self, rect: Rect) {
+        self.clear_rect = rect;
     }
 
     pub fn tick(&mut self, dt_ms: u64, area: Rect) {
@@ -166,9 +173,9 @@ impl MessageRain {
             return;
         }
 
-        // Clear the area to BG first
-        for y in self.area.y..self.area.y + self.area.height {
-            for x in self.area.x..self.area.x + self.area.width {
+        // Clear the designated rect to BG first
+        for y in self.clear_rect.y..self.clear_rect.y + self.clear_rect.height {
+            for x in self.clear_rect.x..self.clear_rect.x + self.clear_rect.width {
                 let c = &mut buf[(x, y)];
                 c.reset();
                 c.set_style(Style::default().bg(theme::CHAT_BG));

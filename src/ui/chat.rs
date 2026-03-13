@@ -546,7 +546,10 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
     }
 
     // Message rain effect: capture snapshot when entering a room
-    if app.messages.needs_rain_capture && app.effects.enabled {
+    if app.messages.needs_rain_capture
+        && app.effects.enabled
+        && !app.effects.message_rain().is_active()
+    {
         // Clone the inner chat area as a snapshot for the rain effect
         let mut snapshot = Buffer::empty(inner);
         for y in inner.y..inner.y + inner.height {
@@ -556,6 +559,45 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect) {
         }
         app.effects.message_rain_mut().start(&snapshot, inner);
         app.messages.needs_rain_capture = false;
+    }
+
+    // Partial rain for new incoming messages
+    if app.messages.rain_pending_count > 0
+        && app.effects.enabled
+        && !app.effects.message_rain().is_active()
+    {
+        let mut msgs_remaining = app.messages.rain_pending_count;
+        let mut rain_rows: usize = 0;
+        for seg in segments.iter().rev() {
+            if msgs_remaining == 0 {
+                break;
+            }
+            rain_rows += seg.height(inner_width);
+            if seg.msg_index().is_some() {
+                msgs_remaining -= 1;
+            }
+        }
+
+        if rain_rows > 0 {
+            // Use the full inner area so cells fall visibly from the top
+            let mut snapshot = Buffer::empty(inner);
+            // Only copy new message rows (bottom portion) into the snapshot
+            let msg_top_y = inner.y + inner.height - (rain_rows as u16).min(inner.height);
+            for y in msg_top_y..inner.y + inner.height {
+                for x in inner.x..inner.x + inner.width {
+                    snapshot[(x, y)] = frame.buffer_mut()[(x, y)].clone();
+                }
+            }
+            app.effects.message_rain_mut().start(&snapshot, inner);
+            let clear_rect = Rect {
+                x: inner.x,
+                y: msg_top_y,
+                width: inner.width,
+                height: inner.height - (msg_top_y - inner.y),
+            };
+            app.effects.message_rain_mut().set_clear_rect(clear_rect);
+        }
+        app.messages.rain_pending_count = 0;
     }
 
     // Render the message rain animation over the chat area

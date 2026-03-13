@@ -68,6 +68,7 @@ pub struct MessageState {
     pub selected_index: Option<usize>,
     pub pagination_token: Option<String>,
     pub needs_rain_capture: bool,
+    pub rain_pending_count: usize,
 }
 
 impl MessageState {
@@ -82,6 +83,7 @@ impl MessageState {
             selected_index: None,
             pagination_token: None,
             needs_rain_capture: false,
+            rain_pending_count: 0,
         }
     }
 
@@ -96,6 +98,7 @@ impl MessageState {
             self.selected_index = None;
             self.pagination_token = None;
             self.needs_rain_capture = true;
+            self.rain_pending_count = 0;
         }
     }
 
@@ -105,6 +108,7 @@ impl MessageState {
             return;
         }
         self.messages.push(msg);
+        self.rain_pending_count += 1;
     }
 
     pub fn prepend_messages(
