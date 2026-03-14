@@ -3,7 +3,7 @@ use ratatui::{
     layout::Rect,
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph},
+    widgets::{Block, Borders, Paragraph, Wrap},
 };
 
 use crate::app::App;
@@ -103,7 +103,9 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
     }
     all_lines.extend(text_lines);
 
-    let paragraph = Paragraph::new(all_lines).block(block);
+    let paragraph = Paragraph::new(all_lines)
+        .block(block)
+        .wrap(Wrap { trim: false });
 
     frame.render_widget(paragraph, area);
 
@@ -152,10 +154,10 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect) {
         };
         let (cursor_x, cursor_y) = match app.vim.mode {
             VimMode::Insert => {
-                let (row, col) = app.vim.cursor_row_col();
-                let line_prefix_len = if row == 0 { prefix.len() } else { 2 }; // "  " for continuation
-                let x = area.x + 1 + line_prefix_len as u16 + col as u16;
-                let y = area.y + 1 + reply_offset + row as u16;
+                let text_width = area.width.saturating_sub(4); // 2 borders + 2 prefix
+                let (_total, vis_row, vis_col) = app.vim.visual_cursor_info(text_width);
+                let x = area.x + 1 + 2 + vis_col; // +2 for prefix "> "
+                let y = area.y + 1 + reply_offset + vis_row;
                 (x, y)
             }
             VimMode::Command => {

@@ -58,8 +58,9 @@ pub fn render(app: &mut App, frame: &mut Frame) {
     } else {
         0
     };
-    let layout =
-        layout::compute_layout(frame, app.vim.input_line_count() + reply_extra, has_typing);
+    let text_width = frame.area().width.saturating_sub(32 + 32 + 2 + 2); // rooms + members + borders + prefix
+    let input_lines = app.vim.visual_line_count(text_width) + reply_extra;
+    let layout = layout::compute_layout(frame, input_lines, has_typing);
 
     room_list::render(app, frame, layout.room_list);
     chat::render(app, frame, layout.chat_area);

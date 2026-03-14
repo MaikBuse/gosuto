@@ -1,5 +1,7 @@
 use std::fmt;
 
+use unicode_width::UnicodeWidthChar;
+
 use super::command;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -256,6 +258,7 @@ impl VimState {
         std::mem::take(&mut self.input_buffer)
     }
 
+    #[cfg(test)]
     pub fn input_line_count(&self) -> usize {
         self.input_buffer.split('\n').count().max(1)
     }
@@ -268,6 +271,51 @@ impl VimState {
             None => self.input_cursor,
         };
         (row, col)
+    }
+
+    /// Returns `(total_visual_lines, cursor_visual_row, cursor_visual_col)`
+    /// by simulating ratatui's character-level wrapping with `Wrap { trim: false }`.
+    pub fn visual_cursor_info(&self, text_width: u16) -> (usize, u16, u16) {
+        let text_width = text_width.max(1) as usize;
+        let mut vis_row: usize = 0;
+        let mut vis_col: usize = 0;
+        let mut cursor_row: u16 = 0;
+        let mut cursor_col: u16 = 0;
+        let mut byte_pos: usize = 0;
+        let mut found_cursor = false;
+
+        for c in self.input_buffer.chars() {
+            if byte_pos == self.input_cursor && !found_cursor {
+                cursor_row = vis_row as u16;
+                cursor_col = vis_col as u16;
+                found_cursor = true;
+            }
+
+            if c == '\n' {
+                vis_row += 1;
+                vis_col = 0;
+            } else {
+                let w = c.width().unwrap_or(0);
+                if vis_col + w > text_width {
+                    vis_row += 1;
+                    vis_col = 0;
+                }
+                vis_col += w;
+            }
+
+            byte_pos += c.len_utf8();
+        }
+
+        if !found_cursor {
+            cursor_row = vis_row as u16;
+            cursor_col = vis_col as u16;
+        }
+
+        (vis_row + 1, cursor_row, cursor_col)
+    }
+
+    pub fn visual_line_count(&self, text_width: u16) -> usize {
+        self.visual_cursor_info(text_width).0
     }
 }
 
@@ -817,5 +865,95 @@ mod tests {
         vim.delete_char();
         assert_eq!(vim.input_buffer, "本");
         assert_eq!(vim.input_cursor, 0);
+    }
+
+    // --- visual_cursor_info ---
+
+    #[test]
+    fn visual_cursor_empty_buffer() {
+        let vim = VimState::new();
+        let (lines, row, col) = vim.visual_cursor_info(20);
+        assert_eq!(lines, 1);
+        assert_eq!(row, 0);
+        assert_eq!(col, 0);
+    }
+
+    #[test]
+    fn visual_cursor_short_text() {
+        let mut vim = VimState::new();
+        for c in "hello".chars() {
+            vim.insert_char(c);
+        }
+        let (lines, row, col) = vim.visual_cursor_info(20);
+        assert_eq!(lines, 1);
+        assert_eq!(row, 0);
+        assert_eq!(col, 5);
+    }
+
+    #[test]
+    fn visual_cursor_wraps_at_boundary() {
+        let mut vim = VimState::new();
+        // 10 chars, width 5 => 2 visual lines
+        for c in "abcdefghij".chars() {
+            vim.insert_char(c);
+        }
+        let (lines, row, col) = vim.visual_cursor_info(5);
+        assert_eq!(lines, 2);
+        assert_eq!(row, 1);
+        assert_eq!(col, 5);
+    }
+
+    #[test]
+    fn visual_cursor_newline_and_wrap() {
+        let mut vim = VimState::new();
+        // "ab\ncdefgh" with width 4
+        // line 0: "ab" (1 visual line)
+        // line 1: "cdef" wraps to "cdef" | "gh" (2 visual lines)
+        // total = 3 visual lines
+        for c in "ab\ncdefgh".chars() {
+            vim.insert_char(c);
+        }
+        let (lines, row, col) = vim.visual_cursor_info(4);
+        assert_eq!(lines, 3);
+        assert_eq!(row, 2);
+        assert_eq!(col, 2);
+    }
+
+    #[test]
+    fn visual_cursor_cjk_double_width() {
+        let mut vim = VimState::new();
+        // Each CJK char is 2 cells wide. With width 5, "日本語" = 6 cells
+        // "日本" = 4 cells fits, "語" = 2 more would be 6 > 5, wraps
+        for c in "日本語".chars() {
+            vim.insert_char(c);
+        }
+        let (lines, row, col) = vim.visual_cursor_info(5);
+        assert_eq!(lines, 2);
+        assert_eq!(row, 1);
+        assert_eq!(col, 2);
+    }
+
+    #[test]
+    fn visual_cursor_cursor_in_middle() {
+        let mut vim = VimState::new();
+        // "abcdefgh" with width 4, cursor at byte 3 (after "abc")
+        for c in "abcdefgh".chars() {
+            vim.insert_char(c);
+        }
+        vim.input_cursor = 3;
+        let (_lines, row, col) = vim.visual_cursor_info(4);
+        assert_eq!(row, 0);
+        assert_eq!(col, 3);
+    }
+
+    #[test]
+    fn visual_line_count_matches_info() {
+        let mut vim = VimState::new();
+        for c in "abcdefghij".chars() {
+            vim.insert_char(c);
+        }
+        assert_eq!(vim.visual_line_count(5), 2);
+        assert_eq!(vim.visual_line_count(10), 1);
+        assert_eq!(vim.visual_line_count(3), 4);
     }
 }
