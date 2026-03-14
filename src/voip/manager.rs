@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use base64::Engine;
 use matrix_sdk::Client;
-use matrix_sdk::ruma::{OwnedDeviceId, OwnedRoomId};
+use matrix_sdk::ruma::{OwnedDeviceId, OwnedRoomId, OwnedUserId};
 use tokio::sync::{Mutex, mpsc};
 use tokio::time::Instant;
 use tracing::{debug, error, info, trace, warn};
@@ -528,6 +528,14 @@ impl CallManager {
                         && let Some((user_id, dev_id)) =
                             matrixrtc::parse_livekit_identity(&identity)
                     {
+                        // Ensure we have fresh device keys for the joining participant
+                        // (critical for federated rooms)
+                        if let Ok(uid) = OwnedUserId::try_from(user_id)
+                            && let Err(e) = client.encryption().get_user_devices(&uid).await
+                        {
+                            warn!("Failed to query devices for {}: {}", user_id, e);
+                        }
+
                         if !call.received_keys.contains(&identity) {
                             match matrixrtc::fetch_participant_key(
                                 client,

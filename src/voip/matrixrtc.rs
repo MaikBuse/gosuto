@@ -662,6 +662,12 @@ pub async fn send_encryption_keys_to_device(
         };
         let did: OwnedDeviceId = participant_device_id.as_str().into();
 
+        // Ensure we have fresh device keys for this user (critical for federated rooms
+        // where the device may not yet be in the local crypto store)
+        if let Err(e) = encryption.get_user_devices(&uid).await {
+            warn!("Failed to query devices for {}: {}", uid, e);
+        }
+
         match encryption.get_device(&uid, &did).await {
             Ok(Some(device)) => devices.push(device),
             Ok(None) => {
