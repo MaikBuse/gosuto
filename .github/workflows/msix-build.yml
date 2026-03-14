@@ -1,0 +1,71 @@
+name: Build MSIX
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  msix:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.93.1"
+          targets: x86_64-pc-windows-msvc
+
+      - uses: arduino/setup-protoc@v3
+        with:
+          version: "25.x"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: release
+          key: x86_64-pc-windows-msvc
+
+      - name: Build
+        run: cargo build --release --target x86_64-pc-windows-msvc
+        env:
+          RUSTFLAGS: '-C target-feature=+crt-static'
+
+      - name: Copy exe to msix directory
+        shell: pwsh
+        run: Copy-Item "target/x86_64-pc-windows-msvc/release/gosuto.exe" -Destination "msix/gosuto.exe"
+
+      - name: Extract version from Cargo.toml
+        id: version
+        shell: pwsh
+        run: |
+          $ver = (Select-String -Path Cargo.toml -Pattern '^version\s*=\s*"(.+)"').Matches.Groups[1].Value
+          echo "MSIX_VERSION=$ver.0" >> $env:GITHUB_OUTPUT
+
+      - name: Patch AppxManifest.xml
+        shell: pwsh
+        run: |
+          $manifest = Get-Content msix/AppxManifest.xml -Raw
+          $manifest = $manifest -replace 'REPLACE_WITH_IDENTITY_NAME', '${{ secrets.MSIX_IDENTITY_NAME }}'
+          $manifest = $manifest -replace 'REPLACE_WITH_PUBLISHER_ID', '${{ secrets.MSIX_PUBLISHER_ID }}'
+          $manifest = $manifest -replace 'REPLACE_WITH_PUBLISHER_DISPLAY', '${{ secrets.MSIX_PUBLISHER_DISPLAY }}'
+          $manifest = $manifest -replace 'REPLACE_WITH_VERSION', '${{ steps.version.outputs.MSIX_VERSION }}'
+          Set-Content msix/AppxManifest.xml $manifest
+
+      - name: Create MSIX package
+        shell: pwsh
+        run: |
+          $sdkDir = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\10.*" -Directory |
+            Sort-Object Name -Descending | Select-Object -First 1
+          & "$sdkDir\x64\makeappx.exe" pack /f msix/mapping.txt /p gosuto.msix /o
+
+      - name: Upload MSIX artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gosuto-msix
+          path: gosuto.msix
