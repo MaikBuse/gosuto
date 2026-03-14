@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.10.0](https://github.com/MaikBuse/gosuto/compare/v0.9.0...v0.10.0) (2026-03-14)
+
+
+### Features
+
+* add MSIX packaging and Microsoft Store publishing to release workflow ([a4768b3](https://github.com/MaikBuse/gosuto/commit/a4768b367d24aebdee20b6281b429173890fc0f9))
+* add one-off MSIX build workflow for manual Store submission ([a5b60ee](https://github.com/MaikBuse/gosuto/commit/a5b60ee8e46494fe3e33b0138f6dabae74c4ed55))
+* update demo video ([67b12d6](https://github.com/MaikBuse/gosuto/commit/67b12d634f3b2c29af9e4e12779d41e9338a815f))
+* upload MSIX to GitHub release and conditionally publish to Store ([59d65d6](https://github.com/MaikBuse/gosuto/commit/59d65d6c0c512dd2b841c1b2feddd25c686e67d8))
+
+
+### Bug Fixes
+
+* add visual line wrapping in insert mode input bar ([a8af68d](https://github.com/MaikBuse/gosuto/commit/a8af68d16189fcca09a668236ace938c24eee658))
+* prefix source paths in MSIX mapping.txt to resolve from repo root ([9f4c5c5](https://github.com/MaikBuse/gosuto/commit/9f4c5c567bbe97daf44516582652dd4a2a3c49f4))
+* query fresh device keys before encrypting VoIP key exchange ([58a286b](https://github.com/MaikBuse/gosuto/commit/58a286b29b66203fcc9e740b9b7bdafab37a7dc4))
+
 ## [0.9.0](https://github.com/MaikBuse/gosuto/compare/v0.8.0...v0.9.0) (2026-03-13)
 
 
