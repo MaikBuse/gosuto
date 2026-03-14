@@ -54,7 +54,7 @@
 <!-- ABOUT THE PROJECT -->
 ## About The Project
 
-<https://github.com/user-attachments/assets/c58be922-67d6-400c-aebc-69db3c62a24f>
+<https://github.com/user-attachments/assets/1601fa31-0495-4f21-8b0f-10fff035370a>
 
 Gōsuto is a native terminal client for the [Matrix](https://matrix.org/) protocol, built for people who live in the terminal. It ships as a single Rust binary that handles chat, end-to-end encryption, and voice calls — no browser engine, no heavy runtime, just a lightweight TUI that stays out of your way.
 
