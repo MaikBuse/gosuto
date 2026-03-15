@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.11.0](https://github.com/MaikBuse/gosuto/compare/v0.10.0...v0.11.0) (2026-03-15)
+
+
+### Features
+
+* new logo with transparant background ([4d79410](https://github.com/MaikBuse/gosuto/commit/4d7941092e92f37a64ebe16fa3fd2ab867d582b6))
+
+
+### Bug Fixes
+
+* also check encryption_keys PL in ensure_call_member_permissions ([16269a7](https://github.com/MaikBuse/gosuto/commit/16269a7e82b17f0670b4e268784cd00c9f1ce86e))
+
 ## [0.10.0](https://github.com/MaikBuse/gosuto/compare/v0.9.0...v0.10.0) (2026-03-14)
 
 
