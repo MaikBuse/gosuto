@@ -294,12 +294,21 @@ pub async fn ensure_call_member_permissions(client: &Client, room_id: &OwnedRoom
     let required_pl = call_member_pl.unwrap_or(state_default);
 
     // Check if m.call.member is already explicitly set to PL <= 0
-    let already_open = call_member_pl.is_some_and(|pl| pl <= 0);
+    let call_member_open = call_member_pl.is_some_and(|pl| pl <= 0);
 
-    if already_open && user_pl >= required_pl {
+    // Check if io.element.call.encryption_keys is already explicitly set to PL <= 0
+    let encryption_keys_pl = events.and_then(|e| {
+        e.get("io.element.call.encryption_keys")
+            .and_then(|v| v.as_i64())
+    });
+    let encryption_keys_open = encryption_keys_pl.is_some_and(|pl| pl <= 0);
+
+    let all_open = call_member_open && encryption_keys_open;
+
+    if all_open && user_pl >= required_pl {
         debug!(
-            "m.call.member already set to PL {} (<= 0) and user PL {} is sufficient, permission OK",
-            required_pl, user_pl
+            "m.call.member and io.element.call.encryption_keys already at PL <= 0, user PL {} is sufficient, permission OK",
+            user_pl
         );
         return Ok(());
     }
@@ -310,7 +319,7 @@ pub async fn ensure_call_member_permissions(client: &Client, room_id: &OwnedRoom
         .unwrap_or(state_default);
     let can_modify_pls = user_pl >= pl_change_pl;
 
-    if !already_open && can_modify_pls {
+    if !all_open && can_modify_pls {
         // Proactively fix power levels for all participants
         info!(
             "Auto-fixing power levels: setting m.call.member PL to 0 (user PL={}, state_default={})",
