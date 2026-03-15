@@ -56,6 +56,8 @@ struct ActiveCall {
     pending_keys: HashMap<String, Instant>,
     /// Identities whose encryption keys have been received (skip state event polling for these)
     received_keys: HashSet<String>,
+    /// Whether our encryption keys were successfully published to Matrix
+    published_encryption_keys: bool,
 }
 
 pub struct CallManager {
@@ -472,6 +474,7 @@ impl CallManager {
             encryption_key: encryption_key_copy,
             pending_keys,
             received_keys,
+            published_encryption_keys,
         });
     }
 
@@ -489,8 +492,9 @@ impl CallManager {
                 if let Err(e) = matrixrtc::remove_call_member(&client, &room_id, &device_id).await {
                     warn!("remove_call_member failed: {e}");
                 }
-                if let Err(e) =
-                    matrixrtc::remove_encryption_keys(&client, &room_id, &device_id).await
+                if call.published_encryption_keys
+                    && let Err(e) =
+                        matrixrtc::remove_encryption_keys(&client, &room_id, &device_id).await
                 {
                     warn!("remove_encryption_keys failed: {e}");
                 }
