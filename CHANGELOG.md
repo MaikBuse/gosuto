@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.1](https://github.com/MaikBuse/gosuto/compare/v0.11.0...v0.11.1) (2026-03-29)
+
+
+### Bug Fixes
+
+* select SFU focus from existing call participants in federated rooms ([d0ae70b](https://github.com/MaikBuse/gosuto/commit/d0ae70b1281de6f18df353b8cc81b99ade52e9a8))
+
 ## [0.11.0](https://github.com/MaikBuse/gosuto/compare/v0.10.0...v0.11.0) (2026-03-15)
 
 
