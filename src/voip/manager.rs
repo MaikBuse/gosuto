@@ -222,8 +222,11 @@ impl CallManager {
         };
 
         // 1. Discover LiveKit focus
+        //    - own_focus: always our homeserver's SFU (advertised in foci_preferred)
+        //    - selected_focus: the SFU we actually connect to (may be a foreign SFU
+        //      when joining an existing call in a federated room)
         self.send_phase(&room_id, ConnectingPhase::DiscoveringService);
-        let focus = match matrixrtc::discover_livekit_focus(&client).await {
+        let own_focus = match matrixrtc::discover_livekit_focus(&client).await {
             Ok(f) => f,
             Err(e) => {
                 error!("Failed to discover LiveKit focus: {:#}", e);
@@ -233,6 +236,28 @@ impl CallManager {
                     ))
                     .warn_closed("CallError");
                 return;
+            }
+        };
+
+        let selected_focus = match matrixrtc::select_focus_from_room_state(&client, &room_id).await
+        {
+            Ok(Some(f)) => {
+                info!(
+                    "Using existing call focus: {} (own: {})",
+                    f.livekit_service_url, own_focus.livekit_service_url
+                );
+                f
+            }
+            Ok(None) => {
+                debug!("No existing participants with LiveKit focus, using own homeserver");
+                own_focus.clone()
+            }
+            Err(e) => {
+                warn!(
+                    "Failed to read room state for focus selection: {:#}, using own homeserver",
+                    e
+                );
+                own_focus.clone()
             }
         };
 
@@ -247,10 +272,10 @@ impl CallManager {
 
         self.send_phase(&room_id, ConnectingPhase::NegotiatingHandshake);
 
-        // 3. Publish m.call.member state event (before requesting JWT —
-        //    some SFU implementations expect the state event to exist)
+        // 3. Publish m.call.member state event with our own focus in foci_preferred
+        //    (before requesting JWT — some SFU implementations expect the state event)
         let call_member_event_id: Option<String> =
-            match matrixrtc::publish_call_member(&client, &room_id, &device_id, &focus).await {
+            match matrixrtc::publish_call_member(&client, &room_id, &device_id, &own_focus).await {
                 Ok(event_id) => Some(event_id),
                 Err(e) => {
                     warn!(
@@ -273,16 +298,51 @@ impl CallManager {
 
         self.send_phase(&room_id, ConnectingPhase::ExchangingKeys);
 
-        // 4. Get LiveKit credentials (JWT) — SFU can now see the call member event
+        // 4. Get LiveKit credentials (JWT) from the selected SFU
+        //    If using a foreign SFU that rejects us, fall back to our own homeserver's SFU
         let creds = match matrixrtc::get_livekit_credentials(
             &client,
-            &focus.livekit_service_url,
+            &selected_focus.livekit_service_url,
             &room_id,
             &device_id,
         )
         .await
         {
             Ok(c) => c,
+            Err(e) if selected_focus.livekit_service_url != own_focus.livekit_service_url => {
+                warn!(
+                    "Foreign SFU {} rejected credentials ({:#}), retrying with own homeserver",
+                    selected_focus.livekit_service_url, e
+                );
+                match matrixrtc::get_livekit_credentials(
+                    &client,
+                    &own_focus.livekit_service_url,
+                    &room_id,
+                    &device_id,
+                )
+                .await
+                {
+                    Ok(c) => c,
+                    Err(e2) => {
+                        error!(
+                            "Failed to get LiveKit credentials from own SFU too: {:#}",
+                            e2
+                        );
+                        if call_member_event_id.is_some()
+                            && let Err(e) =
+                                matrixrtc::remove_call_member(&client, &room_id, &device_id).await
+                        {
+                            warn!("remove_call_member failed: {e}");
+                        }
+                        self.event_tx
+                            .send(AppEvent::CallError(
+                                "Failed to get call credentials from the SFU service".to_string(),
+                            ))
+                            .warn_closed("CallError");
+                        return;
+                    }
+                }
+            }
             Err(e) => {
                 error!("Failed to get LiveKit credentials: {:#}", e);
                 // Clean up the state event we just published

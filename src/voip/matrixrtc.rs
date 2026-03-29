@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use anyhow::{Context, Result};
 use base64::Engine;
 use matrix_sdk::Client;
@@ -66,6 +68,91 @@ pub async fn discover_livekit_focus(client: &Client) -> Result<LivekitFocus> {
             livekit_service_url: url,
         })
         .context("No LiveKit focus found in homeserver configuration")
+}
+
+/// Select the LiveKit focus to connect to based on existing participants' m.call.member events.
+///
+/// In federated rooms, each homeserver has its own SFU. To join an existing call,
+/// we must connect to the same SFU that other participants are using. This function
+/// reads the room state to find the most commonly advertised LiveKit focus URL.
+///
+/// Returns `Some(focus)` if active participants advertise a LiveKit focus,
+/// or `None` if no existing participants have one (i.e. we are starting a new call).
+pub async fn select_focus_from_room_state(
+    client: &Client,
+    room_id: &OwnedRoomId,
+) -> Result<Option<LivekitFocus>> {
+    let request =
+        matrix_sdk::ruma::api::client::state::get_state_events::v3::Request::new(room_id.clone());
+    let response = client
+        .send(request)
+        .await
+        .context("Failed to fetch room state for focus selection")?;
+
+    let mut focus_counts: HashMap<String, usize> = HashMap::new();
+
+    for raw_event in &response.room_state {
+        let json: serde_json::Value = match serde_json::from_str(raw_event.json().get()) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+
+        let event_type = json.get("type").and_then(|v| v.as_str()).unwrap_or("");
+        if event_type != "m.call.member" && event_type != "org.matrix.msc3401.call.member" {
+            continue;
+        }
+
+        let content = match json.get("content").and_then(|c| c.as_object()) {
+            Some(c) if !c.is_empty() => c,
+            _ => continue, // empty content = member left
+        };
+
+        // Session-format: foci_preferred at top level
+        if let Some(foci) = content.get("foci_preferred").and_then(|v| v.as_array()) {
+            for focus in foci {
+                if focus.get("type").and_then(|v| v.as_str()) == Some("livekit")
+                    && let Some(url) = focus.get("livekit_service_url").and_then(|v| v.as_str())
+                {
+                    *focus_counts.entry(url.to_string()).or_default() += 1;
+                }
+            }
+        }
+
+        // Legacy format: memberships[].foci_active
+        if let Some(memberships) = content.get("memberships").and_then(|v| v.as_array()) {
+            for membership in memberships {
+                if let Some(foci) = membership.get("foci_active").and_then(|v| v.as_array()) {
+                    for focus in foci {
+                        if focus.get("type").and_then(|v| v.as_str()) == Some("livekit")
+                            && let Some(url) =
+                                focus.get("livekit_service_url").and_then(|v| v.as_str())
+                        {
+                            *focus_counts.entry(url.to_string()).or_default() += 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if focus_counts.is_empty() {
+        debug!("No existing LiveKit foci found in room state");
+        return Ok(None);
+    }
+
+    let (best_url, count) = focus_counts
+        .into_iter()
+        .max_by_key(|(_, count)| *count)
+        .expect("focus_counts is non-empty");
+
+    info!(
+        "Selected focus from room state: {} ({} participant(s) using it)",
+        best_url, count
+    );
+
+    Ok(Some(LivekitFocus {
+        livekit_service_url: best_url,
+    }))
 }
 
 /// Get LiveKit credentials (server URL + JWT) from the LiveKit JWT service.
@@ -355,10 +442,20 @@ pub async fn ensure_call_member_permissions(client: &Client, room_id: &OwnedRoom
 
     if user_pl >= required_pl {
         // User has enough PL to send call events but can't modify power levels — proceed anyway
-        debug!(
-            "User PL {} >= required PL {} for m.call.member, permission OK (cannot fix for others)",
-            user_pl, required_pl
-        );
+        let encryption_keys_required_pl = encryption_keys_pl.unwrap_or(state_default);
+        if user_pl < encryption_keys_required_pl {
+            warn!(
+                "User PL {} is sufficient for m.call.member (PL {}) but NOT for \
+                 io.element.call.encryption_keys (PL {}). \
+                 Encryption key state events will fail; falling back to to-device delivery.",
+                user_pl, required_pl, encryption_keys_required_pl
+            );
+        } else {
+            debug!(
+                "User PL {} >= required PL {} for m.call.member, permission OK (cannot fix for others)",
+                user_pl, required_pl
+            );
+        }
         return Ok(());
     }
 
